@@ -10,6 +10,7 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/google/tcpproxy"
+	"github.com/linuxkit/virtsock/pkg/hvsock"
 	"github.com/mdlayher/vsock"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -30,9 +31,13 @@ const (
 	gatewayMacAddress = "\x5A\x94\xEF\xE4\x0C\xDD"
 )
 
-var debug bool
+var (
+	windows bool
+	debug   bool
+)
 
 func main() {
+	flag.BoolVar(&windows, "windows", false, "windows")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.Parse()
 
@@ -139,7 +144,7 @@ func createStack() (*stack.Stack, error) {
 		},
 	})
 
-	ln, err := vsock.Listen(1024)
+	ln, err := listen()
 	if err != nil {
 		return nil, err
 	}
@@ -177,4 +182,18 @@ func createStack() (*stack.Stack, error) {
 		},
 	})
 	return s, nil
+}
+
+func listen() (net.Listener, error) {
+	if windows {
+		svcid, err := hvsock.GUIDFromString(fmt.Sprintf("%08x-FACB-11E6-BD58-64006A7986D4", 1024))
+		if err != nil {
+			return nil, err
+		}
+		return hvsock.Listen(hvsock.Addr{
+			VMID:      hvsock.GUIDWildcard,
+			ServiceID: svcid,
+		})
+	}
+	return vsock.Listen(1024)
 }

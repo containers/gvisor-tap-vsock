@@ -8,14 +8,19 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/mdlayher/vsock"
+	linuxkitvsock "github.com/linuxkit/virtsock/pkg/vsock"
+	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/songgao/packets/ethernet"
 	"github.com/songgao/water"
 )
 
-var debug bool
+var (
+	windows bool
+	debug   bool
+)
 
 func main() {
+	flag.BoolVar(&windows, "windows", false, "windows")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.Parse()
 
@@ -25,7 +30,7 @@ func main() {
 }
 
 func run() error {
-	con, err := vsock.Dial(2, 1024)
+	con, err := dial()
 	if err != nil {
 		return err
 	}
@@ -42,6 +47,13 @@ func run() error {
 
 	go tx(con, tap)
 	return rx(con, tap)
+}
+
+func dial() (net.Conn, error) {
+	if windows {
+		return linuxkitvsock.Dial(linuxkitvsock.CIDHost, uint32(1024))
+	}
+	return mdlayhervsock.Dial(2, 1024)
 }
 
 func rx(conn net.Conn, tap *water.Interface) error {
