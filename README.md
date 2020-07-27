@@ -23,6 +23,8 @@ More docs: https://docs.microsoft.com/fr-fr/virtualization/hyper-v-on-windows/us
 
 On Fedora 32, it worked out of the box. On others distros, you might have to look at https://github.com/mdlayher/vsock#requirements.
 
+For CRC, the driver should be compiled with this patch: https://github.com/code-ready/machine-driver-libvirt/pull/45.
+
 #### Run
 
 ```
