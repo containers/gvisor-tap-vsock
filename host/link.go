@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net"
 	"sync"
 
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -34,7 +36,6 @@ func (e *TapLinkEndpoint) ARPHardwareType() header.ARPHardwareType {
 
 func (e *TapLinkEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.dispatcher = dispatcher
-	go e.acceptOne()
 }
 
 func (e *TapLinkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
@@ -93,14 +94,17 @@ func (e *TapLinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol t
 	defer e.lock.Unlock()
 	if _, err := e.conn.Write(size); err != nil {
 		log.Error(err)
+		return tcpip.ErrAborted
 	}
 
 	if _, err := e.conn.Write(hdr.View()); err != nil {
 		log.Error(err)
+		return tcpip.ErrAborted
 	}
 
 	if _, err := e.conn.Write(payload.ToView()); err != nil {
 		log.Error(err)
+		return tcpip.ErrAborted
 	}
 	return nil
 }
@@ -109,7 +113,7 @@ func (e *TapLinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error 
 	return tcpip.ErrNoRoute
 }
 
-func (e *TapLinkEndpoint) acceptOne() {
+func (e *TapLinkEndpoint) AcceptOne() error {
 	log.Info("waiting for packets...")
 	for {
 		var err error
@@ -130,24 +134,20 @@ func rx(conn net.Conn, e *TapLinkEndpoint) error {
 		sizeBuf := make([]byte, 2)
 		n, err := conn.Read(sizeBuf)
 		if err != nil {
-			log.Error(err)
-			continue
+			return errors.Wrap(err, "cannot read size from socket")
 		}
 		if n != 2 {
-			log.Errorf("unexpected size %d", n)
-			continue
+			return fmt.Errorf("unexpected size %d", n)
 		}
 		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
 
 		buf := make([]byte, size)
 		n, err = conn.Read(buf)
 		if err != nil {
-			log.Error(err)
-			continue
+			return errors.Wrap(err, "cannot read packet from socket")
 		}
 		if n == 0 || n != size {
-			log.Errorf("unexpected size %d != %d", n, size)
-			continue
+			return fmt.Errorf("unexpected size %d != %d", n, size)
 		}
 
 		if e.Debug {
@@ -162,6 +162,9 @@ func rx(conn net.Conn, e *TapLinkEndpoint) error {
 		vv := buffer.NewVectorisedView(len(view), []buffer.View{view})
 		vv.TrimFront(header.EthernetMinimumSize)
 
+		if e.dispatcher == nil {
+			continue
+		}
 		e.dispatcher.DeliverNetworkPacket(
 			eth.SourceAddress(),
 			eth.DestinationAddress(),
