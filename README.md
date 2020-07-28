@@ -13,7 +13,7 @@ make
 #### Windows prerequisites
 
 ```
-$service = New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices" -Name "00001010-FACB-11E6-BD58-64006A7986D3"
+$service = New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices" -Name "00000400-FACB-11E6-BD58-64006A7986D3"
 $service.SetValue("ElementName", "gvisor-tap-vsock")
 ```
 
@@ -28,7 +28,7 @@ For CRC, the driver should be compiled with this patch: https://github.com/code-
 #### Run
 
 ```
-(host) $ sudo bin/host -debug -logtostderr [-windows if using windows]
+(host) $ sudo bin/host -debug -logtostderr
 ```
 
 ### VM

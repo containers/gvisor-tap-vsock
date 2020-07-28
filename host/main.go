@@ -28,8 +28,8 @@ const (
 )
 
 var (
-	debug   bool
-	mtu     int
+	debug bool
+	mtu   int
 )
 
 func main() {
@@ -113,7 +113,7 @@ func createStack(endpoint stack.LinkEndpoint) (*stack.Stack, error) {
 func listen() (net.Listener, error) {
 	// TODO: use less error-prone flags to detect OS
 	if runtime.GOOS == "windows" {
-		svcid, err := hvsock.GUIDFromString(fmt.Sprintf("%08x-FACB-11E6-BD58-64006A7986D4", 1024))
+		svcid, err := hvsock.GUIDFromString(fmt.Sprintf("%08x-FACB-11E6-BD58-64006A7986D3", 1024))
 		if err != nil {
 			return nil, err
 		}
