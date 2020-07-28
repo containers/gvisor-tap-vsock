@@ -17,7 +17,7 @@ $service = New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Vi
 $service.SetValue("ElementName", "gvisor-tap-vsock")
 ```
 
-More docs: https://docs.microsoft.com/fr-fr/virtualization/hyper-v-on-windows/user-guide/make-integration-service
+More docs: https://docs.microsoft.com/en-us/virtualization/hyper-v-on-windows/user-guide/make-integration-service
 
 #### Linux prerequisites
 
