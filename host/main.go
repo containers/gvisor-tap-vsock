@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"runtime"
 
 	log "github.com/golang/glog"
 	"github.com/linuxkit/virtsock/pkg/hvsock"
@@ -27,13 +28,11 @@ const (
 )
 
 var (
-	windows bool
 	debug   bool
 	mtu     int
 )
 
 func main() {
-	flag.BoolVar(&windows, "windows", false, "windows")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.Parse()
@@ -112,7 +111,8 @@ func createStack(endpoint stack.LinkEndpoint) (*stack.Stack, error) {
 }
 
 func listen() (net.Listener, error) {
-	if windows {
+	// TODO: use less error-prone flags to detect OS
+	if runtime.GOOS == "windows" {
 		svcid, err := hvsock.GUIDFromString(fmt.Sprintf("%08x-FACB-11E6-BD58-64006A7986D4", 1024))
 		if err != nil {
 			return nil, err
