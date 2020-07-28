@@ -8,6 +8,7 @@ require (
 	github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252
 	github.com/linuxkit/virtsock v0.0.0-20180830132707-8e79449dea07
 	github.com/mdlayher/vsock v0.0.0-20200508120832-7ad3638b3fbc
+	github.com/pkg/errors v0.9.1
 	github.com/songgao/packets v0.0.0-20160404182456-549a10cd4091
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	golang.org/x/sys v0.0.0-20200724161237-0e2f3a69832c // indirect

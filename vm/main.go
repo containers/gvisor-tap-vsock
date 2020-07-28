@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"flag"
+	"fmt"
 	"net"
 
 	log "github.com/golang/glog"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/gopacket/layers"
 	linuxkitvsock "github.com/linuxkit/virtsock/pkg/vsock"
 	mdlayhervsock "github.com/mdlayher/vsock"
+	"github.com/pkg/errors"
 	"github.com/songgao/packets/ethernet"
 	"github.com/songgao/water"
 )
@@ -32,7 +34,7 @@ func main() {
 func run() error {
 	con, err := dial()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "cannot connect to host")
 	}
 
 	tap, err := water.New(water.Config{
@@ -42,11 +44,13 @@ func run() error {
 		},
 	})
 	if err != nil {
-		return err
+		return errors.Wrap(err, "cannot create tap device")
 	}
 
-	go tx(con, tap)
-	return rx(con, tap)
+	errCh := make(chan error, 1)
+	go tx(con, tap, errCh)
+	go rx(con, tap, errCh)
+	return <-errCh
 }
 
 func dial() (net.Conn, error) {
@@ -56,14 +60,15 @@ func dial() (net.Conn, error) {
 	return mdlayhervsock.Dial(2, 1024)
 }
 
-func rx(conn net.Conn, tap *water.Interface) error {
+func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
 	log.Info("waiting for packets...")
 	var frame ethernet.Frame
 	for {
 		frame.Resize(1500)
 		n, err := tap.Read([]byte(frame))
 		if err != nil {
-			return err
+			errCh <- errors.Wrap(err, "cannot read packet from tap")
+			return
 		}
 		frame = frame[:n]
 
@@ -71,37 +76,39 @@ func rx(conn net.Conn, tap *water.Interface) error {
 		binary.LittleEndian.PutUint16(size, uint16(n))
 
 		if _, err := conn.Write(size); err != nil {
-			log.Error(err)
+			errCh <- errors.Wrap(err, "cannot write size to socket")
+			return
 		}
 		if _, err := conn.Write(frame); err != nil {
-			log.Error(err)
+			errCh <- errors.Wrap(err, "cannot write packet to socket")
+			return
 		}
 	}
 }
 
-func tx(conn net.Conn, tap *water.Interface) {
+func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
 	for {
 		sizeBuf := make([]byte, 2)
 		n, err := conn.Read(sizeBuf)
 		if err != nil {
-			log.Error(err)
-			continue
+			errCh <- errors.Wrap(err, "cannot read size from socket")
+			return
 		}
 		if n != 2 {
-			log.Errorf("unexpected size %d", n)
-			continue
+			errCh <- fmt.Errorf("unexpected size %d", n)
+			return
 		}
 		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
 
 		buf := make([]byte, size)
 		n, err = conn.Read(buf)
 		if err != nil {
-			log.Error(err)
-			continue
+			errCh <- errors.Wrap(err, "cannot read payload from socket")
+			return
 		}
 		if n == 0 {
-			log.Errorf("unexpected size %d != %d", n, size)
-			continue
+			errCh <- fmt.Errorf("unexpected size %d != %d", n, size)
+			return
 		}
 
 		if debug {
@@ -110,7 +117,8 @@ func tx(conn net.Conn, tap *water.Interface) {
 		}
 
 		if _, err := tap.Write(buf); err != nil {
-			log.Error(err)
+			errCh <- errors.Wrap(err, "cannot write packet to tap")
+			return
 		}
 	}
 }
