@@ -15,16 +15,19 @@ import (
 	"github.com/pkg/errors"
 	"github.com/songgao/packets/ethernet"
 	"github.com/songgao/water"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 var (
 	windows bool
 	debug   bool
+	mtu     int
 )
 
 func main() {
 	flag.BoolVar(&windows, "windows", false, "windows")
 	flag.BoolVar(&debug, "debug", false, "debug")
+	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.Parse()
 
 	if err := run(); err != nil {
@@ -66,7 +69,7 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
 	log.Info("waiting for packets...")
 	var frame ethernet.Frame
 	for {
-		frame.Resize(1500)
+		frame.Resize(mtu)
 		n, err := tap.Read([]byte(frame))
 		if err != nil {
 			errCh <- errors.Wrap(err, "cannot read packet from tap")
@@ -90,7 +93,7 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
 
 func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
 	sizeBuf := make([]byte, 2)
-	buf := make([]byte, 1514)
+	buf := make([]byte, mtu+header.EthernetMinimumSize)
 
 	for {
 		n, err := io.ReadFull(conn, sizeBuf)

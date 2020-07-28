@@ -29,11 +29,13 @@ const (
 var (
 	windows bool
 	debug   bool
+	mtu     int
 )
 
 func main() {
 	flag.BoolVar(&windows, "windows", false, "windows")
 	flag.BoolVar(&debug, "debug", false, "debug")
+	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.Parse()
 
 	if err := run(); err != nil {
@@ -50,7 +52,7 @@ func run() error {
 	endpoint := &TapLinkEndpoint{
 		Listener:            ln,
 		Debug:               debug,
-		MaxTransmissionUnit: 1500,
+		MaxTransmissionUnit: mtu,
 		Mac:                 tcpip.LinkAddress(gatewayMacAddress),
 	}
 

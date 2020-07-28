@@ -21,7 +21,7 @@ type TapLinkEndpoint struct {
 	Listener            net.Listener
 	Debug               bool
 	Mac                 tcpip.LinkAddress
-	MaxTransmissionUnit uint16
+	MaxTransmissionUnit int
 
 	conn     net.Conn
 	connLock sync.Mutex
@@ -161,7 +161,7 @@ func (e *TapLinkEndpoint) AcceptOne() error {
 
 func rx(conn net.Conn, e *TapLinkEndpoint) error {
 	sizeBuf := make([]byte, 2)
-	buf := make([]byte, 1514)
+	buf := make([]byte, mtu+header.EthernetMinimumSize)
 
 	for {
 		n, err := io.ReadFull(conn, sizeBuf)
