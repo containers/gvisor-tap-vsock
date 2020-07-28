@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 
@@ -22,9 +23,12 @@ type TapLinkEndpoint struct {
 	Mac                 tcpip.LinkAddress
 	MaxTransmissionUnit uint16
 
-	conn       net.Conn
+	conn     net.Conn
+	connLock sync.Mutex
+
 	dispatcher stack.NetworkDispatcher
-	lock       sync.Mutex
+
+	writeLock sync.Mutex
 }
 
 func (e *TapLinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
@@ -87,24 +91,41 @@ func (e *TapLinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol t
 		log.Info(packet.String())
 	}
 
+	if err := e.writeSockets(hdr, payload); err != nil {
+		log.Error(errors.Wrap(err, "cannot send packets"))
+		return tcpip.ErrAborted
+	}
+	return nil
+}
+
+func (e *TapLinkEndpoint) writeSockets(hdr buffer.Prependable, payload buffer.VectorisedView) error {
 	size := make([]byte, 2)
 	binary.LittleEndian.PutUint16(size, uint16(hdr.UsedLength()+payload.Size()))
 
-	e.lock.Lock()
-	defer e.lock.Unlock()
+	e.writeLock.Lock()
+	defer e.writeLock.Unlock()
+
+	e.connLock.Lock()
+	defer e.connLock.Unlock()
+
+	if e.conn == nil {
+		return nil
+	}
+
 	if _, err := e.conn.Write(size); err != nil {
-		log.Error(err)
-		return tcpip.ErrAborted
+		e.conn.Close()
+		e.conn = nil
+		return err
 	}
-
 	if _, err := e.conn.Write(hdr.View()); err != nil {
-		log.Error(err)
-		return tcpip.ErrAborted
+		e.conn.Close()
+		e.conn = nil
+		return err
 	}
-
 	if _, err := e.conn.Write(payload.ToView()); err != nil {
-		log.Error(err)
-		return tcpip.ErrAborted
+		e.conn.Close()
+		e.conn = nil
+		return err
 	}
 	return nil
 }
@@ -116,14 +137,23 @@ func (e *TapLinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error 
 func (e *TapLinkEndpoint) AcceptOne() error {
 	log.Info("waiting for packets...")
 	for {
-		var err error
-		e.conn, err = e.Listener.Accept()
+		conn, err := e.Listener.Accept()
 		if err != nil {
-			log.Fatal("accept error: ", err)
+			return errors.Wrap(err, "cannot accept new client")
 		}
+		e.connLock.Lock()
+		e.conn = conn
+		e.connLock.Unlock()
 		go func() {
-			if err := rx(e.conn, e); err != nil {
-				log.Fatal(err)
+			defer func() {
+				e.connLock.Lock()
+				e.conn = nil
+				e.connLock.Unlock()
+				conn.Close()
+			}()
+			if err := rx(conn, e); err != nil {
+				log.Error(errors.Wrap(err, "cannot receive packets"))
+				return
 			}
 		}()
 	}
