@@ -108,7 +108,7 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
 			errCh <- errors.Wrap(err, "cannot read payload from socket")
 			return
 		}
-		if n == 0 {
+		if n == 0 || n != size {
 			errCh <- fmt.Errorf("unexpected size %d != %d", n, size)
 			return
 		}
