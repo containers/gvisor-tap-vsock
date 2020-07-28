@@ -160,8 +160,10 @@ func (e *TapLinkEndpoint) AcceptOne() error {
 }
 
 func rx(conn net.Conn, e *TapLinkEndpoint) error {
+	sizeBuf := make([]byte, 2)
+	buf := make([]byte, 1514)
+
 	for {
-		sizeBuf := make([]byte, 2)
 		n, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read size from socket")
@@ -171,8 +173,7 @@ func rx(conn net.Conn, e *TapLinkEndpoint) error {
 		}
 		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
 
-		buf := make([]byte, size)
-		n, err = io.ReadFull(conn, buf)
+		n, err = io.ReadFull(conn, buf[:size])
 		if err != nil {
 			return errors.Wrap(err, "cannot read packet from socket")
 		}
@@ -181,13 +182,11 @@ func rx(conn net.Conn, e *TapLinkEndpoint) error {
 		}
 
 		if e.Debug {
-			packet := gopacket.NewPacket(buf, layers.LayerTypeEthernet, gopacket.Default)
+			packet := gopacket.NewPacket(buf[:size], layers.LayerTypeEthernet, gopacket.Default)
 			log.Info(packet.String())
 		}
 
-		view := buffer.NewView(size)
-		copy(view, buf)
-
+		view := buffer.View(buf[:size])
 		eth := header.Ethernet(view)
 		vv := buffer.NewVectorisedView(len(view), []buffer.View{view})
 		vv.TrimFront(header.EthernetMinimumSize)
