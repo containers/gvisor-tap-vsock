@@ -89,8 +89,10 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
 }
 
 func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
+	sizeBuf := make([]byte, 2)
+	buf := make([]byte, 1514)
+
 	for {
-		sizeBuf := make([]byte, 2)
 		n, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
 			errCh <- errors.Wrap(err, "cannot read size from socket")
@@ -102,8 +104,7 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
 		}
 		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
 
-		buf := make([]byte, size)
-		n, err = io.ReadFull(conn, buf)
+		n, err = io.ReadFull(conn, buf[:size])
 		if err != nil {
 			errCh <- errors.Wrap(err, "cannot read payload from socket")
 			return
@@ -114,11 +115,11 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
 		}
 
 		if debug {
-			packet := gopacket.NewPacket(buf, layers.LayerTypeEthernet, gopacket.Default)
+			packet := gopacket.NewPacket(buf[:size], layers.LayerTypeEthernet, gopacket.Default)
 			log.Info(packet.String())
 		}
 
-		if _, err := tap.Write(buf); err != nil {
+		if _, err := tap.Write(buf[:size]); err != nil {
 			errCh <- errors.Wrap(err, "cannot write packet to tap")
 			return
 		}
