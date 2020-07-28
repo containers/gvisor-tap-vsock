@@ -32,10 +32,11 @@ func main() {
 }
 
 func run() error {
-	con, err := dial()
+	conn, err := dial()
 	if err != nil {
 		return errors.Wrap(err, "cannot connect to host")
 	}
+	defer conn.Close()
 
 	tap, err := water.New(water.Config{
 		DeviceType: water.TAP,
@@ -48,8 +49,8 @@ func run() error {
 	}
 
 	errCh := make(chan error, 1)
-	go tx(con, tap, errCh)
-	go rx(con, tap, errCh)
+	go tx(conn, tap, errCh)
+	go rx(conn, tap, errCh)
 	return <-errCh
 }
 
