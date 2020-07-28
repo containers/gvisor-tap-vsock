@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 
 	log "github.com/golang/glog"
@@ -90,7 +91,7 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
 func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
 	for {
 		sizeBuf := make([]byte, 2)
-		n, err := conn.Read(sizeBuf)
+		n, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
 			errCh <- errors.Wrap(err, "cannot read size from socket")
 			return
@@ -102,7 +103,7 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
 		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
 
 		buf := make([]byte, size)
-		n, err = conn.Read(buf)
+		n, err = io.ReadFull(conn, buf)
 		if err != nil {
 			errCh <- errors.Wrap(err, "cannot read payload from socket")
 			return

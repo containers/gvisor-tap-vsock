@@ -162,7 +162,7 @@ func (e *TapLinkEndpoint) AcceptOne() error {
 func rx(conn net.Conn, e *TapLinkEndpoint) error {
 	for {
 		sizeBuf := make([]byte, 2)
-		n, err := conn.Read(sizeBuf)
+		n, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read size from socket")
 		}
@@ -172,7 +172,7 @@ func rx(conn net.Conn, e *TapLinkEndpoint) error {
 		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
 
 		buf := make([]byte, size)
-		n, err = conn.Read(buf)
+		n, err = io.ReadFull(conn, buf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read packet from socket")
 		}
