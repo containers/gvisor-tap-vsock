@@ -4,11 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"os"
+	"path"
 	"runtime"
 
 	log "github.com/golang/glog"
 	"github.com/linuxkit/virtsock/pkg/hvsock"
-	"github.com/mdlayher/vsock"
+	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
@@ -122,5 +124,16 @@ func listen() (net.Listener, error) {
 			ServiceID: svcid,
 		})
 	}
-	return vsock.Listen(1024)
+	if runtime.GOOS == "darwin" {
+		path := path.Join(os.Getenv("VM_DIRECTORY"), fmt.Sprintf("00000002.%08x", 1024))
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		return net.ListenUnix("unix", &net.UnixAddr{
+			Name: path,
+			Net:  "unix",
+		})
+
+	}
+	return mdlayhervsock.Listen(1024)
 }
