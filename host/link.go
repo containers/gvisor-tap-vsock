@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"net"
 	"sync"
 
 	log "github.com/golang/glog"
@@ -18,13 +17,11 @@ import (
 )
 
 type TapLinkEndpoint struct {
-	Listener            net.Listener
+	Reader              io.Reader
+	Writer              io.Writer
 	Debug               bool
 	Mac                 tcpip.LinkAddress
 	MaxTransmissionUnit int
-
-	conn     net.Conn
-	connLock sync.Mutex
 
 	dispatcher stack.NetworkDispatcher
 
@@ -105,26 +102,13 @@ func (e *TapLinkEndpoint) writeSockets(hdr buffer.Prependable, payload buffer.Ve
 	e.writeLock.Lock()
 	defer e.writeLock.Unlock()
 
-	e.connLock.Lock()
-	defer e.connLock.Unlock()
-
-	if e.conn == nil {
-		return nil
-	}
-
-	if _, err := e.conn.Write(size); err != nil {
-		e.conn.Close()
-		e.conn = nil
+	if _, err := e.Writer.Write(size); err != nil {
 		return err
 	}
-	if _, err := e.conn.Write(hdr.View()); err != nil {
-		e.conn.Close()
-		e.conn = nil
+	if _, err := e.Writer.Write(hdr.View()); err != nil {
 		return err
 	}
-	if _, err := e.conn.Write(payload.ToView()); err != nil {
-		e.conn.Close()
-		e.conn = nil
+	if _, err := e.Writer.Write(payload.ToView()); err != nil {
 		return err
 	}
 	return nil
@@ -135,31 +119,14 @@ func (e *TapLinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error 
 }
 
 func (e *TapLinkEndpoint) AcceptOne() error {
-	log.Info("waiting for packets...")
-	for {
-		conn, err := e.Listener.Accept()
-		if err != nil {
-			return errors.Wrap(err, "cannot accept new client")
-		}
-		e.connLock.Lock()
-		e.conn = conn
-		e.connLock.Unlock()
-		go func() {
-			defer func() {
-				e.connLock.Lock()
-				e.conn = nil
-				e.connLock.Unlock()
-				conn.Close()
-			}()
-			if err := rx(conn, e); err != nil {
-				log.Error(errors.Wrap(err, "cannot receive packets"))
-				return
-			}
-		}()
+	if err := rx(e.Reader, e); err != nil {
+		log.Error(errors.Wrap(err, "cannot receive packets"))
+		return err
 	}
+	return nil
 }
 
-func rx(conn net.Conn, e *TapLinkEndpoint) error {
+func rx(conn io.Reader, e *TapLinkEndpoint) error {
 	sizeBuf := make([]byte, 2)
 	buf := make([]byte, mtu+header.EthernetMinimumSize)
 

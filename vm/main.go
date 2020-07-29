@@ -5,13 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
+	"os"
 
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	linuxkitvsock "github.com/linuxkit/virtsock/pkg/vsock"
-	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
 	"github.com/songgao/packets/ethernet"
 	"github.com/songgao/water"
@@ -36,12 +34,6 @@ func main() {
 }
 
 func run() error {
-	conn, err := dial()
-	if err != nil {
-		return errors.Wrap(err, "cannot connect to host")
-	}
-	defer conn.Close()
-
 	tap, err := water.New(water.Config{
 		DeviceType: water.TAP,
 		PlatformSpecificParams: water.PlatformSpecificParams{
@@ -53,19 +45,12 @@ func run() error {
 	}
 
 	errCh := make(chan error, 1)
-	go tx(conn, tap, errCh)
-	go rx(conn, tap, errCh)
+	go tx(os.Stdin, tap, errCh)
+	go rx(os.Stdout, tap, errCh)
 	return <-errCh
 }
 
-func dial() (net.Conn, error) {
-	if windows {
-		return linuxkitvsock.Dial(linuxkitvsock.CIDHost, uint32(1024))
-	}
-	return mdlayhervsock.Dial(2, 1024)
-}
-
-func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
+func rx(conn io.Writer, tap *water.Interface, errCh chan error) {
 	log.Info("waiting for packets...")
 	var frame ethernet.Frame
 	for {
@@ -91,7 +76,7 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
 	}
 }
 
-func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
+func tx(conn io.Reader, tap *water.Interface, errCh chan error) {
 	sizeBuf := make([]byte, 2)
 	buf := make([]byte, mtu+header.EthernetMinimumSize)
 
