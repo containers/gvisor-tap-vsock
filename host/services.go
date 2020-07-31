@@ -20,6 +20,11 @@ import (
 func addServices(s *stack.Stack) error {
 	forwardTCPPackets(s)
 	forwardUDPPackets(s)
+	go func() {
+		if err := dnsServer(s); err != nil {
+			log.Error(err)
+		}
+	}()
 	return sampleHTTPServer(s)
 }
 

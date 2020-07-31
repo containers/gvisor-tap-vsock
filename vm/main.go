@@ -77,6 +77,11 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
 		}
 		frame = frame[:n]
 
+		if debug {
+			packet := gopacket.NewPacket(frame, layers.LayerTypeEthernet, gopacket.Default)
+			log.Info(packet.String())
+		}
+
 		size := make([]byte, 2)
 		binary.LittleEndian.PutUint16(size, uint16(n))
 
