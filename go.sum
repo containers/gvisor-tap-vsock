@@ -92,8 +92,8 @@ github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252/go.mod h1:DavVbd41
 github.com/google/uuid v1.0.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/googleapis/gax-go/v2 v2.0.4/go.mod h1:0Wqv26UfaUD9n4G6kQubkQ+KchISgw+vpHVxEJEs9eg=
 github.com/googleapis/gax-go/v2 v2.0.5/go.mod h1:DWXyrwAJ9X0FpwwEdw+IPEYBICEFu5mhpdKc/us6bOk=
-github.com/guillaumerose/dns-1 v1.1.5-0.20200729132415-e3047e164937 h1:xSDOoK70eU8K8AHT81QJYZmy7ZH7RJ5p3kD0hHJDwU4=
-github.com/guillaumerose/dns-1 v1.1.5-0.20200729132415-e3047e164937/go.mod h1:KNUDUusw/aVsxyTYZM1oqvCicbwhgbNgztCETuNZ7xM=
+github.com/guillaumerose/dns-1 v1.1.5-0.20200731203003-fe9b991fbece h1:uBOoHhCRXk0kXpM6CYTFlfVDPFasnRkkgRSoGSJtFLA=
+github.com/guillaumerose/dns-1 v1.1.5-0.20200731203003-fe9b991fbece/go.mod h1:KNUDUusw/aVsxyTYZM1oqvCicbwhgbNgztCETuNZ7xM=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
 github.com/hashicorp/go-multierror v1.0.0/go.mod h1:dHtQlpGsu+cZNNAkkCN/P3hoUDHhCYQXV3UM06sGGrk=
 github.com/hashicorp/golang-lru v0.5.0/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=

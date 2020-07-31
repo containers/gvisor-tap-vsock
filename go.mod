@@ -16,4 +16,4 @@ require (
 	gvisor.dev/gvisor v0.0.0-20200727050644-5e9c2950a570
 )
 
-replace github.com/miekg/dns => github.com/guillaumerose/dns-1 v1.1.5-0.20200729132415-e3047e164937
+replace github.com/miekg/dns => github.com/guillaumerose/dns-1 v1.1.5-0.20200731203003-fe9b991fbece
