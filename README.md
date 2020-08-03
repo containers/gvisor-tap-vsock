@@ -19,11 +19,20 @@ $service.SetValue("ElementName", "gvisor-tap-vsock")
 
 More docs: https://docs.microsoft.com/en-us/virtualization/hyper-v-on-windows/user-guide/make-integration-service
 
+In the VM, be sure to have `hv_sock` module loaded.
+
 #### Linux prerequisites
 
 On Fedora 32, it worked out of the box. On others distros, you might have to look at https://github.com/mdlayher/vsock#requirements.
 
 For CRC, the driver should be compiled with this patch: https://github.com/code-ready/machine-driver-libvirt/pull/45.
+
+#### macOS prerequisites
+
+Please locate the hyperkit state (there is a file called `connect` inside) folder and launch `host` with the following env variable:
+`VM_DIRECTORY=path_to_connect_directory`
+
+For CRC, the driver should be compiled with this patch: https://github.com/code-ready/machine-driver-hyperkit/pull/12.
 
 #### Run
 
@@ -44,4 +53,12 @@ For CRC, the driver should be compiled with this patch: https://github.com/code-
 + sudo route add default gw 192.168.127.1 dev O_O
 (vm) $ ping -c1 192.168.127.1
 (vm) $ curl http://redhat.com
+```
+
+### Internal DNS
+
+Activate it by changing the `/etc/resolv.conf` file inside the VM with:
+```
+nameserver 192.168.127.1
+options single-request
 ```
