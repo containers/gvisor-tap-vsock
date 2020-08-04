@@ -25,7 +25,27 @@ func addServices(s *stack.Stack) error {
 			log.Error(err)
 		}
 	}()
+	go func() {
+		if err := forwardHostVM(s); err != nil {
+			log.Error(err)
+		}
+	}()
 	return sampleHTTPServer(s)
+}
+
+func forwardHostVM(s *stack.Stack) error {
+	var p tcpproxy.Proxy
+	p.AddRoute(":2222", &tcpproxy.DialProxy{
+		Addr: fmt.Sprintf("%s:22", vm),
+		DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
+			return gonet.DialTCP(s, tcpip.FullAddress{
+				NIC:  1,
+				Addr: tcpip.Address(net.ParseIP(vm).To4()),
+				Port: uint16(22),
+			}, ipv4.ProtocolNumber)
+		},
+	})
+	return p.Run()
 }
 
 func sampleHTTPServer(s *stack.Stack) error {

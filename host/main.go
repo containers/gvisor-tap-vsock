@@ -27,6 +27,8 @@ const (
 
 	gateway           = "192.168.127.1"
 	gatewayMacAddress = "\x5A\x94\xEF\xE4\x0C\xDD"
+
+	vm = "192.168.127.0"
 )
 
 var (
