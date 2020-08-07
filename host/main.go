@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path"
@@ -13,6 +14,7 @@ import (
 	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -52,11 +54,25 @@ func run() error {
 		return errors.Wrap(err, "cannot listen vsock")
 	}
 
-	endpoint := &TapLinkEndpoint{
+	var endpoint stack.LinkEndpoint
+	tapEndpoint := &TapLinkEndpoint{
 		Listener:            ln,
 		Debug:               debug,
 		MaxTransmissionUnit: mtu,
 		Mac:                 tcpip.LinkAddress(gatewayMacAddress),
+	}
+	if debug {
+		_ = os.Remove("capture.pcap")
+		fd, err := os.Create("capture.pcap")
+		if err != nil {
+			return errors.Wrap(err, "cannot create capture file")
+		}
+		endpoint, err = sniffer.NewWithWriter(tapEndpoint, fd, math.MaxUint32)
+		if err != nil {
+			return errors.Wrap(err, "cannot create sniffer")
+		}
+	} else {
+		endpoint = tapEndpoint
 	}
 
 	stack, err := createStack(endpoint)
@@ -69,7 +85,7 @@ func run() error {
 	}
 
 	// stack.Wait()
-	return endpoint.AcceptOne()
+	return tapEndpoint.AcceptOne()
 }
 
 func createStack(endpoint stack.LinkEndpoint) (*stack.Stack, error) {
