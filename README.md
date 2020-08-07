@@ -1,5 +1,7 @@
 # gvisor-tap-vsock 
 
+A replacement for [VPNKit](https://github.com/moby/vpnkit), written in pure Go.
+
 ## Build
 
 ```
@@ -45,14 +47,14 @@ For CRC, the driver should be compiled with this patch: https://github.com/code-
 ```
 (host) $ scp bin/vm crc:
 (host) $ scp setup.sh crc:
-(vm) $ sudo ./vm -debug -logtostderr [-windows if using windows]
-(vm) $ sudo ./setup.sh
+(vm terminal 1) $ sudo ./vm -debug -logtostderr [-windows if using windows]
+(vm terminal 2) $ sudo ./setup.sh
 + sudo ip addr add 192.168.127.0/24 dev O_O
 + sudo ip link set dev O_O up
 + sudo route del default gw 192.168.130.1
 + sudo route add default gw 192.168.127.1 dev O_O
-(vm) $ ping -c1 192.168.127.1
-(vm) $ curl http://redhat.com
+(vm terminal 2) $ ping -c1 192.168.127.1
+(vm terminal 2) $ curl http://redhat.com
 ```
 
 ### Internal DNS
@@ -60,5 +62,9 @@ For CRC, the driver should be compiled with this patch: https://github.com/code-
 Activate it by changing the `/etc/resolv.conf` file inside the VM with:
 ```
 nameserver 192.168.127.1
-options single-request
 ```
+
+
+## Performance
+
+Using iperf3, running the server on the host and the client in the VM, it can achieve 600Mbits/s.
