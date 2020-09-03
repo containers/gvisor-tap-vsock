@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os/exec"
+	"os/user"
 
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	linuxkitvsock "github.com/linuxkit/virtsock/pkg/vsock"
 	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
 	"github.com/songgao/packets/ethernet"
@@ -36,10 +37,24 @@ func main() {
 }
 
 func run() error {
-	conn, err := dial()
+	ln, err := mdlayhervsock.Listen(1024)
 	if err != nil {
-		return errors.Wrap(err, "cannot connect to host")
+		return err
 	}
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		if err := handle(conn); err != nil {
+			log.Error(err)
+			continue
+		}
+	}
+}
+
+func handle(conn net.Conn) error {
 	defer conn.Close()
 
 	tap, err := water.New(water.Config{
@@ -51,18 +66,52 @@ func run() error {
 	if err != nil {
 		return errors.Wrap(err, "cannot create tap device")
 	}
+	defer tap.Close()
 
 	errCh := make(chan error, 1)
 	go tx(conn, tap, errCh)
 	go rx(conn, tap, errCh)
-	return <-errCh
-}
 
-func dial() (net.Conn, error) {
-	if windows {
-		return linuxkitvsock.Dial(linuxkitvsock.CIDHost, uint32(1024))
+	user, err := user.Current()
+	if err != nil {
+		return err
 	}
-	return mdlayhervsock.Dial(2, 1024)
+	commands := []string{
+		"ip addr add 192.168.127.2/24 dev O_O",
+		"ip link set dev O_O up",
+		"route del default gw 192.168.130.1",
+		"route add default gw 192.168.127.1 dev O_O",
+		"ifconfig O_O mtu 1500 up",
+	}
+	defer func() {
+		command := exec.Command("sudo", "/bin/sh", "-c", "route add default gw 192.168.130.1 dev ens3")
+		if user.Uid == "0" {
+			command = exec.Command("/bin/sh", "-c", "route add default gw 192.168.130.1 dev ens3")
+		}
+		out, err := command.CombinedOutput()
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		log.Info(out)
+	}()
+	for _, command := range commands {
+		log.Infof("Running %s", command)
+		cmd := exec.Command("sudo", "/bin/sh", "-c", command)
+		if user.Uid == "0" {
+			cmd = exec.Command("/bin/sh", "-c", command)
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		if len(out) > 0 {
+			log.Info(out)
+		}
+	}
+
+	return <-errCh
 }
 
 func rx(conn net.Conn, tap *water.Interface, errCh chan error) {

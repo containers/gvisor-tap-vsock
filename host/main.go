@@ -6,8 +6,9 @@ import (
 	"math"
 	"net"
 	"os"
-	"path"
+	"path/filepath"
 	"runtime"
+	"time"
 
 	log "github.com/golang/glog"
 	"github.com/linuxkit/virtsock/pkg/hvsock"
@@ -43,20 +44,20 @@ func main() {
 	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.Parse()
 
-	if err := run(); err != nil {
+	if err := run(debug, mtu); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run() error {
-	ln, err := listen()
+func run(debug bool, mtu int) error {
+	conn, err := dial()
 	if err != nil {
 		return errors.Wrap(err, "cannot listen vsock")
 	}
 
 	var endpoint stack.LinkEndpoint
 	tapEndpoint := &TapLinkEndpoint{
-		Listener:            ln,
+		Conn:                conn,
 		Debug:               debug,
 		MaxTransmissionUnit: mtu,
 		Mac:                 tcpip.LinkAddress(gatewayMacAddress),
@@ -85,6 +86,14 @@ func run() error {
 	}
 
 	// stack.Wait()
+
+	go func() {
+		for {
+			fmt.Printf("%v packets sent, %v packets received\n", stack.Stats().IP.PacketsSent.Value(), stack.Stats().IP.PacketsReceived.Value())
+			time.Sleep(5 * time.Second)
+		}
+
+	}()
 	return tapEndpoint.AcceptOne()
 }
 
@@ -130,28 +139,30 @@ func createStack(endpoint stack.LinkEndpoint) (*stack.Stack, error) {
 	return s, nil
 }
 
-func listen() (net.Listener, error) {
-	// TODO: use less error-prone flags to detect OS
+func dial() (net.Conn, error) {
 	if runtime.GOOS == "windows" {
 		svcid, err := hvsock.GUIDFromString(fmt.Sprintf("%08x-FACB-11E6-BD58-64006A7986D3", 1024))
 		if err != nil {
 			return nil, err
 		}
-		return hvsock.Listen(hvsock.Addr{
-			VMID:      hvsock.GUIDWildcard,
+		vmid, err := hvsock.GUIDFromString(os.Getenv("VMID"))
+		if err != nil {
+			return nil, err
+		}
+		return hvsock.Dial(hvsock.Addr{
+			VMID:      vmid,
 			ServiceID: svcid,
 		})
 	}
 	if runtime.GOOS == "darwin" {
-		path := path.Join(os.Getenv("VM_DIRECTORY"), fmt.Sprintf("00000002.%08x", 1024))
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		conn, err := net.Dial("unix", filepath.Join(os.Getenv("VM_DIRECTORY"), "connect"))
+		if err != nil {
 			return nil, err
 		}
-		return net.ListenUnix("unix", &net.UnixAddr{
-			Name: path,
-			Net:  "unix",
-		})
-
+		if _, err := fmt.Fprintf(conn, "%08x.%08x\n", 3, 1024); err != nil {
+			return nil, err
+		}
+		return conn, err
 	}
-	return mdlayhervsock.Listen(1024)
+	return mdlayhervsock.Dial(3, 1024)
 }

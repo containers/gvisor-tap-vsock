@@ -18,13 +18,10 @@ import (
 )
 
 type TapLinkEndpoint struct {
-	Listener            net.Listener
+	Conn                net.Conn
 	Debug               bool
 	Mac                 tcpip.LinkAddress
 	MaxTransmissionUnit int
-
-	conn     net.Conn
-	connLock sync.Mutex
 
 	dispatcher stack.NetworkDispatcher
 
@@ -105,26 +102,16 @@ func (e *TapLinkEndpoint) writeSockets(hdr buffer.Prependable, payload buffer.Ve
 	e.writeLock.Lock()
 	defer e.writeLock.Unlock()
 
-	e.connLock.Lock()
-	defer e.connLock.Unlock()
-
-	if e.conn == nil {
-		return nil
-	}
-
-	if _, err := e.conn.Write(size); err != nil {
-		e.conn.Close()
-		e.conn = nil
+	if _, err := e.Conn.Write(size); err != nil {
+		e.Conn.Close()
 		return err
 	}
-	if _, err := e.conn.Write(hdr.View()); err != nil {
-		e.conn.Close()
-		e.conn = nil
+	if _, err := e.Conn.Write(hdr.View()); err != nil {
+		e.Conn.Close()
 		return err
 	}
-	if _, err := e.conn.Write(payload.ToView()); err != nil {
-		e.conn.Close()
-		e.conn = nil
+	if _, err := e.Conn.Write(payload.ToView()); err != nil {
+		e.Conn.Close()
 		return err
 	}
 	return nil
@@ -136,27 +123,10 @@ func (e *TapLinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error 
 
 func (e *TapLinkEndpoint) AcceptOne() error {
 	log.Info("waiting for packets...")
-	for {
-		conn, err := e.Listener.Accept()
-		if err != nil {
-			return errors.Wrap(err, "cannot accept new client")
-		}
-		e.connLock.Lock()
-		e.conn = conn
-		e.connLock.Unlock()
-		go func() {
-			defer func() {
-				e.connLock.Lock()
-				e.conn = nil
-				e.connLock.Unlock()
-				conn.Close()
-			}()
-			if err := rx(conn, e); err != nil {
-				log.Error(errors.Wrap(err, "cannot receive packets"))
-				return
-			}
-		}()
+	if err := rx(e.Conn, e); err != nil {
+		return errors.Wrap(err, "cannot receive packets")
 	}
+	return nil
 }
 
 func rx(conn net.Conn, e *TapLinkEndpoint) error {
@@ -172,7 +142,7 @@ func rx(conn net.Conn, e *TapLinkEndpoint) error {
 		}
 		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
 
-		buf := make([]byte, mtu+header.EthernetMinimumSize)
+		buf := make([]byte, e.MaxTransmissionUnit+header.EthernetMinimumSize)
 		n, err = io.ReadFull(conn, buf[:size])
 		if err != nil {
 			return errors.Wrap(err, "cannot read packet from socket")

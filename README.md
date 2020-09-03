@@ -68,3 +68,10 @@ nameserver 192.168.127.1
 ## Performance
 
 Using iperf3, running the server on the host and the client in the VM, it can achieve 600Mbits/s.
+
+
+## Inverted
+
+make selinux
+podman run -d --privileged --net=host -it quay.io/gurose/gvisor-tap-vsock
+

@@ -1,0 +1,10 @@
+module myapp 1.0;
+
+require {
+	type spc_t;
+	type unlabeled_t;
+	class vsock_socket { read write };
+}
+
+#============= spc_t ==============
+allow spc_t unlabeled_t:vsock_socket { read write };
