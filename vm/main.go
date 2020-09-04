@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os/exec"
-	"os/user"
 
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
@@ -16,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/songgao/packets/ethernet"
 	"github.com/songgao/water"
+	"github.com/vishvananda/netlink"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -72,46 +71,59 @@ func handle(conn net.Conn) error {
 	go tx(conn, tap, errCh)
 	go rx(conn, tap, errCh)
 
-	user, err := user.Current()
+	cleanup, err := linkUp()
+	defer cleanup()
 	if err != nil {
 		return err
 	}
-	commands := []string{
-		"ip addr add 192.168.127.2/24 dev O_O",
-		"ip link set dev O_O up",
-		"route del default gw 192.168.130.1",
-		"route add default gw 192.168.127.1 dev O_O",
-		"ifconfig O_O mtu 1500 up",
-	}
-	defer func() {
-		command := exec.Command("sudo", "/bin/sh", "-c", "route add default gw 192.168.130.1 dev ens3")
-		if user.Uid == "0" {
-			command = exec.Command("/bin/sh", "-c", "route add default gw 192.168.130.1 dev ens3")
-		}
-		out, err := command.CombinedOutput()
-		if err != nil {
-			log.Error(err)
-			return
-		}
-		log.Info(out)
-	}()
-	for _, command := range commands {
-		log.Infof("Running %s", command)
-		cmd := exec.Command("sudo", "/bin/sh", "-c", command)
-		if user.Uid == "0" {
-			cmd = exec.Command("/bin/sh", "-c", command)
-		}
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		if len(out) > 0 {
-			log.Info(out)
-		}
-	}
-
 	return <-errCh
+}
+
+func linkUp() (func(), error) {
+	link, err := netlink.LinkByName("O_O")
+	if err != nil {
+		return func() {}, err
+	}
+	newDefaultRoute := netlink.Route{
+		LinkIndex: link.Attrs().Index,
+		Gw:        net.ParseIP("192.168.127.1"),
+	}
+	var defaultRoute *netlink.Route
+	routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
+	for _, r := range routes {
+		if r.Dst == nil {
+			defaultRoute = &r
+			break
+		}
+	}
+	if defaultRoute == nil {
+		return func() {}, errors.New("no default gateway found")
+	}
+	cleanup := func() {
+		if err := netlink.RouteAdd(defaultRoute); err != nil {
+			log.Errorf("cannot restore old default gateway: %v", err)
+		}
+		if err := netlink.RouteDel(&newDefaultRoute); err != nil {
+			log.Errorf("cannot remove new default gateway: %v", err)
+		}
+	}
+	addr, err := netlink.ParseAddr("192.168.127.2/24")
+	if err != nil {
+		return cleanup, err
+	}
+	if err := netlink.AddrAdd(link, addr); err != nil {
+		return cleanup, errors.Wrap(err, "cannot add address")
+	}
+	if err := netlink.LinkSetUp(link); err != nil {
+		return cleanup, errors.Wrap(err, "cannot set link up")
+	}
+	if err := netlink.RouteDel(defaultRoute); err != nil {
+		return cleanup, errors.Wrap(err, "cannot remove old default gateway")
+	}
+	if err := netlink.RouteAdd(&newDefaultRoute); err != nil {
+		return cleanup, errors.Wrap(err, "cannot add new default gateway")
+	}
+	return cleanup, nil
 }
 
 func rx(conn net.Conn, tap *water.Interface, errCh chan error) {

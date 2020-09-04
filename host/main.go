@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/dustin/go-humanize"
+
 	log "github.com/golang/glog"
 	"github.com/linuxkit/virtsock/pkg/hvsock"
 	mdlayhervsock "github.com/mdlayher/vsock"
@@ -89,10 +91,9 @@ func run(debug bool, mtu int) error {
 
 	go func() {
 		for {
-			fmt.Printf("%v packets sent, %v packets received\n", stack.Stats().IP.PacketsSent.Value(), stack.Stats().IP.PacketsReceived.Value())
+			fmt.Printf("%v sent to the VM, %v received from the VM\n", humanize.Bytes(tapEndpoint.Sent), humanize.Bytes(tapEndpoint.Received))
 			time.Sleep(5 * time.Second)
 		}
-
 	}()
 	return tapEndpoint.AcceptOne()
 }

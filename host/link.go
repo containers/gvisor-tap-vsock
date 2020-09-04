@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
@@ -18,6 +19,9 @@ import (
 )
 
 type TapLinkEndpoint struct {
+	Sent     uint64
+	Received uint64
+
 	Conn                net.Conn
 	Debug               bool
 	Mac                 tcpip.LinkAddress
@@ -114,6 +118,8 @@ func (e *TapLinkEndpoint) writeSockets(hdr buffer.Prependable, payload buffer.Ve
 		e.Conn.Close()
 		return err
 	}
+
+	atomic.AddUint64(&e.Sent, uint64(hdr.UsedLength()+payload.Size()))
 	return nil
 }
 
@@ -164,6 +170,8 @@ func rx(conn net.Conn, e *TapLinkEndpoint) error {
 		if e.dispatcher == nil {
 			continue
 		}
+
+		atomic.AddUint64(&e.Received, uint64(size))
 		e.dispatcher.DeliverNetworkPacket(
 			eth.SourceAddress(),
 			eth.DestinationAddress(),
