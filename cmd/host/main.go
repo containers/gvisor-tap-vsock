@@ -56,7 +56,7 @@ func run() error {
 	}
 
 	var endpoint stack.LinkEndpoint
-	tapEndpoint := &tap.TapLinkEndpoint{
+	tapEndpoint := &tap.LinkEndpoint{
 		Listener:            ln,
 		Debug:               debug,
 		MaxTransmissionUnit: mtu,

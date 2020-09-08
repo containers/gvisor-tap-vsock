@@ -17,7 +17,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-type TapLinkEndpoint struct {
+type LinkEndpoint struct {
 	Listener            net.Listener
 	Debug               bool
 	Mac                 tcpip.LinkAddress
@@ -31,45 +31,45 @@ type TapLinkEndpoint struct {
 	writeLock sync.Mutex
 }
 
-func (e *TapLinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *LinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 }
 
-func (e *TapLinkEndpoint) ARPHardwareType() header.ARPHardwareType {
+func (e *LinkEndpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareEther
 }
 
-func (e *TapLinkEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
+func (e *LinkEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.dispatcher = dispatcher
 }
 
-func (e *TapLinkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
+func (e *LinkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return stack.CapabilityResolutionRequired | stack.CapabilityRXChecksumOffload
 }
 
-func (e *TapLinkEndpoint) IsAttached() bool {
+func (e *LinkEndpoint) IsAttached() bool {
 	return e.dispatcher != nil
 }
 
-func (e *TapLinkEndpoint) LinkAddress() tcpip.LinkAddress {
+func (e *LinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.Mac
 }
 
-func (e *TapLinkEndpoint) MaxHeaderLength() uint16 {
+func (e *LinkEndpoint) MaxHeaderLength() uint16 {
 	return uint16(header.EthernetMinimumSize)
 }
 
-func (e *TapLinkEndpoint) MTU() uint32 {
+func (e *LinkEndpoint) MTU() uint32 {
 	return uint32(e.MaxTransmissionUnit)
 }
 
-func (e *TapLinkEndpoint) Wait() {
+func (e *LinkEndpoint) Wait() {
 }
 
-func (e *TapLinkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *LinkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	return 1, tcpip.ErrNoRoute
 }
 
-func (e *TapLinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+func (e *LinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	hdr := pkt.Header
 	payload := pkt.Data
 	eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
@@ -98,7 +98,7 @@ func (e *TapLinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol t
 	return nil
 }
 
-func (e *TapLinkEndpoint) writeSockets(hdr buffer.Prependable, payload buffer.VectorisedView) error {
+func (e *LinkEndpoint) writeSockets(hdr buffer.Prependable, payload buffer.VectorisedView) error {
 	size := make([]byte, 2)
 	binary.LittleEndian.PutUint16(size, uint16(hdr.UsedLength()+payload.Size()))
 
@@ -130,11 +130,11 @@ func (e *TapLinkEndpoint) writeSockets(hdr buffer.Prependable, payload buffer.Ve
 	return nil
 }
 
-func (e *TapLinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
+func (e *LinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	return tcpip.ErrNoRoute
 }
 
-func (e *TapLinkEndpoint) AcceptOne() error {
+func (e *LinkEndpoint) AcceptOne() error {
 	log.Info("waiting for packets...")
 	for {
 		conn, err := e.Listener.Accept()
@@ -159,7 +159,7 @@ func (e *TapLinkEndpoint) AcceptOne() error {
 	}
 }
 
-func rx(conn net.Conn, e *TapLinkEndpoint) error {
+func rx(conn net.Conn, e *LinkEndpoint) error {
 	sizeBuf := make([]byte, 2)
 
 	for {
