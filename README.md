@@ -2,6 +2,27 @@
 
 A replacement for [VPNKit](https://github.com/moby/vpnkit), written in pure Go.
 
+## How it works
+
+### Internet access
+
+![schema](./doc/curl.png)
+
+0. A tap network interface is running in the VM. It's the default gateway.
+1. User types `curl redhat.com`
+2. Linux kernel sends raw Ethernet packets to the tap device.
+3. Tap device sends these packets to a process on the host using [vsock](https://wiki.qemu.org/Features/VirtioVsock)
+4. The process on the host maintains both internal (host to VM) and external (host to Internet endpoint) connections. It uses regular syscalls to connect to external endpoints. 
+
+### Expose a port
+
+![schema](./doc/http.png)
+
+1. The process on the host binds the port 80. 
+2. Each time, a client sends a http request, the process creates and sends the appropriate Ethernet packets to the VM.
+3. The tap device receives the packets and injects them in the kernel.
+4. The http server receives the request and send back the response.
+
 ## Build
 
 ```
