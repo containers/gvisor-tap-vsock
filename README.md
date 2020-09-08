@@ -68,7 +68,7 @@ For CRC, the driver should be compiled with this patch: https://github.com/code-
 ```
 (host) $ scp bin/vm crc:
 (host) $ scp setup.sh crc:
-(vm terminal 1) $ sudo ./vm -debug -logtostderr [-windows if using windows]
+(vm terminal 1) $ sudo ./vm -debug -logtostderr
 (vm terminal 2) $ sudo ./setup.sh
 + sudo ip addr add 192.168.127.0/24 dev O_O
 + sudo ip link set dev O_O up

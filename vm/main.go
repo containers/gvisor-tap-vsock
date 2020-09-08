@@ -10,7 +10,6 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	linuxkitvsock "github.com/linuxkit/virtsock/pkg/vsock"
 	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
 	"github.com/songgao/packets/ethernet"
@@ -25,7 +24,6 @@ var (
 )
 
 func main() {
-	flag.BoolVar(&windows, "windows", false, "windows")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.Parse()
@@ -36,7 +34,7 @@ func main() {
 }
 
 func run() error {
-	conn, err := dial()
+	conn, err := mdlayhervsock.Dial(2, 1024)
 	if err != nil {
 		return errors.Wrap(err, "cannot connect to host")
 	}
@@ -56,13 +54,6 @@ func run() error {
 	go tx(conn, tap, errCh)
 	go rx(conn, tap, errCh)
 	return <-errCh
-}
-
-func dial() (net.Conn, error) {
-	if windows {
-		return linuxkitvsock.Dial(linuxkitvsock.CIDHost, uint32(1024))
-	}
-	return mdlayhervsock.Dial(2, 1024)
 }
 
 func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
