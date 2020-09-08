@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	log "github.com/golang/glog"
+	"github.com/guillaumerose/gvisor-tap-vsock/pkg/tap"
 	"github.com/linuxkit/virtsock/pkg/hvsock"
 	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
@@ -55,7 +56,7 @@ func run() error {
 	}
 
 	var endpoint stack.LinkEndpoint
-	tapEndpoint := &TapLinkEndpoint{
+	tapEndpoint := &tap.TapLinkEndpoint{
 		Listener:            ln,
 		Debug:               debug,
 		MaxTransmissionUnit: mtu,

@@ -1,7 +1,7 @@
 .PHONY: all
 all:
-	go build -o bin/host ./host
-	go build -o bin/vm ./vm
+	go build -o bin/host ./cmd/host
+	go build -o bin/vm ./cmd/vm
 
 .PHONY: crc
 crc: all
