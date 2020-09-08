@@ -12,7 +12,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-func handleDnsRequest(w dns.ResponseWriter, r *dns.Msg) {
+func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.RecursionAvailable = true
@@ -83,7 +83,9 @@ func handleDnsRequest(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	}
 
-	w.WriteMsg(m)
+	if err := w.WriteMsg(m); err != nil {
+		log.Error(err)
+	}
 }
 
 func dnsServer(s *stack.Stack) error {
@@ -97,7 +99,7 @@ func dnsServer(s *stack.Stack) error {
 	}
 
 	mux := dns.NewServeMux()
-	mux.HandleFunc(".", handleDnsRequest)
+	mux.HandleFunc(".", handleDNSRequest)
 	srv := &dns.Server{
 		PacketConn: udpConn,
 		Handler:    mux,

@@ -60,9 +60,15 @@ func sampleHTTPServer(s *stack.Stack) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`Hello world`))
+		if _, err := w.Write([]byte(`Hello world`)); err != nil {
+			log.Error(err)
+		}
 	})
-	go http.Serve(ln, mux)
+	go func() {
+		if err := http.Serve(ln, mux); err != nil {
+			log.Error(err)
+		}
+	}()
 	return nil
 }
 

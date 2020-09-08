@@ -18,9 +18,8 @@ import (
 )
 
 var (
-	windows bool
-	debug   bool
-	mtu     int
+	debug bool
+	mtu   int
 )
 
 func main() {

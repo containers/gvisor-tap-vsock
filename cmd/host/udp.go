@@ -3,8 +3,10 @@ package main
 import "net"
 
 func pipe(conn1 net.Conn, conn2 net.Conn) {
-	defer conn1.Close()
-	defer conn2.Close()
+	defer func() {
+		_ = conn1.Close()
+		_ = conn2.Close()
+	}()
 	chan1 := chanFromConn(conn1)
 	chan2 := chanFromConn(conn2)
 
@@ -13,15 +15,13 @@ func pipe(conn1 net.Conn, conn2 net.Conn) {
 		case b1 := <-chan1:
 			if b1 == nil {
 				return
-			} else {
-				conn2.Write(b1)
 			}
+			_, _ = conn2.Write(b1)
 		case b2 := <-chan2:
 			if b2 == nil {
 				return
-			} else {
-				conn1.Write(b2)
 			}
+			_, _ = conn1.Write(b2)
 		}
 	}
 }

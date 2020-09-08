@@ -12,3 +12,7 @@ crc: all
 vendor:
 	go mod tidy
 	go mod vendor
+
+.PHONY: lint
+lint:
+	golangci-lint run
