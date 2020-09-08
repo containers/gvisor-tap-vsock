@@ -2,10 +2,13 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"math"
 	"net"
 	"os"
+	"time"
 
+	"github.com/dustin/go-humanize"
 	log "github.com/golang/glog"
 	"github.com/guillaumerose/gvisor-tap-vsock/pkg/tap"
 	"github.com/pkg/errors"
@@ -81,6 +84,13 @@ func run() error {
 	}
 
 	// stack.Wait()
+
+	go func() {
+		for {
+			fmt.Printf("%v sent to the VM, %v received from the VM\n", humanize.Bytes(tapEndpoint.Sent), humanize.Bytes(tapEndpoint.Received))
+			time.Sleep(5 * time.Second)
+		}
+	}()
 	return tapEndpoint.AcceptOne()
 }
 
