@@ -172,7 +172,7 @@ func rx(conn net.Conn, e *TapLinkEndpoint) error {
 		}
 		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
 
-		buf := make([]byte, mtu+header.EthernetMinimumSize)
+		buf := make([]byte, e.MaxTransmissionUnit+header.EthernetMinimumSize)
 		n, err = io.ReadFull(conn, buf[:size])
 		if err != nil {
 			return errors.Wrap(err, "cannot read packet from socket")
