@@ -16,7 +16,7 @@ require (
 	github.com/vishvananda/netlink v1.1.0
 	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
 	golang.org/x/sys v0.0.0-20200908134130-d2e65c121b96 // indirect
-	gvisor.dev/gvisor v0.0.0-20200727050644-5e9c2950a570
+	gvisor.dev/gvisor v0.0.0-20200908185434-4b54cf560806
 )
 
 replace github.com/miekg/dns => github.com/guillaumerose/dns-1 v1.1.5-0.20200731203003-fe9b991fbece

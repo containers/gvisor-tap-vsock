@@ -74,37 +74,34 @@ func (e *LinkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.P
 }
 
 func (e *LinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
-	hdr := pkt.Header
-	payload := pkt.Data
-	eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
-	ethHdr := &header.EthernetFields{
-		DstAddr: r.RemoteLinkAddress,
-		Type:    protocol,
-	}
-
 	// Preserve the src address if it's set in the route.
+	srcAddr := e.Mac
 	if r.LocalLinkAddress != "" {
-		ethHdr.SrcAddr = r.LocalLinkAddress
-	} else {
-		ethHdr.SrcAddr = e.Mac
+		srcAddr = r.LocalLinkAddress
 	}
-	eth.Encode(ethHdr)
+	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
+	eth.Encode(&header.EthernetFields{
+		Type:    protocol,
+		SrcAddr: srcAddr,
+		DstAddr: r.RemoteLinkAddress,
+	})
 
 	if e.Debug {
-		packet := gopacket.NewPacket(append(hdr.View(), payload.ToView()...), layers.LayerTypeEthernet, gopacket.Default)
+		vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+		packet := gopacket.NewPacket(vv.ToView(), layers.LayerTypeEthernet, gopacket.Default)
 		log.Info(packet.String())
 	}
 
-	if err := e.writeSockets(hdr, payload); err != nil {
+	if err := e.writeSockets(pkt); err != nil {
 		log.Error(errors.Wrap(err, "cannot send packets"))
 		return tcpip.ErrAborted
 	}
 	return nil
 }
 
-func (e *LinkEndpoint) writeSockets(hdr buffer.Prependable, payload buffer.VectorisedView) error {
+func (e *LinkEndpoint) writeSockets(pkt *stack.PacketBuffer) error {
 	size := make([]byte, 2)
-	binary.LittleEndian.PutUint16(size, uint16(hdr.UsedLength()+payload.Size()))
+	binary.LittleEndian.PutUint16(size, uint16(pkt.Size()))
 
 	e.writeLock.Lock()
 	defer e.writeLock.Unlock()
@@ -121,18 +118,15 @@ func (e *LinkEndpoint) writeSockets(hdr buffer.Prependable, payload buffer.Vecto
 		e.conn = nil
 		return err
 	}
-	if _, err := e.conn.Write(hdr.View()); err != nil {
-		e.conn.Close()
-		e.conn = nil
-		return err
-	}
-	if _, err := e.conn.Write(payload.ToView()); err != nil {
-		e.conn.Close()
-		e.conn = nil
-		return err
+	for _, view := range pkt.Views() {
+		if _, err := e.conn.Write(view); err != nil {
+			e.conn.Close()
+			e.conn = nil
+			return err
+		}
 	}
 
-	atomic.AddUint64(&e.Sent, uint64(hdr.UsedLength()+payload.Size()))
+	atomic.AddUint64(&e.Sent, uint64(pkt.Size()))
 	return nil
 }
 
