@@ -2,17 +2,12 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"math"
 	"net"
 	"os"
-	"path"
-	"runtime"
 
 	log "github.com/golang/glog"
 	"github.com/guillaumerose/gvisor-tap-vsock/pkg/tap"
-	"github.com/linuxkit/virtsock/pkg/hvsock"
-	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
@@ -129,30 +124,4 @@ func createStack(endpoint stack.LinkEndpoint) (*stack.Stack, error) {
 	})
 
 	return s, nil
-}
-
-func listen() (net.Listener, error) {
-	// TODO: use less error-prone flags to detect OS
-	if runtime.GOOS == "windows" {
-		svcid, err := hvsock.GUIDFromString(fmt.Sprintf("%08x-FACB-11E6-BD58-64006A7986D3", 1024))
-		if err != nil {
-			return nil, err
-		}
-		return hvsock.Listen(hvsock.Addr{
-			VMID:      hvsock.GUIDWildcard,
-			ServiceID: svcid,
-		})
-	}
-	if runtime.GOOS == "darwin" {
-		path := path.Join(os.Getenv("VM_DIRECTORY"), fmt.Sprintf("00000002.%08x", 1024))
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
-		return net.ListenUnix("unix", &net.UnixAddr{
-			Name: path,
-			Net:  "unix",
-		})
-
-	}
-	return mdlayhervsock.Listen(1024)
 }

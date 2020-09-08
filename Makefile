@@ -1,6 +1,6 @@
 .PHONY: all
 all:
-	go build -o bin/host ./cmd/host
+	go build -ldflags '-s -w -extldflags "-static"' -o bin/host ./cmd/host
 	go build -o bin/vm ./cmd/vm
 
 .PHONY: crc
