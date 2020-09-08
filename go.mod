@@ -12,7 +12,9 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/songgao/packets v0.0.0-20160404182456-549a10cd4091
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
-	golang.org/x/sys v0.0.0-20200724161237-0e2f3a69832c // indirect
+	github.com/vishvananda/netlink v1.1.0
+	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
+	golang.org/x/sys v0.0.0-20200908134130-d2e65c121b96 // indirect
 	gvisor.dev/gvisor v0.0.0-20200727050644-5e9c2950a570
 )
 

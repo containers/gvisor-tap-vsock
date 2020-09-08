@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
@@ -14,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/songgao/packets/ethernet"
 	"github.com/songgao/water"
+	"github.com/vishvananda/netlink"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -52,6 +56,19 @@ func run() error {
 	errCh := make(chan error, 1)
 	go tx(conn, tap, errCh)
 	go rx(conn, tap, errCh)
+
+	cleanup, err := linkUp()
+	defer cleanup()
+	if err != nil {
+		return err
+	}
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		cleanup()
+		os.Exit(0)
+	}()
 	return <-errCh
 }
 
@@ -122,4 +139,54 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
 			return
 		}
 	}
+}
+
+func linkUp() (func(), error) {
+	link, err := netlink.LinkByName("O_O")
+	if err != nil {
+		return func() {}, err
+	}
+	newDefaultRoute := netlink.Route{
+		LinkIndex: link.Attrs().Index,
+		Gw:        net.ParseIP("192.168.127.1"),
+	}
+	var defaultRoute *netlink.Route
+	routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
+	for _, r := range routes {
+		if r.Dst == nil {
+			defaultRoute = &r
+			break
+		}
+	}
+	if defaultRoute == nil {
+		return func() {}, errors.New("no default gateway found")
+	}
+	cleanup := func() {
+		if err := netlink.RouteDel(&newDefaultRoute); err != nil {
+			log.Errorf("cannot remove new default gateway: %v", err)
+		}
+		if err := netlink.RouteAdd(defaultRoute); err != nil {
+			log.Errorf("cannot restore old default gateway: %v", err)
+		}
+	}
+	addr, err := netlink.ParseAddr("192.168.127.2/24")
+	if err != nil {
+		return cleanup, err
+	}
+	if err := netlink.AddrAdd(link, addr); err != nil {
+		return cleanup, errors.Wrap(err, "cannot add address")
+	}
+	if err := netlink.LinkSetMTU(link, mtu); err != nil {
+		return cleanup, errors.Wrap(err, "cannot set link mtu")
+	}
+	if err := netlink.LinkSetUp(link); err != nil {
+		return cleanup, errors.Wrap(err, "cannot set link up")
+	}
+	if err := netlink.RouteDel(defaultRoute); err != nil {
+		return cleanup, errors.Wrap(err, "cannot remove old default gateway")
+	}
+	if err := netlink.RouteAdd(&newDefaultRoute); err != nil {
+		return cleanup, errors.Wrap(err, "cannot add new default gateway")
+	}
+	return cleanup, nil
 }
