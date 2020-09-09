@@ -172,16 +172,9 @@ func linkUp(handshake types.Handshake) (func(), error) {
 		LinkIndex: link.Attrs().Index,
 		Gw:        net.ParseIP(handshake.Gateway),
 	}
-	var defaultRoute *netlink.Route
-	routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
-	for _, r := range routes {
-		if r.Dst == nil {
-			defaultRoute = &r
-			break
-		}
-	}
-	if defaultRoute == nil {
-		return func() {}, errors.New("no default gateway found")
+	defaultRoute, err := defaultRoute()
+	if err != nil {
+		return func() {}, err
 	}
 	cleanup := func() {
 		if err := netlink.RouteDel(&newDefaultRoute); err != nil {
@@ -211,4 +204,17 @@ func linkUp(handshake types.Handshake) (func(), error) {
 		return cleanup, errors.Wrap(err, "cannot add new default gateway")
 	}
 	return cleanup, nil
+}
+
+func defaultRoute() (*netlink.Route, error) {
+	routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range routes {
+		if r.Dst == nil {
+			return &r, nil
+		}
+	}
+	return nil, errors.New("no default gateway found")
 }
