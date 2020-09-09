@@ -91,7 +91,7 @@ func run() error {
 			time.Sleep(5 * time.Second)
 		}
 	}()
-	return tapEndpoint.AcceptOne()
+	return tapEndpoint.AcceptOne(gateway, fmt.Sprintf("%s/24", vm))
 }
 
 func createStack(endpoint stack.LinkEndpoint) (*stack.Stack, error) {

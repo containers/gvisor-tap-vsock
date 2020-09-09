@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/guillaumerose/gvisor-tap-vsock/pkg/types"
 	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
 	"github.com/songgao/packets/ethernet"
@@ -23,12 +25,10 @@ import (
 
 var (
 	debug bool
-	mtu   int
 )
 
 func main() {
 	flag.BoolVar(&debug, "debug", false, "debug")
-	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.Parse()
 
 	if err := run(); err != nil {
@@ -43,6 +43,11 @@ func run() error {
 	}
 	defer conn.Close()
 
+	handshake, err := handshake(conn)
+	if err != nil {
+		return errors.Wrap(err, "cannot handshake")
+	}
+
 	tap, err := water.New(water.Config{
 		DeviceType: water.TAP,
 		PlatformSpecificParams: water.PlatformSpecificParams{
@@ -54,10 +59,10 @@ func run() error {
 	}
 
 	errCh := make(chan error, 1)
-	go tx(conn, tap, errCh)
-	go rx(conn, tap, errCh)
+	go tx(conn, tap, errCh, handshake.MTU)
+	go rx(conn, tap, errCh, handshake.MTU)
 
-	cleanup, err := linkUp()
+	cleanup, err := linkUp(handshake)
 	defer cleanup()
 	if err != nil {
 		return err
@@ -72,7 +77,24 @@ func run() error {
 	return <-errCh
 }
 
-func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
+func handshake(conn net.Conn) (types.Handshake, error) {
+	sizeBuf := make([]byte, 2)
+	if _, err := io.ReadFull(conn, sizeBuf); err != nil {
+		return types.Handshake{}, err
+	}
+	size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
+	b := make([]byte, size)
+	if _, err := io.ReadFull(conn, b); err != nil {
+		return types.Handshake{}, err
+	}
+	var handshake types.Handshake
+	if err := json.Unmarshal(b, &handshake); err != nil {
+		return types.Handshake{}, err
+	}
+	return handshake, nil
+}
+
+func rx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 	log.Info("waiting for packets...")
 	var frame ethernet.Frame
 	for {
@@ -103,7 +125,7 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error) {
 	}
 }
 
-func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
+func tx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 	sizeBuf := make([]byte, 2)
 	buf := make([]byte, mtu+header.EthernetMinimumSize)
 
@@ -141,14 +163,14 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error) {
 	}
 }
 
-func linkUp() (func(), error) {
+func linkUp(handshake types.Handshake) (func(), error) {
 	link, err := netlink.LinkByName("O_O")
 	if err != nil {
 		return func() {}, err
 	}
 	newDefaultRoute := netlink.Route{
 		LinkIndex: link.Attrs().Index,
-		Gw:        net.ParseIP("192.168.127.1"),
+		Gw:        net.ParseIP(handshake.Gateway),
 	}
 	var defaultRoute *netlink.Route
 	routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
@@ -169,14 +191,14 @@ func linkUp() (func(), error) {
 			log.Errorf("cannot restore old default gateway: %v", err)
 		}
 	}
-	addr, err := netlink.ParseAddr("192.168.127.2/24")
+	addr, err := netlink.ParseAddr(handshake.VM)
 	if err != nil {
 		return cleanup, err
 	}
 	if err := netlink.AddrAdd(link, addr); err != nil {
 		return cleanup, errors.Wrap(err, "cannot add address")
 	}
-	if err := netlink.LinkSetMTU(link, mtu); err != nil {
+	if err := netlink.LinkSetMTU(link, handshake.MTU); err != nil {
 		return cleanup, errors.Wrap(err, "cannot set link mtu")
 	}
 	if err := netlink.LinkSetUp(link); err != nil {
