@@ -15,11 +15,11 @@ import (
 	"time"
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
-	log "github.com/golang/glog"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"github.com/songgao/packets/ethernet"
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"

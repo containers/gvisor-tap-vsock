@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	log "github.com/golang/glog"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	log "github.com/sirupsen/logrus"
 )
 
 func TestVpnkit2(t *testing.T) {

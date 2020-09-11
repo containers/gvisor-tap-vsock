@@ -4,8 +4,8 @@ import (
 	"context"
 	"net"
 
-	log "github.com/golang/glog"
 	"github.com/miekg/dns"
+	log "github.com/sirupsen/logrus"
 )
 
 func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {

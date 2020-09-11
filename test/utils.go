@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	log "github.com/golang/glog"
+	log "github.com/sirupsen/logrus"
 )
 
 func Exec(cmd *exec.Cmd, timeout <-chan time.Time) (string, string, error) {

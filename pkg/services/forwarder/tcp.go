@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net"
 
-	log "github.com/golang/glog"
 	"github.com/google/tcpproxy"
+	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"

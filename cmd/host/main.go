@@ -10,8 +10,8 @@ import (
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/tap"
 	"github.com/dustin/go-humanize"
-	log "github.com/golang/glog"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"

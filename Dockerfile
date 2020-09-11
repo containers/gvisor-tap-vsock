@@ -8,4 +8,4 @@ RUN make
 
 FROM scratch
 COPY --from=build /go/src/app/bin/vm .
-ENTRYPOINT ["/vm", "-logtostderr", "-retry", "600"]
+ENTRYPOINT ["/vm", "-retry", "600"]

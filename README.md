@@ -60,7 +60,7 @@ For CRC, the driver should be compiled with this patch: https://github.com/code-
 #### Run
 
 ```
-(host) $ sudo bin/host -debug -logtostderr
+(host) $ sudo bin/host -debug
 ```
 
 ### VM
