@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
@@ -25,14 +26,24 @@ import (
 
 var (
 	debug bool
+	retry int
 )
 
 func main() {
 	flag.BoolVar(&debug, "debug", false, "debug")
+	flag.IntVar(&retry, "retry", 0, "number of connection attempts")
 	flag.Parse()
 
-	if err := run(); err != nil {
-		log.Fatal(err)
+	for {
+		if err := run(); err != nil {
+			if retry > 0 {
+				retry--
+				log.Error(err)
+			} else {
+				log.Fatal(err)
+			}
+		}
+		time.Sleep(time.Second)
 	}
 }
 
@@ -57,17 +68,21 @@ func run() error {
 	if err != nil {
 		return errors.Wrap(err, "cannot create tap device")
 	}
+	defer tap.Close()
 
 	errCh := make(chan error, 1)
 	go tx(conn, tap, errCh, handshake.MTU)
 	go rx(conn, tap, errCh, handshake.MTU)
 
+	c := make(chan os.Signal)
 	cleanup, err := linkUp(handshake)
-	defer cleanup()
+	defer func() {
+		signal.Stop(c)
+		cleanup()
+	}()
 	if err != nil {
 		return err
 	}
-	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c

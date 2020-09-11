@@ -5,4 +5,4 @@ RUN make
 
 FROM centos
 COPY --from=build /go/src/app/bin/vm .
-CMD ["/vm", "-logtostderr"]
+ENTRYPOINT ["/vm", "-logtostderr", "-retry", "600"]
