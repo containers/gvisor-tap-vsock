@@ -7,17 +7,15 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/songgao/packets/ethernet"
@@ -55,31 +53,8 @@ func main() {
 	}
 }
 
-func conn() (net.Conn, error) {
-	parsed, err := url.Parse(endpoint)
-	if err != nil {
-		return nil, err
-	}
-	switch parsed.Scheme {
-	case "vsock":
-		contextID, err := strconv.Atoi(parsed.Hostname())
-		if err != nil {
-			return nil, err
-		}
-		port, err := strconv.Atoi(parsed.Port())
-		if err != nil {
-			return nil, err
-		}
-		return mdlayhervsock.Dial(uint32(contextID), uint32(port))
-	case "unix":
-		return net.Dial("unix", parsed.Path)
-	default:
-		return nil, errors.New("unexpected scheme")
-	}
-}
-
 func run() error {
-	conn, err := conn()
+	conn, err := transport.Dial(endpoint)
 	if err != nil {
 		return errors.Wrap(err, "cannot connect to host")
 	}

@@ -1,4 +1,4 @@
-package main
+package transport
 
 import (
 	"errors"
@@ -10,9 +10,9 @@ import (
 	"strconv"
 )
 
-const defaultURL = "vsock://vm_directory:1024"
+const DefaultURL = "vsock://vm_directory:1024"
 
-func listen() (net.Listener, error) {
+func Listen(endpoint string) (net.Listener, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err

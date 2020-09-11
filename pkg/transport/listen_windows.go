@@ -1,4 +1,4 @@
-package main
+package transport
 
 import (
 	"errors"
@@ -8,9 +8,9 @@ import (
 	"github.com/linuxkit/virtsock/pkg/hvsock"
 )
 
-const defaultURL = "vsock://00000400-FACB-11E6-BD58-64006A7986D3"
+const DefaultURL = "vsock://00000400-FACB-11E6-BD58-64006A7986D3"
 
-func listen() (net.Listener, error) {
+func Listen(endpoint string) (net.Listener, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err

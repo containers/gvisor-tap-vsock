@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/tap"
+	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -39,7 +40,7 @@ var (
 )
 
 func main() {
-	flag.StringVar(&endpoint, "url", defaultURL, "url where the tap send packets")
+	flag.StringVar(&endpoint, "url", transport.DefaultURL, "url where the tap send packets")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.Parse()
@@ -50,7 +51,7 @@ func main() {
 }
 
 func run() error {
-	ln, err := listen()
+	ln, err := transport.Listen(endpoint)
 	if err != nil {
 		return errors.Wrap(err, "cannot listen vsock")
 	}
