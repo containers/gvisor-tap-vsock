@@ -35,11 +35,13 @@ func init() {
 
 var _ = BeforeSuite(func() {
 	Expect(os.Remove(sock)).Should(Succeed())
+	// #nosec
 	host = exec.Command(filepath.Join(binDir, "host"), "-debug", fmt.Sprintf("--url=unix://%s", sock))
 	host.Stderr = os.Stderr
 	host.Stdout = os.Stdout
 	Expect(host.Start()).Should(Succeed())
 
+	// #nosec
 	client = exec.Command("sudo", filepath.Join(binDir, "vm"), fmt.Sprintf("--url=unix://%s", sock), fmt.Sprintf("--change-default-route=%v", changeDefaultRoute))
 	client.Stderr = os.Stderr
 	client.Stdout = os.Stdout

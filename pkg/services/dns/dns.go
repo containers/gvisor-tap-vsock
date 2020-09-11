@@ -1,4 +1,4 @@
-package main
+package dns
 
 import (
 	"context"
@@ -6,10 +6,6 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/miekg/dns"
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
-	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
@@ -88,16 +84,7 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
-func dnsServer(s *stack.Stack) error {
-	udpConn, err := gonet.DialUDP(s, &tcpip.FullAddress{
-		NIC:  1,
-		Addr: tcpip.Address(net.ParseIP(gateway).To4()),
-		Port: uint16(53),
-	}, nil, ipv4.ProtocolNumber)
-	if err != nil {
-		return err
-	}
-
+func Serve(udpConn net.PacketConn) error {
 	mux := dns.NewServeMux()
 	mux.HandleFunc(".", handleDNSRequest)
 	srv := &dns.Server{

@@ -37,7 +37,7 @@ func Exec(cmd *exec.Cmd, timeout <-chan time.Time) (string, string, error) {
 			}
 		}
 	case <-timeout:
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		return "", "", fmt.Errorf("timed out waiting for command %v:\nCommand stdout:\n%v\nstderr:\n%v", cmd, cmd.Stdout, cmd.Stderr)
 	}
 	log.Infof("stderr: %q", stderr.String())
