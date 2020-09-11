@@ -253,7 +253,7 @@ func linkUp(handshake types.Handshake) (func(), error) {
 	if err := netlink.RouteAdd(&newDefaultRoute); err != nil {
 		return cleanup, errors.Wrap(err, "cannot add new default gateway")
 	}
-	return func() {}, nil
+	return cleanup, nil
 }
 
 func defaultRoute() (*netlink.Route, error) {
