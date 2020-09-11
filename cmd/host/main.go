@@ -33,11 +33,13 @@ const (
 )
 
 var (
-	debug bool
-	mtu   int
+	endpoint string
+	debug    bool
+	mtu      int
 )
 
 func main() {
+	flag.StringVar(&endpoint, "url", defaultURL, "url where the tap send packets")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.Parse()

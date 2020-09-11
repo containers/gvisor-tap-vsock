@@ -1,19 +1,31 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"net"
+	"net/url"
 
 	"github.com/linuxkit/virtsock/pkg/hvsock"
 )
 
+const defaultURL = "vsock://00000400-FACB-11E6-BD58-64006A7986D3"
+
 func listen() (net.Listener, error) {
-	svcid, err := hvsock.GUIDFromString(fmt.Sprintf("%08x-FACB-11E6-BD58-64006A7986D3", 1024))
+	parsed, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
 	}
-	return hvsock.Listen(hvsock.Addr{
-		VMID:      hvsock.GUIDWildcard,
-		ServiceID: svcid,
-	})
+	switch parsed.Scheme {
+	case "vsock":
+		svcid, err := hvsock.GUIDFromString(parsed.Hostname())
+		if err != nil {
+			return nil, err
+		}
+		return hvsock.Listen(hvsock.Addr{
+			VMID:      hvsock.GUIDWildcard,
+			ServiceID: svcid,
+		})
+	default:
+		return nil, errors.New("unexpected scheme")
+	}
 }

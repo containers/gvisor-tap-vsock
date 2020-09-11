@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -25,15 +27,19 @@ import (
 )
 
 var (
-	iface string
-	debug bool
-	retry int
+	endpoint           string
+	iface              string
+	debug              bool
+	retry              int
+	changeDefaultRoute bool
 )
 
 func main() {
+	flag.StringVar(&endpoint, "url", "vsock://2:1024", "url where the tap send packets")
 	flag.StringVar(&iface, "iface", "tap0", "tap interface name")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&retry, "retry", 0, "number of connection attempts")
+	flag.BoolVar(&changeDefaultRoute, "change-default-route", true, "change the default route to use this interface")
 	flag.Parse()
 
 	for {
@@ -49,8 +55,31 @@ func main() {
 	}
 }
 
+func conn() (net.Conn, error) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	switch parsed.Scheme {
+	case "vsock":
+		contextID, err := strconv.Atoi(parsed.Hostname())
+		if err != nil {
+			return nil, err
+		}
+		port, err := strconv.Atoi(parsed.Port())
+		if err != nil {
+			return nil, err
+		}
+		return mdlayhervsock.Dial(uint32(contextID), uint32(port))
+	case "unix":
+		return net.Dial("unix", parsed.Path)
+	default:
+		return nil, errors.New("unexpected scheme")
+	}
+}
+
 func run() error {
-	conn, err := mdlayhervsock.Dial(2, 1024)
+	conn, err := conn()
 	if err != nil {
 		return errors.Wrap(err, "cannot connect to host")
 	}
@@ -189,6 +218,23 @@ func linkUp(handshake types.Handshake) (func(), error) {
 		LinkIndex: link.Attrs().Index,
 		Gw:        net.ParseIP(handshake.Gateway),
 	}
+	addr, err := netlink.ParseAddr(handshake.VM)
+	if err != nil {
+		return func() {}, err
+	}
+	if err := netlink.AddrAdd(link, addr); err != nil {
+		return func() {}, errors.Wrap(err, "cannot add address")
+	}
+	if err := netlink.LinkSetMTU(link, handshake.MTU); err != nil {
+		return func() {}, errors.Wrap(err, "cannot set link mtu")
+	}
+	if err := netlink.LinkSetUp(link); err != nil {
+		return func() {}, errors.Wrap(err, "cannot set link up")
+	}
+
+	if !changeDefaultRoute {
+		return func() {}, nil
+	}
 	defaultRoute, err := defaultRoute()
 	if err != nil {
 		return func() {}, err
@@ -201,26 +247,13 @@ func linkUp(handshake types.Handshake) (func(), error) {
 			log.Errorf("cannot restore old default gateway: %v", err)
 		}
 	}
-	addr, err := netlink.ParseAddr(handshake.VM)
-	if err != nil {
-		return cleanup, err
-	}
-	if err := netlink.AddrAdd(link, addr); err != nil {
-		return cleanup, errors.Wrap(err, "cannot add address")
-	}
-	if err := netlink.LinkSetMTU(link, handshake.MTU); err != nil {
-		return cleanup, errors.Wrap(err, "cannot set link mtu")
-	}
-	if err := netlink.LinkSetUp(link); err != nil {
-		return cleanup, errors.Wrap(err, "cannot set link up")
-	}
 	if err := netlink.RouteDel(defaultRoute); err != nil {
 		return cleanup, errors.Wrap(err, "cannot remove old default gateway")
 	}
 	if err := netlink.RouteAdd(&newDefaultRoute); err != nil {
 		return cleanup, errors.Wrap(err, "cannot add new default gateway")
 	}
-	return cleanup, nil
+	return func() {}, nil
 }
 
 func defaultRoute() (*netlink.Route, error) {
