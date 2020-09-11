@@ -21,4 +21,4 @@ lint:
 
 .PHONY: image
 image:
-	docker build -t quay.io/gurose/gvisor-tap-vsock:$(TAG) .
+	docker build -t quay.io/crcont/gvisor-tap-vsock:$(TAG) .
