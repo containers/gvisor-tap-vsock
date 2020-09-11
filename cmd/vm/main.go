@@ -212,18 +212,22 @@ func linkUp(handshake types.Handshake) (func(), error) {
 	}
 	defaultRoute, err := defaultRoute()
 	if err != nil {
-		return func() {}, err
+		log.Warn(err)
 	}
 	cleanup := func() {
 		if err := netlink.RouteDel(&newDefaultRoute); err != nil {
 			log.Errorf("cannot remove new default gateway: %v", err)
 		}
-		if err := netlink.RouteAdd(defaultRoute); err != nil {
-			log.Errorf("cannot restore old default gateway: %v", err)
+		if defaultRoute != nil {
+			if err := netlink.RouteAdd(defaultRoute); err != nil {
+				log.Errorf("cannot restore old default gateway: %v", err)
+			}
 		}
 	}
-	if err := netlink.RouteDel(defaultRoute); err != nil {
-		return cleanup, errors.Wrap(err, "cannot remove old default gateway")
+	if defaultRoute != nil {
+		if err := netlink.RouteDel(defaultRoute); err != nil {
+			return cleanup, errors.Wrap(err, "cannot remove old default gateway")
+		}
 	}
 	if err := netlink.RouteAdd(&newDefaultRoute); err != nil {
 		return cleanup, errors.Wrap(err, "cannot add new default gateway")
