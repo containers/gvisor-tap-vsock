@@ -1,7 +1,9 @@
+TAG ?= $(shell git describe --match=NeVeRmAtCh --always --abbrev=40 --dirty)
+
 .PHONY: all
 all:
 	go build -ldflags '-s -w -extldflags "-static"' -o bin/host ./cmd/host
-	go build -o bin/vm ./cmd/vm
+	CGO_ENABLED=0 go build -ldflags '-s -w -extldflags "-static"' -o bin/vm ./cmd/vm
 
 .PHONY: crc
 crc: all
@@ -16,3 +18,7 @@ vendor:
 .PHONY: lint
 lint:
 	golangci-lint run
+
+.PHONY: image
+image:
+	docker build -t quay.io/gurose/gvisor-tap-vsock:$(TAG) .

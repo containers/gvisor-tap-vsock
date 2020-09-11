@@ -3,6 +3,6 @@ WORKDIR /go/src/app
 COPY . .
 RUN make
 
-FROM centos
+FROM scratch
 COPY --from=build /go/src/app/bin/vm .
 ENTRYPOINT ["/vm", "-logtostderr", "-retry", "600"]
