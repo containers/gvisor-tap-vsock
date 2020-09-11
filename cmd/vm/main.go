@@ -25,11 +25,13 @@ import (
 )
 
 var (
+	iface string
 	debug bool
 	retry int
 )
 
 func main() {
+	flag.StringVar(&iface, "iface", "tap0", "tap interface name")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&retry, "retry", 0, "number of connection attempts")
 	flag.Parse()
@@ -62,7 +64,7 @@ func run() error {
 	tap, err := water.New(water.Config{
 		DeviceType: water.TAP,
 		PlatformSpecificParams: water.PlatformSpecificParams{
-			Name: "O_O",
+			Name: iface,
 		},
 	})
 	if err != nil {
@@ -179,7 +181,7 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 }
 
 func linkUp(handshake types.Handshake) (func(), error) {
-	link, err := netlink.LinkByName("O_O")
+	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		return func() {}, err
 	}
