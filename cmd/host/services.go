@@ -6,10 +6,10 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/code-ready/gvisor-tap-vsock/pkg/services/dns"
+	"github.com/code-ready/gvisor-tap-vsock/pkg/services/forwarder"
 	log "github.com/golang/glog"
 	"github.com/google/tcpproxy"
-	"github.com/guillaumerose/gvisor-tap-vsock/pkg/services/dns"
-	"github.com/guillaumerose/gvisor-tap-vsock/pkg/services/forwarder"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"

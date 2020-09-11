@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/code-ready/gvisor-tap-vsock/pkg/tap"
 	"github.com/dustin/go-humanize"
 	log "github.com/golang/glog"
-	"github.com/guillaumerose/gvisor-tap-vsock/pkg/tap"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"

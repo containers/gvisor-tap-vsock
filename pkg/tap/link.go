@@ -9,10 +9,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/guillaumerose/gvisor-tap-vsock/pkg/types"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"

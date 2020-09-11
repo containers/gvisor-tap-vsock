@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	log "github.com/golang/glog"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/guillaumerose/gvisor-tap-vsock/pkg/types"
 	mdlayhervsock "github.com/mdlayher/vsock"
 	"github.com/pkg/errors"
 	"github.com/songgao/packets/ethernet"
