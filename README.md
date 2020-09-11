@@ -66,11 +66,9 @@ For CRC, the driver should be compiled with this patch: https://github.com/code-
 ### VM
 
 ```
-(host) $ scp bin/vm crc:
-(host) $ scp setup.sh crc:
-(vm terminal 1) $ sudo ./vm -debug -logtostderr
-(vm terminal 2) $ ping -c1 192.168.127.1
-(vm terminal 2) $ curl http://redhat.com
+(vm) # docker run -d --name=gvisor-tap-vsock --privileged --net=host -it quay.io/crcont/gvisor-tap-vsock:latest
+(vm) $ ping -c1 192.168.127.1
+(vm) $ curl http://redhat.com
 ```
 
 ### Internal DNS
