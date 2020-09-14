@@ -21,17 +21,6 @@ var _ = Describe("connectivity", func() {
 		_, _, err := Exec(exec.Command("ping", "-c4", "192.168.127.1"), nil)
 		Expect(err).ShouldNot(HaveOccurred())
 	})
-
-	It("should ping 8.8.8.8", func() {
-		_, _, err := Exec(exec.Command("sudo", "route", "add", "-net", "8.8.8.8", "netmask", "255.255.255.255", "gw", "192.168.127.1"), nil)
-		Expect(err).ShouldNot(HaveOccurred())
-		defer func() {
-			_, _, err := Exec(exec.Command("sudo", "route", "del", "-net", "8.8.8.8", "netmask", "255.255.255.255", "gw", "192.168.127.1"), nil)
-			Expect(err).ShouldNot(HaveOccurred())
-		}()
-		_, _, err = Exec(exec.Command("ping", "-c4", "8.8.8.8"), nil)
-		Expect(err).ShouldNot(HaveOccurred())
-	})
 })
 
 var _ = Describe("dns", func() {

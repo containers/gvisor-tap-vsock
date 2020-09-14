@@ -1,7 +1,6 @@
 package virtualnetwork
 
 import (
-	"fmt"
 	"math"
 	"net"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
@@ -23,22 +23,32 @@ import (
 type VirtualNetwork struct {
 	configuration *types.Configuration
 	stack         *stack.Stack
-	tapEndpoint   *tap.LinkEndpoint
+	networkSwitch *tap.Switch
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {
-	ln, err := transport.Listen(configuration.Endpoint)
+	var listeners []net.Listener
+	for _, endpoint := range configuration.Endpoints {
+		log.Infof("listening %s", endpoint)
+		ln, err := transport.Listen(endpoint)
+		if err != nil {
+			return nil, errors.Wrap(err, "cannot listen")
+		}
+		listeners = append(listeners, ln)
+	}
+
+	_, subnet, err := net.ParseCIDR(configuration.Subnet)
 	if err != nil {
-		return nil, errors.Wrap(err, "cannot listen vsock")
+		return nil, errors.Wrap(err, "cannot parse subnet cidr")
 	}
 
 	var endpoint stack.LinkEndpoint
-	tapEndpoint := &tap.LinkEndpoint{
-		Listener:            ln,
-		Debug:               configuration.Debug,
-		MaxTransmissionUnit: configuration.MTU,
-		Mac:                 tcpip.LinkAddress(configuration.GatewayMacAddress),
-	}
+
+	tapEndpoint := tap.NewLinkEndpoint(configuration.Debug, configuration.GatewayMacAddress)
+	networkSwitch := tap.NewSwitch(listeners, configuration.Debug, configuration.MTU, tap.NewIPPool(subnet))
+	tapEndpoint.Connect(networkSwitch)
+	networkSwitch.Connect(configuration.GatewayIP, tapEndpoint)
+
 	if configuration.CaptureFile != "" {
 		_ = os.Remove(configuration.CaptureFile)
 		fd, err := os.Create(configuration.CaptureFile)
@@ -65,26 +75,26 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 	return &VirtualNetwork{
 		configuration: configuration,
 		stack:         stack,
-		tapEndpoint:   tapEndpoint,
+		networkSwitch: networkSwitch,
 	}, nil
 }
 
 func (n *VirtualNetwork) BytesSent() uint64 {
-	if n.tapEndpoint == nil {
+	if n.networkSwitch == nil {
 		return 0
 	}
-	return n.tapEndpoint.Sent
+	return n.networkSwitch.Sent
 }
 
 func (n *VirtualNetwork) BytesReceived() uint64 {
-	if n.tapEndpoint == nil {
+	if n.networkSwitch == nil {
 		return 0
 	}
-	return n.tapEndpoint.Received
+	return n.networkSwitch.Received
 }
 
 func (n *VirtualNetwork) Run() error {
-	return n.tapEndpoint.AcceptOne(n.configuration.GatewayIP, fmt.Sprintf("%s/24", n.configuration.VMIP))
+	return n.networkSwitch.Run()
 }
 
 func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint) (*stack.Stack, error) {
@@ -114,9 +124,14 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 
 	s.SetPromiscuousMode(1, true)
 
-	subnet, err := tcpip.NewSubnet(tcpip.Address(net.ParseIP(configuration.Subnet).To4()), tcpip.AddressMask(net.ParseIP(configuration.SubnetMask).To4()))
+	_, parsedSubnet, err := net.ParseCIDR(configuration.Subnet)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "cannot parse cidr")
+	}
+
+	subnet, err := tcpip.NewSubnet(tcpip.Address(parsedSubnet.IP), tcpip.AddressMask(parsedSubnet.Mask))
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot parse subnet")
 	}
 	s.SetRouteTable([]tcpip.Route{
 		{

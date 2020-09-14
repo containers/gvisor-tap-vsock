@@ -2,7 +2,6 @@ package virtualnetwork
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 
@@ -54,11 +53,11 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
 func forwardHostVM(configuration *types.Configuration, s *stack.Stack) error {
 	var p tcpproxy.Proxy
 	p.AddRoute(":2222", &tcpproxy.DialProxy{
-		Addr: fmt.Sprintf("%s:22", configuration.VMIP),
+		Addr: "192.168.127.2:22",
 		DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
 			return gonet.DialTCP(s, tcpip.FullAddress{
 				NIC:  1,
-				Addr: tcpip.Address(net.ParseIP(configuration.VMIP).To4()),
+				Addr: tcpip.Address(net.ParseIP("192.168.127.2").To4()),
 				Port: uint16(22),
 			}, ipv4.ProtocolNumber)
 		},

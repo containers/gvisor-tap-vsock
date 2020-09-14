@@ -14,9 +14,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func TestVpnkit2(t *testing.T) {
+func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Vpnkit2 Suite")
+	RunSpecs(t, "gvisor-tap-vsock suite")
 }
 
 const sock = "/tmp/mysock"
@@ -34,9 +34,9 @@ func init() {
 }
 
 var _ = BeforeSuite(func() {
-	Expect(os.Remove(sock)).Should(Succeed())
+	_ = os.Remove(sock)
 	// #nosec
-	host = exec.Command(filepath.Join(binDir, "host"), "-debug", fmt.Sprintf("--url=unix://%s", sock))
+	host = exec.Command(filepath.Join(binDir, "host"), fmt.Sprintf("--listen=unix://%s", sock))
 	host.Stderr = os.Stderr
 	host.Stdout = os.Stdout
 	Expect(host.Start()).Should(Succeed())

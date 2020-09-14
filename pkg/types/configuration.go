@@ -4,14 +4,10 @@ type Configuration struct {
 	Debug       bool
 	CaptureFile string
 
-	Endpoint string
-	MTU      int
+	Endpoints []string
+	MTU       int
 
-	Subnet     string
-	SubnetMask string
-
+	Subnet            string
 	GatewayIP         string
 	GatewayMacAddress string
-
-	VMIP string
 }

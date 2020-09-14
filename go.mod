@@ -3,6 +3,7 @@ module github.com/code-ready/gvisor-tap-vsock
 go 1.13
 
 require (
+	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/google/gopacket v1.1.16
 	github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252
