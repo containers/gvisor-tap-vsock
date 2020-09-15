@@ -35,6 +35,18 @@ var _ = Describe("dns", func() {
 		Expect(names).To(HaveLen(1))
 		Expect(names[0].String()).To(Equal("209.132.183.105"))
 	})
+
+	It("should resolve gateway.crc.testing", func() {
+		resolver := net.Resolver{
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				return net.Dial("udp", "192.168.127.1:53")
+			},
+		}
+		names, err := resolver.LookupIPAddr(context.Background(), "gateway.crc.testing")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(names).To(HaveLen(1))
+		Expect(names[0].String()).To(Equal("192.168.127.1"))
+	})
 })
 
 var _ = Describe("http", func() {

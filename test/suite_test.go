@@ -44,22 +44,32 @@ var _ = BeforeSuite(func() {
 	host.Stderr = os.Stderr
 	host.Stdout = os.Stdout
 	Expect(host.Start()).Should(Succeed())
+	go func() {
+		if err := host.Wait(); err != nil {
+			log.Error(err)
+		}
+	}()
+
+	for {
+		_, err := os.Stat(sock)
+		if os.IsNotExist(err) {
+			log.Info("waiting for socket")
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		break
+	}
 
 	// #nosec
 	client = exec.Command("sudo", filepath.Join(binDir, "vm"), fmt.Sprintf("--url=unix://%s", sock), fmt.Sprintf("--change-default-route=%v", changeDefaultRoute))
 	client.Stderr = os.Stderr
 	client.Stdout = os.Stdout
 	Expect(client.Start()).Should(Succeed())
-
-	for {
-		_, err := os.Stat(sock)
-		if os.IsNotExist(err) {
-			log.Debug("waiting for socket")
-			time.Sleep(100 * time.Millisecond)
-			continue
+	go func() {
+		if err := client.Wait(); err != nil {
+			log.Error(err)
 		}
-		break
-	}
+	}()
 
 	client := http.Client{
 		Transport: &http.Transport{
@@ -75,7 +85,7 @@ var _ = BeforeSuite(func() {
 		if len(cam) > 0 {
 			break
 		}
-		log.Debug("waiting for client to connect")
+		log.Info("waiting for client to connect")
 		time.Sleep(time.Second)
 	}
 })

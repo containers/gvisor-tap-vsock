@@ -28,7 +28,7 @@ func Dial(endpoint string) (net.Conn, string, error) {
 		return conn, parsed.Path, err
 	case "unix":
 		conn, err := net.Dial("unix", parsed.Path)
-		return conn, parsed.Path, err
+		return conn, "/connect", err
 	default:
 		return nil, "", errors.New("unexpected scheme")
 	}

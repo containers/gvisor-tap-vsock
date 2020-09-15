@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -37,6 +38,13 @@ func main() {
 		Subnet:            "192.168.127.0/24",
 		GatewayIP:         "192.168.127.1",
 		GatewayMacAddress: "\x5A\x94\xEF\xE4\x0C\xDD",
+		DNSRecords: map[string]net.IP{
+			"gateway.crc.testing.":            net.ParseIP("192.168.127.1"),
+			"apps-crc.testing.":               net.ParseIP("192.168.130.11"),
+			"etcd-0.crc.testing.":             net.ParseIP("192.168.130.11"),
+			"api.crc.testing.":                net.ParseIP("192.168.130.11"),
+			"crc-zqfk6-master-0.crc.testing.": net.ParseIP("192.168.126.11"),
+		},
 	}, endpoints); err != nil {
 		log.Fatal(err)
 	}

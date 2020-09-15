@@ -47,7 +47,7 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
 		return err
 	}
 
-	return dns.Serve(udpConn)
+	return dns.Serve(udpConn, configuration.DNSRecords)
 }
 
 func forwardHostVM(configuration *types.Configuration, s *stack.Stack) error {
