@@ -43,7 +43,7 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 				return
 			}
 			for _, ip := range ips {
-				if len(ip.IP) != net.IPv6len {
+				if len(ip.IP.To4()) == net.IPv4len {
 					continue
 				}
 				m.Answer = append(m.Answer, &dns.AAAA{
@@ -63,7 +63,7 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 				return
 			}
 			for _, ip := range ips {
-				if len(ip.IP) != net.IPv4len {
+				if len(ip.IP.To4()) != net.IPv4len {
 					continue
 				}
 				m.Answer = append(m.Answer, &dns.A{
