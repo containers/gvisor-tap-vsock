@@ -4,8 +4,7 @@ type Configuration struct {
 	Debug       bool
 	CaptureFile string
 
-	Endpoints []string
-	MTU       int
+	MTU int
 
 	Subnet            string
 	GatewayIP         string

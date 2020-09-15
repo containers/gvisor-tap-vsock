@@ -34,7 +34,6 @@ type Switch struct {
 	Sent     uint64
 	Received uint64
 
-	listeners           []net.Listener
 	debug               bool
 	maxTransmissionUnit int
 
@@ -49,22 +48,32 @@ type Switch struct {
 
 	gatewayIP string
 	gateway   VirtualDevice
-	ipPool    *IPPool
+
+	IPs *IPPool
 }
 
-func NewSwitch(listeners []net.Listener, debug bool, mtu int, ipPool *IPPool) *Switch {
+func NewSwitch(debug bool, mtu int, ipPool *IPPool) *Switch {
 	return &Switch{
-		listeners:           listeners,
 		debug:               debug,
 		maxTransmissionUnit: mtu,
 		conns:               make(map[int]net.Conn),
 		cam:                 make(map[tcpip.LinkAddress]int),
-		ipPool:              ipPool,
+		IPs:                 ipPool,
 	}
 }
 
+func (e *Switch) CAM() map[string]int {
+	e.camLock.RLock()
+	defer e.camLock.RUnlock()
+	ret := make(map[string]int)
+	for address, port := range e.cam {
+		ret[address.String()] = port
+	}
+	return ret
+}
+
 func (e *Switch) Connect(ip string, ep VirtualDevice) {
-	e.ipPool.Reserve(net.ParseIP(ip), -1)
+	e.IPs.Reserve(net.ParseIP(ip), -1)
 	e.gatewayIP = ip
 	e.gateway = ep
 }
@@ -79,40 +88,24 @@ func (e *Switch) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol 
 	}
 }
 
-func (e *Switch) Run() error {
-	log.Info("waiting for clients...")
-	errCh := make(chan error)
-	for i := range e.listeners {
-		ln := e.listeners[i]
-		go func() {
-			for {
-				conn, err := ln.Accept()
-				if err != nil {
-					errCh <- errors.Wrap(err, "cannot accept new client")
-				}
-
-				go func() {
-					log.Infof("new connection from %s", conn.LocalAddr().String())
-					id, failed := e.connect(conn)
-					if failed {
-						log.Error("connection failed")
-						return
-					}
-
-					defer func() {
-						e.connLock.Lock()
-						defer e.connLock.Unlock()
-						e.disconnect(id, conn)
-					}()
-					if err := e.rx(id, conn); err != nil {
-						log.Error(errors.Wrapf(err, "cannot receive packets from %s, disconnecting", conn.LocalAddr().String()))
-						return
-					}
-				}()
-			}
-		}()
+func (e *Switch) Accept(conn net.Conn) {
+	log.Infof("new connection from %s", conn.LocalAddr().String())
+	id, failed := e.connect(conn)
+	if failed {
+		log.Error("connection failed")
+		_ = conn.Close()
+		return
 	}
-	return <-errCh
+
+	defer func() {
+		e.connLock.Lock()
+		defer e.connLock.Unlock()
+		e.disconnect(id, conn)
+	}()
+	if err := e.rx(id, conn); err != nil {
+		log.Error(errors.Wrapf(err, "cannot receive packets from %s, disconnecting", conn.LocalAddr().String()))
+		return
+	}
 }
 
 func (e *Switch) connect(conn net.Conn) (int, bool) {
@@ -122,12 +115,12 @@ func (e *Switch) connect(conn net.Conn) (int, bool) {
 	id := e.nextConnID
 	e.nextConnID++
 
-	ip, err := e.ipPool.Assign(id)
+	ip, err := e.IPs.Assign(id)
 	if err != nil {
 		log.Error(err)
 		return 0, true
 	}
-	if err := e.handshake(conn, fmt.Sprintf("%s/%d", ip, e.ipPool.Mask())); err != nil {
+	if err := e.handshake(conn, fmt.Sprintf("%s/%d", ip, e.IPs.Mask())); err != nil {
 		log.Error(errors.Wrapf(err, "cannot handshake with %s", conn.LocalAddr().String()))
 		return 0, true
 	}
@@ -227,7 +220,7 @@ func (e *Switch) disconnect(id int, conn net.Conn) {
 	_ = conn.Close()
 	delete(e.conns, id)
 
-	e.ipPool.Release(id)
+	e.IPs.Release(id)
 }
 
 func (e *Switch) rx(id int, conn net.Conn) error {

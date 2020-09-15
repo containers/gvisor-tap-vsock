@@ -9,18 +9,22 @@ import (
 )
 
 type IPPool struct {
-	base     *net.IPNet
-	count    uint64
-	reserved map[string]int
-	lock     sync.Mutex
+	base   *net.IPNet
+	count  uint64
+	leases map[string]int
+	lock   sync.Mutex
 }
 
 func NewIPPool(base *net.IPNet) *IPPool {
 	return &IPPool{
-		base:     base,
-		count:    cidr.AddressCount(base),
-		reserved: make(map[string]int),
+		base:   base,
+		count:  cidr.AddressCount(base),
+		leases: make(map[string]int),
 	}
+}
+
+func (p *IPPool) Leases() map[string]int {
+	return p.leases
 }
 
 func (p *IPPool) Mask() int {
@@ -38,8 +42,8 @@ func (p *IPPool) Assign(id int) (net.IP, error) {
 		if err != nil {
 			continue
 		}
-		if _, ok := p.reserved[candidate.String()]; !ok {
-			p.reserved[candidate.String()] = id
+		if _, ok := p.leases[candidate.String()]; !ok {
+			p.leases[candidate.String()] = id
 			return candidate, nil
 		}
 	}
@@ -50,7 +54,7 @@ func (p *IPPool) Reserve(ip net.IP, id int) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	p.reserved[ip.String()] = id
+	p.leases[ip.String()] = id
 }
 
 func (p *IPPool) Release(given int) {
@@ -58,13 +62,13 @@ func (p *IPPool) Release(given int) {
 	defer p.lock.Unlock()
 
 	var found string
-	for ip, id := range p.reserved {
+	for ip, id := range p.leases {
 		if id == given {
 			found = ip
 			break
 		}
 	}
 	if found != "" {
-		delete(p.reserved, found)
+		delete(p.leases, found)
 	}
 }

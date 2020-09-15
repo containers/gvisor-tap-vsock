@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -33,7 +34,7 @@ var (
 )
 
 func main() {
-	flag.StringVar(&endpoint, "url", "vsock://2:1024", "url where the tap send packets")
+	flag.StringVar(&endpoint, "url", "vsock://2:1024/connect", "url where the tap send packets")
 	flag.StringVar(&iface, "iface", "tap0", "tap interface name")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&retry, "retry", 0, "number of connection attempts")
@@ -54,11 +55,19 @@ func main() {
 }
 
 func run() error {
-	conn, err := transport.Dial(endpoint)
+	conn, path, err := transport.Dial(endpoint)
 	if err != nil {
 		return errors.Wrap(err, "cannot connect to host")
 	}
 	defer conn.Close()
+
+	req, err := http.NewRequest("POST", path, nil)
+	if err != nil {
+		return err
+	}
+	if err := req.Write(conn); err != nil {
+		return err
+	}
 
 	handshake, err := handshake(conn)
 	if err != nil {

@@ -1,8 +1,12 @@
 package e2e
 
 import (
+	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,8 +51,47 @@ var _ = BeforeSuite(func() {
 	client.Stdout = os.Stdout
 	Expect(client.Start()).Should(Succeed())
 
-	time.Sleep(2 * time.Second)
+	for {
+		_, err := os.Stat(sock)
+		if os.IsNotExist(err) {
+			log.Debug("waiting for socket")
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		break
+	}
+
+	client := http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return net.Dial("unix", sock)
+			},
+		},
+	}
+
+	for {
+		cam, err := camTable(client)
+		Expect(err).ShouldNot(HaveOccurred())
+		if len(cam) > 0 {
+			break
+		}
+		log.Debug("waiting for client to connect")
+		time.Sleep(time.Second)
+	}
 })
+
+func camTable(client http.Client) (map[string]int, error) {
+	res, err := client.Get("http://unix/cam")
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	var cam map[string]int
+	if err := json.NewDecoder(res.Body).Decode(&cam); err != nil {
+		return nil, err
+	}
+	return cam, nil
+}
 
 var _ = AfterSuite(func() {
 	if host != nil {

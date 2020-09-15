@@ -1,15 +1,15 @@
 package virtualnetwork
 
 import (
+	"encoding/json"
 	"math"
 	"net"
+	"net/http"
 	"os"
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/tap"
-	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
@@ -27,16 +27,6 @@ type VirtualNetwork struct {
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {
-	var listeners []net.Listener
-	for _, endpoint := range configuration.Endpoints {
-		log.Infof("listening %s", endpoint)
-		ln, err := transport.Listen(endpoint)
-		if err != nil {
-			return nil, errors.Wrap(err, "cannot listen")
-		}
-		listeners = append(listeners, ln)
-	}
-
 	_, subnet, err := net.ParseCIDR(configuration.Subnet)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot parse subnet cidr")
@@ -45,7 +35,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 	var endpoint stack.LinkEndpoint
 
 	tapEndpoint := tap.NewLinkEndpoint(configuration.Debug, configuration.GatewayMacAddress)
-	networkSwitch := tap.NewSwitch(listeners, configuration.Debug, configuration.MTU, tap.NewIPPool(subnet))
+	networkSwitch := tap.NewSwitch(configuration.Debug, configuration.MTU, tap.NewIPPool(subnet))
 	tapEndpoint.Connect(networkSwitch)
 	networkSwitch.Connect(configuration.GatewayIP, tapEndpoint)
 
@@ -93,8 +83,32 @@ func (n *VirtualNetwork) BytesReceived() uint64 {
 	return n.networkSwitch.Received
 }
 
-func (n *VirtualNetwork) Run() error {
-	return n.networkSwitch.Run()
+func (n *VirtualNetwork) Mux() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]uint64{n.networkSwitch.Sent, n.networkSwitch.Received})
+	})
+	mux.HandleFunc("/cam", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(n.networkSwitch.CAM())
+	})
+	mux.HandleFunc("/leases", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(n.networkSwitch.IPs.Leases())
+	})
+	mux.HandleFunc("/connect", func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		n.networkSwitch.Accept(conn)
+	})
+	return mux
 }
 
 func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint) (*stack.Stack, error) {

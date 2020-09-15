@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
-
 	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/virtualnetwork"
 	"github.com/dustin/go-humanize"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -32,12 +33,11 @@ func main() {
 	if err := run(&types.Configuration{
 		Debug:             debug,
 		CaptureFile:       captureFile(),
-		Endpoints:         endpoints,
 		MTU:               mtu,
 		Subnet:            "192.168.127.0/24",
 		GatewayIP:         "192.168.127.1",
 		GatewayMacAddress: "\x5A\x94\xEF\xE4\x0C\xDD",
-	}); err != nil {
+	}, endpoints); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -60,10 +60,26 @@ func captureFile() string {
 	return "capture.pcap"
 }
 
-func run(configuration *types.Configuration) error {
+func run(configuration *types.Configuration, endpoints []string) error {
 	vn, err := virtualnetwork.New(configuration)
 	if err != nil {
 		return err
+	}
+	log.Info("waiting for clients...")
+	errCh := make(chan error)
+
+	for _, endpoint := range endpoints {
+		log.Infof("listening %s", endpoint)
+		ln, err := transport.Listen(endpoint)
+		if err != nil {
+			return errors.Wrap(err, "cannot listen")
+		}
+
+		go func() {
+			if err := http.Serve(ln, vn.Mux()); err != nil {
+				errCh <- err
+			}
+		}()
 	}
 	go func() {
 		for {
@@ -71,5 +87,5 @@ func run(configuration *types.Configuration) error {
 			time.Sleep(5 * time.Second)
 		}
 	}()
-	return vn.Run()
+	return <-errCh
 }
