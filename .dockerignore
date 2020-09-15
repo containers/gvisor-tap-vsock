@@ -1,1 +1,4 @@
 bin/
+.git/
+vendor/
+*.pcap
