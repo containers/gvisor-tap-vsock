@@ -164,8 +164,7 @@ func (e *Switch) tx(dst, src tcpip.LinkAddress, pkt *stack.PacketBuffer) error {
 		e.camLock.RLock()
 		srcID, ok := e.cam[src]
 		if !ok {
-			e.camLock.RUnlock()
-			return nil
+			srcID = -1
 		}
 		e.camLock.RUnlock()
 		for id, conn := range e.conns {
