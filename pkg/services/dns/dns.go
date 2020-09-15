@@ -2,7 +2,6 @@ package dns
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 
@@ -68,7 +67,6 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 					AAAA: ip.IP.To16(),
 				})
 			}
-			fmt.Println(m.Answer)
 		case dns.TypeA:
 			for name, ip := range h.static {
 				if strings.HasSuffix(q.Name, name) {
