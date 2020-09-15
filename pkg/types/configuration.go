@@ -13,4 +13,6 @@ type Configuration struct {
 	GatewayMacAddress string
 
 	DNSRecords map[string]net.IP
+
+	Forwards map[string]string
 }

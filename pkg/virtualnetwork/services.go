@@ -4,6 +4,8 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/services/dns"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/services/forwarder"
@@ -52,16 +54,23 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
 
 func forwardHostVM(configuration *types.Configuration, s *stack.Stack) error {
 	var p tcpproxy.Proxy
-	p.AddRoute(":2222", &tcpproxy.DialProxy{
-		Addr: "192.168.127.2:22",
-		DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
-			return gonet.DialTCP(s, tcpip.FullAddress{
-				NIC:  1,
-				Addr: tcpip.Address(net.ParseIP("192.168.127.2").To4()),
-				Port: uint16(22),
-			}, ipv4.ProtocolNumber)
-		},
-	})
+	for dst, src := range configuration.Forwards {
+		split := strings.Split(src, ":")
+		port, err := strconv.Atoi(split[1])
+		if err != nil {
+			return err
+		}
+		p.AddRoute(dst, &tcpproxy.DialProxy{
+			Addr: src,
+			DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
+				return gonet.DialTCP(s, tcpip.FullAddress{
+					NIC:  1,
+					Addr: tcpip.Address(net.ParseIP(split[0]).To4()),
+					Port: uint16(port),
+				}, ipv4.ProtocolNumber)
+			},
+		})
+	}
 	return p.Run()
 }
 

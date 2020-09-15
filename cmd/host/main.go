@@ -45,6 +45,9 @@ func main() {
 			"api.crc.testing.":                net.ParseIP("192.168.130.11"),
 			"crc-zqfk6-master-0.crc.testing.": net.ParseIP("192.168.126.11"),
 		},
+		Forwards: map[string]string{
+			":2222": "192.168.127.2:22",
+		},
 	}, endpoints); err != nil {
 		log.Fatal(err)
 	}
