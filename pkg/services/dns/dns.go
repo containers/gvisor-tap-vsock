@@ -105,7 +105,6 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 			}
 		}
 	}
-	return
 }
 
 func Serve(udpConn net.PacketConn, static map[string]net.IP) error {
