@@ -31,6 +31,8 @@ func Listen(endpoint string) (net.Listener, error) {
 			Name: path,
 			Net:  "unix",
 		})
+	case "unix":
+		return net.Listen("unix", parsed.Path)
 	default:
 		return nil, errors.New("unexpected scheme")
 	}
