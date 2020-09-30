@@ -10,7 +10,7 @@ import (
 	"strconv"
 )
 
-const DefaultURL = "vsock://vm_directory:1024"
+const DefaultURL = "vsock://null:1024/vm_directory"
 
 func Listen(endpoint string) (net.Listener, error) {
 	parsed, err := url.Parse(endpoint)
@@ -23,7 +23,7 @@ func Listen(endpoint string) (net.Listener, error) {
 		if err != nil {
 			return nil, err
 		}
-		path := path.Join(parsed.Hostname(), fmt.Sprintf("00000002.%08x", port))
+		path := path.Join(parsed.Path, fmt.Sprintf("00000002.%08x", port))
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
