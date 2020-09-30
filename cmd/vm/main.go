@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,30 +29,45 @@ import (
 var (
 	endpoint           string
 	iface              string
+	stopIfIfaceExist   string
 	debug              bool
-	retry              int
 	changeDefaultRoute bool
 )
 
 func main() {
 	flag.StringVar(&endpoint, "url", "vsock://2:1024/connect", "url where the tap send packets")
 	flag.StringVar(&iface, "iface", "tap0", "tap interface name")
+	flag.StringVar(&stopIfIfaceExist, "stop-if-exist", "eth0,ens3,enp0s1", "stop if one of these interfaces exists at startup")
 	flag.BoolVar(&debug, "debug", false, "debug")
-	flag.IntVar(&retry, "retry", 0, "number of connection attempts")
 	flag.BoolVar(&changeDefaultRoute, "change-default-route", true, "change the default route to use this interface")
 	flag.Parse()
 
+	expected := strings.Split(stopIfIfaceExist, ",")
+	links, err := netlink.LinkList()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, link := range links {
+		if contains(expected, link.Attrs().Name) {
+			log.Infof("interface %s prevented this program to run", link.Attrs().Name)
+			return
+		}
+	}
 	for {
 		if err := run(); err != nil {
-			if retry > 0 {
-				retry--
-				log.Error(err)
-			} else {
-				log.Fatal(err)
-			}
+			log.Error(err)
 		}
 		time.Sleep(time.Second)
 	}
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
 
 func run() error {
