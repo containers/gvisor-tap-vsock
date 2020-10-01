@@ -3,6 +3,7 @@ package forwarder
 import (
 	"fmt"
 	"net"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -61,6 +62,7 @@ func chanFromConn(conn net.Conn) chan []byte {
 		b := make([]byte, 1024)
 
 		for {
+			_ = conn.SetReadDeadline(time.Now().Add(time.Minute))
 			n, err := conn.Read(b)
 			if n > 0 {
 				res := make([]byte, n)
