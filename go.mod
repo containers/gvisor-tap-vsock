@@ -5,6 +5,7 @@ go 1.13
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/dustin/go-humanize v1.0.0
+	github.com/golang/protobuf v1.4.2 // indirect
 	github.com/google/gopacket v1.1.16
 	github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252
 	github.com/linuxkit/virtsock v0.0.0-20180830132707-8e79449dea07
@@ -17,9 +18,8 @@ require (
 	github.com/songgao/packets v0.0.0-20160404182456-549a10cd4091
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.1.0
-	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
 	golang.org/x/crypto v0.0.0-20201016220609-9e8e0b390897 // indirect
 	golang.org/x/net v0.0.0-20201026091529-146b70c837a4 // indirect
 	golang.org/x/sys v0.0.0-20201026133411-418715ba6fdd // indirect
-	gvisor.dev/gvisor v0.0.0-20200930062448-8972a9a394dc
+	gvisor.dev/gvisor v0.0.0-20201024190640-a58d741adc72
 )
