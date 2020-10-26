@@ -113,6 +113,7 @@ func (n *VirtualNetwork) Mux() http.Handler {
 
 func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint) (*stack.Stack, error) {
 	s := stack.New(stack.Options{
+		UseNeighborCache: true,
 		NetworkProtocols: []stack.NetworkProtocolFactory{
 			ipv4.NewProtocol,
 			arp.NewProtocol,
