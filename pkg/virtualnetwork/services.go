@@ -3,7 +3,6 @@ package virtualnetwork
 import (
 	"context"
 	"net"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -31,12 +30,7 @@ func addServices(configuration *types.Configuration, s *stack.Stack) error {
 			log.Error(err)
 		}
 	}()
-	go func() {
-		if err := forwardHostVM(configuration, s); err != nil {
-			log.Error(err)
-		}
-	}()
-	return sampleHTTPServer(configuration, s)
+	return forwardHostVM(configuration, s)
 }
 
 func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
@@ -70,35 +64,14 @@ func forwardHostVM(configuration *types.Configuration, s *stack.Stack) error {
 				}, ipv4.ProtocolNumber)
 			},
 		})
+		if err := p.Start(); err != nil {
+			return err
+		}
 		go func() {
-			if err := p.Run(); err != nil {
+			if err := p.Wait(); err != nil {
 				log.Error(err)
 			}
 		}()
 	}
-	return nil
-}
-
-func sampleHTTPServer(configuration *types.Configuration, s *stack.Stack) error {
-	ln, err := gonet.ListenTCP(s, tcpip.FullAddress{
-		NIC:  1,
-		Addr: tcpip.Address(net.ParseIP(configuration.GatewayIP).To4()),
-		Port: uint16(80),
-	}, ipv4.ProtocolNumber)
-	if err != nil {
-		return err
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if _, err := w.Write([]byte(`Hello world`)); err != nil {
-			log.Error(err)
-		}
-	})
-	go func() {
-		if err := http.Serve(ln, mux); err != nil {
-			log.Error(err)
-		}
-	}()
 	return nil
 }
