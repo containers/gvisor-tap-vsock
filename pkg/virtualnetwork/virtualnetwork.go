@@ -34,7 +34,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 
 	var endpoint stack.LinkEndpoint
 
-	tapEndpoint := tap.NewLinkEndpoint(configuration.Debug, configuration.GatewayMacAddress)
+	tapEndpoint := tap.NewLinkEndpoint(configuration.Debug, configuration.MTU, configuration.GatewayMacAddress)
 	networkSwitch := tap.NewSwitch(configuration.Debug, configuration.MTU, tap.NewIPPool(subnet))
 	tapEndpoint.Connect(networkSwitch)
 	networkSwitch.Connect(configuration.GatewayIP, tapEndpoint)

@@ -26,7 +26,6 @@ type VirtualDevice interface {
 }
 
 type NetworkSwitch interface {
-	MTU() uint32
 	DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer)
 }
 
@@ -76,10 +75,6 @@ func (e *Switch) Connect(ip string, ep VirtualDevice) {
 	e.IPs.Reserve(net.ParseIP(ip), -1)
 	e.gatewayIP = ip
 	e.gateway = ep
-}
-
-func (e *Switch) MTU() uint32 {
-	return uint32(e.maxTransmissionUnit)
 }
 
 func (e *Switch) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
