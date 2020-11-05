@@ -25,11 +25,9 @@ func addServices(configuration *types.Configuration, s *stack.Stack) error {
 	udpForwarder := forwarder.UDP(s)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 
-	go func() {
-		if err := dnsServer(configuration, s); err != nil {
-			log.Error(err)
-		}
-	}()
+	if err := dnsServer(configuration, s); err != nil {
+		return err
+	}
 	return forwardHostVM(configuration, s)
 }
 
@@ -43,7 +41,12 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
 		return err
 	}
 
-	return dns.Serve(udpConn, configuration.DNS)
+	go func() {
+		if err := dns.Serve(udpConn, configuration.DNS); err != nil {
+			log.Error(err)
+		}
+	}()
+	return nil
 }
 
 func forwardHostVM(configuration *types.Configuration, s *stack.Stack) error {
