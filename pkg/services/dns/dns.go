@@ -2,15 +2,17 @@ package dns
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 
+	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
 )
 
 type dnsHandler struct {
-	static map[string]net.IP
+	zones []types.Zone
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg) {
@@ -26,6 +28,46 @@ func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg) {
 func (h *dnsHandler) addAnswers(m *dns.Msg) {
 	for _, q := range m.Question {
 		log.Debugf("DNS query for %s", q.String())
+
+		for _, zone := range h.zones {
+			zoneSuffix := fmt.Sprintf(".%s", zone.Name)
+			if strings.HasSuffix(q.Name, zoneSuffix) {
+				if q.Qtype != dns.TypeA {
+					return
+				}
+				for _, record := range zone.Records {
+					withoutZone := strings.TrimSuffix(q.Name, zoneSuffix)
+					if (record.Name != "" && record.Name == withoutZone) ||
+						(record.Regexp != nil && record.Regexp.MatchString(withoutZone)) {
+						m.Answer = append(m.Answer, &dns.A{
+							Hdr: dns.RR_Header{
+								Name:   q.Name,
+								Rrtype: dns.TypeA,
+								Class:  dns.ClassINET,
+								Ttl:    0,
+							},
+							A: record.IP,
+						})
+						return
+					}
+				}
+				if !zone.DefaultIP.Equal(net.IP("")) {
+					m.Answer = append(m.Answer, &dns.A{
+						Hdr: dns.RR_Header{
+							Name:   q.Name,
+							Rrtype: dns.TypeA,
+							Class:  dns.ClassINET,
+							Ttl:    0,
+						},
+						A: zone.DefaultIP,
+					})
+					return
+				}
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+		}
+
 		resolver := net.Resolver{
 			PreferGo: false,
 		}
@@ -48,20 +90,6 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 				})
 			}
 		case dns.TypeA:
-			for name, ip := range h.static {
-				if strings.HasSuffix(q.Name, name) {
-					m.Answer = append(m.Answer, &dns.A{
-						Hdr: dns.RR_Header{
-							Name:   q.Name,
-							Rrtype: dns.TypeA,
-							Class:  dns.ClassINET,
-							Ttl:    0,
-						},
-						A: ip,
-					})
-					return
-				}
-			}
 			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
 			if err != nil {
 				m.Rcode = dns.RcodeNameError
@@ -85,9 +113,9 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 	}
 }
 
-func Serve(udpConn net.PacketConn, static map[string]net.IP) error {
+func Serve(udpConn net.PacketConn, zones []types.Zone) error {
 	mux := dns.NewServeMux()
-	handler := &dnsHandler{static: static}
+	handler := &dnsHandler{zones: zones}
 	mux.HandleFunc(".", handler.handle)
 	srv := &dns.Server{
 		PacketConn: udpConn,

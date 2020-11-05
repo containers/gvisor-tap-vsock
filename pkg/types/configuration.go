@@ -1,6 +1,9 @@
 package types
 
-import "net"
+import (
+	"net"
+	"regexp"
+)
 
 type Configuration struct {
 	Debug       bool
@@ -12,7 +15,19 @@ type Configuration struct {
 	GatewayIP         string
 	GatewayMacAddress string
 
-	DNSRecords map[string]net.IP
+	DNS []Zone
 
 	Forwards map[string]string
+}
+
+type Zone struct {
+	Name      string
+	Records   []Record
+	DefaultIP net.IP
+}
+
+type Record struct {
+	Name   string
+	IP     net.IP
+	Regexp *regexp.Regexp
 }

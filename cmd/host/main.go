@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
@@ -38,12 +39,32 @@ func main() {
 		Subnet:            "192.168.127.0/24",
 		GatewayIP:         "192.168.127.1",
 		GatewayMacAddress: "\x5A\x94\xEF\xE4\x0C\xDD",
-		DNSRecords: map[string]net.IP{
-			"gateway.crc.testing.":            net.ParseIP("192.168.127.1"),
-			"apps-crc.testing.":               net.ParseIP("192.168.130.11"),
-			"etcd-0.crc.testing.":             net.ParseIP("192.168.130.11"),
-			"api.crc.testing.":                net.ParseIP("192.168.130.11"),
-			"crc-zqfk6-master-0.crc.testing.": net.ParseIP("192.168.126.11"),
+		DNS: []types.Zone{
+			{
+				Name:      "apps-crc.testing.",
+				DefaultIP: net.ParseIP("192.168.127.2"),
+			},
+			{
+				Name: "crc.testing.",
+				Records: []types.Record{
+					{
+						Name: "gateway",
+						IP:   net.ParseIP("192.168.127.1"),
+					},
+					{
+						Name: "api",
+						IP:   net.ParseIP("192.168.127.2"),
+					},
+					{
+						Name: "api-int",
+						IP:   net.ParseIP("192.168.127.2"),
+					},
+					{
+						Regexp: regexp.MustCompile("crc-(.*?)-master-0"),
+						IP:     net.ParseIP("192.168.126.11"),
+					},
+				},
+			},
 		},
 		Forwards: map[string]string{
 			":2222": "192.168.127.2:22",
