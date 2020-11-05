@@ -53,13 +53,13 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
 }
 
 func forwardHostVM(configuration *types.Configuration, s *stack.Stack) error {
-	var p tcpproxy.Proxy
 	for dst, src := range configuration.Forwards {
 		split := strings.Split(src, ":")
 		port, err := strconv.Atoi(split[1])
 		if err != nil {
 			return err
 		}
+		var p tcpproxy.Proxy
 		p.AddRoute(dst, &tcpproxy.DialProxy{
 			Addr: src,
 			DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
@@ -70,8 +70,13 @@ func forwardHostVM(configuration *types.Configuration, s *stack.Stack) error {
 				}, ipv4.ProtocolNumber)
 			},
 		})
+		go func() {
+			if err := p.Run(); err != nil {
+				log.Error(err)
+			}
+		}()
 	}
-	return p.Run()
+	return nil
 }
 
 func sampleHTTPServer(configuration *types.Configuration, s *stack.Stack) error {

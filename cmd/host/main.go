@@ -68,6 +68,7 @@ func main() {
 		},
 		Forwards: map[string]string{
 			":2222": "192.168.127.2:22",
+			":443":  "192.168.127.2:443",
 		},
 	}, endpoints); err != nil {
 		log.Fatal(err)
