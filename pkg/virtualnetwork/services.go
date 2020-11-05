@@ -1,15 +1,12 @@
 package virtualnetwork
 
 import (
-	"context"
 	"net"
-	"strconv"
-	"strings"
+	"net/http"
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/services/dns"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/services/forwarder"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
-	"github.com/google/tcpproxy"
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -19,16 +16,23 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-func addServices(configuration *types.Configuration, s *stack.Stack) error {
+func addServices(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {
 	tcpForwarder := forwarder.TCP(s)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
 	udpForwarder := forwarder.UDP(s)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 
 	if err := dnsServer(configuration, s); err != nil {
-		return err
+		return nil, err
 	}
-	return forwardHostVM(configuration, s)
+
+	forwarderMux, err := forwardHostVM(configuration, s)
+	if err != nil {
+		return nil, err
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/forwarder/", http.StripPrefix("/forwarder", forwarderMux))
+	return mux, nil
 }
 
 func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
@@ -49,32 +53,12 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
 	return nil
 }
 
-func forwardHostVM(configuration *types.Configuration, s *stack.Stack) error {
-	for dst, src := range configuration.Forwards {
-		split := strings.Split(src, ":")
-		port, err := strconv.Atoi(split[1])
-		if err != nil {
-			return err
+func forwardHostVM(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {
+	fw := forwarder.NewPortsForwarder(s)
+	for local, remote := range configuration.Forwards {
+		if err := fw.Expose(local, remote); err != nil {
+			return nil, err
 		}
-		var p tcpproxy.Proxy
-		p.AddRoute(dst, &tcpproxy.DialProxy{
-			Addr: src,
-			DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
-				return gonet.DialTCP(s, tcpip.FullAddress{
-					NIC:  1,
-					Addr: tcpip.Address(net.ParseIP(split[0]).To4()),
-					Port: uint16(port),
-				}, ipv4.ProtocolNumber)
-			},
-		})
-		if err := p.Start(); err != nil {
-			return err
-		}
-		go func() {
-			if err := p.Wait(); err != nil {
-				log.Error(err)
-			}
-		}()
 	}
-	return nil
+	return fw.Mux(), nil
 }

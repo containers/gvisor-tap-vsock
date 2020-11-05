@@ -24,6 +24,7 @@ type VirtualNetwork struct {
 	configuration *types.Configuration
 	stack         *stack.Stack
 	networkSwitch *tap.Switch
+	servicesMux   http.Handler
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {
@@ -58,7 +59,8 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		return nil, errors.Wrap(err, "cannot create network stack")
 	}
 
-	if err := addServices(configuration, stack); err != nil {
+	mux, err := addServices(configuration, stack)
+	if err != nil {
 		return nil, errors.Wrap(err, "cannot add network services")
 	}
 
@@ -66,6 +68,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		configuration: configuration,
 		stack:         stack,
 		networkSwitch: networkSwitch,
+		servicesMux:   mux,
 	}, nil
 }
 
@@ -85,6 +88,7 @@ func (n *VirtualNetwork) BytesReceived() uint64 {
 
 func (n *VirtualNetwork) Mux() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/services/", http.StripPrefix("/services", n.servicesMux))
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode([]uint64{n.networkSwitch.Sent, n.networkSwitch.Received})
 	})
