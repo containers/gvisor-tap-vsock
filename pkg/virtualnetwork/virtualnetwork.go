@@ -1,7 +1,6 @@
 package virtualnetwork
 
 import (
-	"encoding/json"
 	"math"
 	"net"
 	"net/http"
@@ -84,35 +83,6 @@ func (n *VirtualNetwork) BytesReceived() uint64 {
 		return 0
 	}
 	return n.networkSwitch.Received
-}
-
-func (n *VirtualNetwork) Mux() http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/services/", http.StripPrefix("/services", n.servicesMux))
-	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(statsAsJSON(n.networkSwitch.Sent, n.networkSwitch.Received, n.stack.Stats()))
-	})
-	mux.HandleFunc("/cam", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(n.networkSwitch.CAM())
-	})
-	mux.HandleFunc("/leases", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(n.networkSwitch.IPs.Leases())
-	})
-	mux.HandleFunc("/connect", func(w http.ResponseWriter, r *http.Request) {
-		hj, ok := w.(http.Hijacker)
-		if !ok {
-			http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
-			return
-		}
-		conn, _, err := hj.Hijack()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		n.networkSwitch.Accept(conn)
-	})
-	return mux
 }
 
 func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint) (*stack.Stack, error) {

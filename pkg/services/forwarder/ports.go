@@ -58,7 +58,7 @@ func (f *PortsForwarder) Expose(local, remote string) error {
 	p.AddRoute(local, &tcpproxy.DialProxy{
 		Addr: remote,
 		DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
-			return gonet.DialTCP(f.stack, tcpip.FullAddress{
+			return gonet.DialContextTCP(ctx, f.stack, tcpip.FullAddress{
 				NIC:  1,
 				Addr: tcpip.Address(net.ParseIP(split[0]).To4()),
 				Port: uint16(port),
