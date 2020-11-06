@@ -90,7 +90,7 @@ func (n *VirtualNetwork) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/services/", http.StripPrefix("/services", n.servicesMux))
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode([]uint64{n.networkSwitch.Sent, n.networkSwitch.Received})
+		_ = json.NewEncoder(w).Encode(statsAsJSON(n.networkSwitch.Sent, n.networkSwitch.Received, n.stack.Stats()))
 	})
 	mux.HandleFunc("/cam", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(n.networkSwitch.CAM())
