@@ -21,5 +21,5 @@ require (
 	golang.org/x/crypto v0.0.0-20201016220609-9e8e0b390897
 	golang.org/x/net v0.0.0-20201026091529-146b70c837a4 // indirect
 	golang.org/x/sys v0.0.0-20201026133411-418715ba6fdd // indirect
-	gvisor.dev/gvisor v0.0.0-20201024190640-a58d741adc72
+	gvisor.dev/gvisor v0.0.0-20201106095200-de70ee3adac5
 )

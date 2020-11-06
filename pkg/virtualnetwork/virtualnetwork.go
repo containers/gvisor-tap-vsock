@@ -111,6 +111,7 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 		return nil, errors.New(err.String())
 	}
 
+	s.SetSpoofing(1, true)
 	s.SetPromiscuousMode(1, true)
 
 	_, parsedSubnet, err := net.ParseCIDR(configuration.Subnet)
