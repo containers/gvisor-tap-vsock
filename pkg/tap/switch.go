@@ -230,8 +230,8 @@ func (e *Switch) rx(id int, conn net.Conn) error {
 		}
 		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
 
-		buf := make([]byte, e.maxTransmissionUnit+header.EthernetMinimumSize)
-		n, err = io.ReadFull(conn, buf[:size])
+		buf := make([]byte, size)
+		n, err = io.ReadFull(conn, buf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read packet from socket")
 		}
@@ -240,11 +240,11 @@ func (e *Switch) rx(id int, conn net.Conn) error {
 		}
 
 		if e.debug {
-			packet := gopacket.NewPacket(buf[:size], layers.LayerTypeEthernet, gopacket.Default)
+			packet := gopacket.NewPacket(buf, layers.LayerTypeEthernet, gopacket.Default)
 			log.Info(packet.String())
 		}
 
-		view := buffer.View(buf[:size])
+		view := buffer.View(buf)
 		eth := header.Ethernet(view)
 		vv := buffer.NewVectorisedView(len(view), []buffer.View{view})
 
