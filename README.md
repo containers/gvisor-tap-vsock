@@ -1,6 +1,7 @@
 # gvisor-tap-vsock 
 
 A replacement for [VPNKit](https://github.com/moby/vpnkit), written in pure Go.
+It is based on the network stack of [gVisor](https://github.com/google/gvisor/tree/master/pkg/tcpip).
 
 ## How it works
 
@@ -13,6 +14,8 @@ A replacement for [VPNKit](https://github.com/moby/vpnkit), written in pure Go.
 2. Linux kernel sends raw Ethernet packets to the tap device.
 3. Tap device sends these packets to a process on the host using [vsock](https://wiki.qemu.org/Features/VirtioVsock)
 4. The process on the host maintains both internal (host to VM) and external (host to Internet endpoint) connections. It uses regular syscalls to connect to external endpoints. 
+
+This is the same behaviour as [slirp](https://wiki.qemu.org/index.php/Documentation/Networking#User_Networking_.28SLIRP.29). 
 
 ### Expose a port
 
@@ -48,36 +51,98 @@ In the VM, be sure to have `hv_sock` module loaded.
 
 On Fedora 32, it worked out of the box. On others distros, you might have to look at https://github.com/mdlayher/vsock#requirements.
 
-For CRC, the driver should be compiled with this patch: https://github.com/code-ready/machine-driver-libvirt/pull/45.
-
 #### macOS prerequisites
 
-Please locate the hyperkit state (there is a file called `connect` inside) folder and launch `host` with the following env variable:
-`VM_DIRECTORY=path_to_connect_directory`
-
-For CRC, the driver should be compiled with this patch: https://github.com/code-ready/machine-driver-hyperkit/pull/12.
+Please locate the hyperkit state (there is a file called `connect` inside) folder and launch `host` with the following listen argument:
+`--listen vsock://null:1024/path_to_connect_directory`
 
 #### Run
 
 ```
-(host) $ sudo bin/host -debug
+(host) $ sudo bin/host -debug -listen vsock://:1024 -listen unix:///tmp/network.sock
 ```
 
 ### VM
 
+With a container:
 ```
 (vm) # docker run -d --name=gvisor-tap-vsock --privileged --net=host -it quay.io/crcont/gvisor-tap-vsock:latest
 (vm) $ ping -c1 192.168.127.1
 (vm) $ curl http://redhat.com
 ```
 
-### Internal DNS
+With the executable:
+```
+(vm) # ./vm -debug
+```
+
+### Services
+
+#### API
+
+The executable running on the host, `host`, exposes a HTTP API. It can be used with curl.
+
+```
+$ curl  --unix-socket /tmp/network.sock http:/unix/stats 
+{
+  "BytesSent": 0,
+  "BytesReceived": 0,
+  "UnknownProtocolRcvdPackets": 0,
+  "MalformedRcvdPackets": 0,
+...
+```
+
+#### Gateway
+
+The executable running on the host runs a virtual gatewat that can be used by the VM.
+
+#### DNS
+
+The gateway also runs a DNS server. It can be configured to serve static zones.
 
 Activate it by changing the `/etc/resolv.conf` file inside the VM with:
 ```
 nameserver 192.168.127.1
 ```
 
+#### Port forwarding
+
+Dynamic port forwarding is supported.
+
+Expose a port:
+```
+$ curl  --unix-socket /tmp/network.sock http:/unix/services/forwarder/expose -X POST -d '{"local":":6443","remote":"192.168.127.2:6443"}'
+```
+
+Unexpose a port:
+```
+$ curl  --unix-socket /tmp/network.sock http:/unix/services/forwarder/expose -X POST -d '{"local":":6443"}'
+```
+
+List exposed ports:
+```
+$ curl  --unix-socket /tmp/network.sock http:/foo/services/forwarder/all | jq .
+[
+  {
+    "local": ":2222",
+    "remote": "192.168.127.2:22"
+  },
+  {
+    "local": ":6443",
+    "remote": "192.168.127.2:6443"
+  }
+]
+
+```
+
+#### Tunneling 
+
+The HTTP API exposed on the host can be used to connect to a specific IP and port inside the virtual network.
+An working example for SSH can be found [here](https://github.com/code-ready/gvisor-tap-vsock/blob/master/cmd/ssh-over-vsock).
+
+## Limitations
+
+* ICMP is not forwarded outside the network.
 
 ## Performance
 

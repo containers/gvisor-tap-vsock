@@ -119,5 +119,19 @@ func run(configuration *types.Configuration, endpoints []string) error {
 			time.Sleep(5 * time.Second)
 		}
 	}()
+
+	ln, err := vn.Listen("tcp", fmt.Sprintf("%s:8080", configuration.GatewayIP))
+	if err != nil {
+		return err
+	}
+	go func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+			_, _ = writer.Write([]byte(`Hello world!\n`))
+		})
+		if err := http.Serve(ln, mux); err != nil {
+			errCh <- err
+		}
+	}()
 	return <-errCh
 }
