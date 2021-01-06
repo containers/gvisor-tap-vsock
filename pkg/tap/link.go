@@ -83,7 +83,7 @@ func (e *LinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpi
 	eth.Encode(&header.EthernetFields{
 		Type:    protocol,
 		SrcAddr: srcAddr,
-		DstAddr: r.RemoteLinkAddress,
+		DstAddr: r.RemoteLinkAddress(),
 	})
 
 	if e.debug {
@@ -92,7 +92,7 @@ func (e *LinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpi
 		log.Info(packet.String())
 	}
 
-	e.networkSwitch.DeliverNetworkPacket(r.RemoteLinkAddress, srcAddr, protocol, pkt)
+	e.networkSwitch.DeliverNetworkPacket(r.RemoteLinkAddress(), srcAddr, protocol, pkt)
 	return nil
 }
 

@@ -14,7 +14,7 @@ require (
 	github.com/onsi/ginkgo v1.10.1
 	github.com/onsi/gomega v1.7.0
 	github.com/pkg/errors v0.9.1
-	github.com/sirupsen/logrus v1.6.0
+	github.com/sirupsen/logrus v1.7.0
 	github.com/songgao/packets v0.0.0-20160404182456-549a10cd4091
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/stretchr/testify v1.4.0
@@ -22,5 +22,5 @@ require (
 	golang.org/x/crypto v0.0.0-20201016220609-9e8e0b390897
 	golang.org/x/net v0.0.0-20201026091529-146b70c837a4 // indirect
 	golang.org/x/sys v0.0.0-20201026133411-418715ba6fdd // indirect
-	gvisor.dev/gvisor v0.0.0-20201106095200-de70ee3adac5
+	gvisor.dev/gvisor v0.0.0-20210106030213-99534ddb4e66
 )
