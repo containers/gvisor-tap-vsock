@@ -15,9 +15,17 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+const linkLocalSubnet = "169.254.0.0/16"
+
 func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex) *tcp.Forwarder {
 	return tcp.NewForwarder(s, 30000, 10, func(r *tcp.ForwarderRequest) {
 		localAddress := r.ID().LocalAddress
+
+		if linkLocal().Contains(localAddress) {
+			r.Complete(true)
+			return
+		}
+
 		natLock.Lock()
 		if replaced, ok := nat[localAddress]; ok {
 			localAddress = replaced
@@ -45,4 +53,10 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 		}
 		remote.HandleConn(gonet.NewTCPConn(&wq, ep))
 	})
+}
+
+func linkLocal() *tcpip.Subnet {
+	_, parsedSubnet, _ := net.ParseCIDR(linkLocalSubnet) // CoreOS VM tries to connect to Amazon EC2 metadata service
+	subnet, _ := tcpip.NewSubnet(tcpip.Address(parsedSubnet.IP), tcpip.AddressMask(parsedSubnet.Mask))
+	return &subnet
 }

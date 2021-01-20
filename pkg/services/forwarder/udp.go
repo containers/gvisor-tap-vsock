@@ -17,6 +17,11 @@ import (
 func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex) *udp.Forwarder {
 	return udp.NewForwarder(s, func(r *udp.ForwarderRequest) {
 		localAddress := r.ID().LocalAddress
+
+		if linkLocal().Contains(localAddress) {
+			return
+		}
+
 		natLock.Lock()
 		if replaced, ok := nat[localAddress]; ok {
 			localAddress = replaced
