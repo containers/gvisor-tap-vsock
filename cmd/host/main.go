@@ -52,6 +52,10 @@ func main() {
 						IP:   net.ParseIP("192.168.127.1"),
 					},
 					{
+						Name: "host",
+						IP:   net.ParseIP("192.168.127.254"),
+					},
+					{
 						Name: "api",
 						IP:   net.ParseIP("192.168.127.2"),
 					},
@@ -68,6 +72,9 @@ func main() {
 		},
 		Forwards: map[string]string{
 			":2222": "192.168.127.2:22",
+		},
+		NAT: map[string]string{
+			"192.168.127.254": "127.0.0.1",
 		},
 	}, endpoints); err != nil {
 		log.Fatal(err)

@@ -84,7 +84,7 @@ func (e *Switch) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol 
 }
 
 func (e *Switch) Accept(conn net.Conn) {
-	log.Infof("new connection from %s", conn.LocalAddr().String())
+	log.Infof("new connection from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 	id, failed := e.connect(conn)
 	if failed {
 		log.Error("connection failed")
@@ -98,7 +98,7 @@ func (e *Switch) Accept(conn net.Conn) {
 		e.disconnect(id, conn)
 	}()
 	if err := e.rx(id, conn); err != nil {
-		log.Error(errors.Wrapf(err, "cannot receive packets from %s, disconnecting", conn.LocalAddr().String()))
+		log.Error(errors.Wrapf(err, "cannot receive packets from %s, disconnecting", conn.RemoteAddr().String()))
 		return
 	}
 }
@@ -116,7 +116,7 @@ func (e *Switch) connect(conn net.Conn) (int, bool) {
 		return 0, true
 	}
 	if err := e.handshake(conn, fmt.Sprintf("%s/%d", ip, e.IPs.Mask())); err != nil {
-		log.Error(errors.Wrapf(err, "cannot handshake with %s", conn.LocalAddr().String()))
+		log.Error(errors.Wrapf(err, "cannot handshake with %s", conn.RemoteAddr().String()))
 		return 0, true
 	}
 
@@ -125,7 +125,7 @@ func (e *Switch) connect(conn net.Conn) (int, bool) {
 }
 
 func (e *Switch) handshake(conn net.Conn, vm string) error {
-	log.Infof("assigning %s to %s", vm, conn.LocalAddr().String())
+	log.Infof("assigning %s to %s", vm, conn.RemoteAddr().String())
 	bin, err := json.Marshal(&types.Handshake{
 		MTU:     e.maxTransmissionUnit,
 		Gateway: e.gatewayIP,

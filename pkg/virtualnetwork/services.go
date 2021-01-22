@@ -3,6 +3,7 @@ package virtualnetwork
 import (
 	"net"
 	"net/http"
+	"sync"
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/services/dns"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/services/forwarder"
@@ -17,9 +18,12 @@ import (
 )
 
 func addServices(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {
-	tcpForwarder := forwarder.TCP(s)
+	var natLock sync.Mutex
+	translation := parseNATTable(configuration)
+
+	tcpForwarder := forwarder.TCP(s, translation, &natLock)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := forwarder.UDP(s)
+	udpForwarder := forwarder.UDP(s, translation, &natLock)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 
 	if err := dnsServer(configuration, s); err != nil {
@@ -33,6 +37,14 @@ func addServices(configuration *types.Configuration, s *stack.Stack) (http.Handl
 	mux := http.NewServeMux()
 	mux.Handle("/forwarder/", http.StripPrefix("/forwarder", forwarderMux))
 	return mux, nil
+}
+
+func parseNATTable(configuration *types.Configuration) map[tcpip.Address]tcpip.Address {
+	translation := make(map[tcpip.Address]tcpip.Address)
+	for source, destination := range configuration.NAT {
+		translation[tcpip.Address(net.ParseIP(source).To4())] = tcpip.Address(net.ParseIP(destination).To4())
+	}
+	return translation
 }
 
 func dnsServer(configuration *types.Configuration, s *stack.Stack) error {

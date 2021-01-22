@@ -1,4 +1,4 @@
-FROM registry.redhat.io/ubi8/ubi AS build
+FROM registry.access.redhat.com/ubi8/ubi AS build
 WORKDIR /go/src/app
 RUN yum -y install golang make
 COPY go.mod .
