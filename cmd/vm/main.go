@@ -35,7 +35,7 @@ var (
 )
 
 func main() {
-	flag.StringVar(&endpoint, "url", "vsock://2:1024/connect", "url where the tap send packets")
+	flag.StringVar(&endpoint, "url", fmt.Sprintf("vsock://2:1024%s", types.ConnectPath), "url where the tap send packets")
 	flag.StringVar(&iface, "iface", "tap0", "tap interface name")
 	flag.StringVar(&stopIfIfaceExist, "stop-if-exist", "eth0,ens3,enp0s1", "stop if one of these interfaces exists at startup")
 	flag.BoolVar(&debug, "debug", false, "debug")
