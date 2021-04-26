@@ -14,16 +14,18 @@ type LinkEndpoint struct {
 	debug bool
 	mtu   int
 	mac   tcpip.LinkAddress
+	ip    string
 
 	dispatcher    stack.NetworkDispatcher
 	networkSwitch NetworkSwitch
 }
 
-func NewLinkEndpoint(debug bool, mtu int, macAddress string) *LinkEndpoint {
+func NewLinkEndpoint(debug bool, mtu int, macAddress string, ip string) *LinkEndpoint {
 	return &LinkEndpoint{
 		debug: debug,
 		mtu:   mtu,
 		mac:   tcpip.LinkAddress(macAddress),
+		ip:    ip,
 	}
 }
 
@@ -106,4 +108,8 @@ func (e *LinkEndpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 
 func (e *LinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) tcpip.Error {
 	return &tcpip.ErrNoRoute{}
+}
+
+func (e *LinkEndpoint) IP() string {
+	return e.ip
 }

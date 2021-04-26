@@ -34,10 +34,12 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 
 	var endpoint stack.LinkEndpoint
 
-	tapEndpoint := tap.NewLinkEndpoint(configuration.Debug, configuration.MTU, configuration.GatewayMacAddress)
-	networkSwitch := tap.NewSwitch(configuration.Debug, configuration.MTU, tap.NewIPPool(subnet))
+	ipPool := tap.NewIPPool(subnet)
+	ipPool.Reserve(net.ParseIP(configuration.GatewayIP), -1)
+	tapEndpoint := tap.NewLinkEndpoint(configuration.Debug, configuration.MTU, configuration.GatewayMacAddress, configuration.GatewayIP)
+	networkSwitch := tap.NewSwitch(configuration.Debug, configuration.MTU, ipPool)
 	tapEndpoint.Connect(networkSwitch)
-	networkSwitch.Connect(configuration.GatewayIP, tapEndpoint)
+	networkSwitch.Connect(tapEndpoint)
 
 	if configuration.CaptureFile != "" {
 		_ = os.Remove(configuration.CaptureFile)

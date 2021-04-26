@@ -23,6 +23,7 @@ import (
 type VirtualDevice interface {
 	DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer)
 	LinkAddress() tcpip.LinkAddress
+	IP() string
 }
 
 type NetworkSwitch interface {
@@ -45,8 +46,7 @@ type Switch struct {
 
 	writeLock sync.Mutex
 
-	gatewayIP string
-	gateway   VirtualDevice
+	gateway VirtualDevice
 
 	IPs *IPPool
 }
@@ -71,9 +71,7 @@ func (e *Switch) CAM() map[string]int {
 	return ret
 }
 
-func (e *Switch) Connect(ip string, ep VirtualDevice) {
-	e.IPs.Reserve(net.ParseIP(ip), -1)
-	e.gatewayIP = ip
+func (e *Switch) Connect(ep VirtualDevice) {
 	e.gateway = ep
 }
 
@@ -128,7 +126,7 @@ func (e *Switch) handshake(conn net.Conn, vm string) error {
 	log.Infof("assigning %s to %s", vm, conn.RemoteAddr().String())
 	bin, err := json.Marshal(&types.Handshake{
 		MTU:     e.maxTransmissionUnit,
-		Gateway: e.gatewayIP,
+		Gateway: e.gateway.IP(),
 		VM:      vm,
 	})
 	if err != nil {
