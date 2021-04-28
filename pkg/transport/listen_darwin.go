@@ -33,6 +33,8 @@ func Listen(endpoint string) (net.Listener, error) {
 		})
 	case "unix":
 		return net.Listen("unix", parsed.Path)
+	case "tcp":
+		return net.Listen("tcp", parsed.Host)
 	default:
 		return nil, errors.New("unexpected scheme")
 	}
