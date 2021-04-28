@@ -176,6 +176,8 @@ func (e *Switch) tx(src, dst tcpip.LinkAddress, pkt *stack.PacketBuffer) error {
 					return err
 				}
 			}
+
+			atomic.AddUint64(&e.Sent, uint64(pkt.Size()))
 		}
 	} else {
 		e.camLock.RLock()
@@ -196,9 +198,8 @@ func (e *Switch) tx(src, dst tcpip.LinkAddress, pkt *stack.PacketBuffer) error {
 				return err
 			}
 		}
+		atomic.AddUint64(&e.Sent, uint64(pkt.Size()))
 	}
-
-	atomic.AddUint64(&e.Sent, uint64(pkt.Size()))
 	return nil
 }
 
