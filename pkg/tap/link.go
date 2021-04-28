@@ -86,6 +86,14 @@ func (e *LinkEndpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 		DstAddr: r.RemoteLinkAddress,
 	})
 
+	h := header.ARP(pkt.NetworkHeader().View())
+	if h.IsValid() &&
+		h.Op() == header.ARPReply &&
+		tcpip.Address(h.ProtocolAddressSender()).String() != e.IP() {
+		log.Errorf("Dropping spoofing packets")
+		return nil
+	}
+
 	if e.debug {
 		vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 		packet := gopacket.NewPacket(vv.ToView(), layers.LayerTypeEthernet, gopacket.Default)
