@@ -15,7 +15,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 )
 
-func (n *VirtualNetwork) Mux() http.Handler {
+func (n *VirtualNetwork) Mux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/services/", http.StripPrefix("/services", n.servicesMux))
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
