@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"regexp"
 	"time"
 
@@ -115,7 +116,8 @@ func run(configuration *types.Configuration, endpoints []string) error {
 		}
 
 		go func() {
-			if err := http.Serve(ln, vn.Mux()); err != nil {
+
+			if err := http.Serve(ln, withProfiler(vn)); err != nil {
 				errCh <- err
 			}
 		}()
@@ -141,4 +143,15 @@ func run(configuration *types.Configuration, endpoints []string) error {
 		}
 	}()
 	return <-errCh
+}
+
+func withProfiler(vn *virtualnetwork.VirtualNetwork) http.Handler {
+	mux := vn.Mux()
+	if debug {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	}
+	return mux
 }
