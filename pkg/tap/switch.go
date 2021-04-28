@@ -253,9 +253,9 @@ func (e *Switch) rx(id int, conn net.Conn) error {
 		e.camLock.Unlock()
 
 		if eth.DestinationAddress() != e.gateway.LinkAddress() {
-			if err := e.tx(eth.SourceAddress(), eth.DestinationAddress(), &stack.PacketBuffer{
+			if err := e.tx(eth.SourceAddress(), eth.DestinationAddress(), stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: vv,
-			}); err != nil {
+			})); err != nil {
 				log.Error(err)
 			}
 		}
@@ -265,9 +265,9 @@ func (e *Switch) rx(id int, conn net.Conn) error {
 				eth.SourceAddress(),
 				eth.DestinationAddress(),
 				eth.Type(),
-				&stack.PacketBuffer{
+				stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: vv,
-				},
+				}),
 			)
 		}
 

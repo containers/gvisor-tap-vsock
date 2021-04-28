@@ -126,6 +126,16 @@ type multicastGroupState struct {
 	//
 	// Must not be nil.
 	delayedReportJob *tcpip.Job
+
+	// delyedReportJobFiresAt is the time when the delayed report job will fire.
+	//
+	// A zero value indicates that the job is not scheduled.
+	delayedReportJobFiresAt time.Time
+}
+
+func (m *multicastGroupState) cancelDelayedReportJob() {
+	m.delayedReportJob.Cancel()
+	m.delayedReportJobFiresAt = time.Time{}
 }
 
 // GenericMulticastProtocolOptions holds options for the generic multicast
@@ -146,14 +156,6 @@ type GenericMulticastProtocolOptions struct {
 	//
 	// Unsolicited reports are transmitted when a group is newly joined.
 	MaxUnsolicitedReportDelay time.Duration
-
-	// AllNodesAddress is a multicast address that all nodes on a network should
-	// be a member of.
-	//
-	// This address will not have the generic multicast protocol performed on it;
-	// it will be left in the non member/listener state, and packets will never
-	// be sent for it.
-	AllNodesAddress tcpip.Address
 }
 
 // MulticastGroupProtocol is a multicast group protocol whose core state machine
@@ -174,10 +176,14 @@ type MulticastGroupProtocol interface {
 	//
 	// Returns false if the caller should queue the report to be sent later. Note,
 	// returning false does not mean that the receiver hit an error.
-	SendReport(groupAddress tcpip.Address) (sent bool, err *tcpip.Error)
+	SendReport(groupAddress tcpip.Address) (sent bool, err tcpip.Error)
 
 	// SendLeave sends a multicast leave for the specified group address.
-	SendLeave(groupAddress tcpip.Address) *tcpip.Error
+	SendLeave(groupAddress tcpip.Address) tcpip.Error
+
+	// ShouldPerformProtocol returns true iff the protocol should be performed for
+	// the specified group.
+	ShouldPerformProtocol(tcpip.Address) bool
 }
 
 // GenericMulticastProtocolState is the per interface generic multicast protocol
@@ -428,7 +434,7 @@ func (g *GenericMulticastProtocolState) HandleReportLocked(groupAddress tcpip.Ad
 	//   on that interface, it stops its timer and does not send a Report for
 	//   that address, thus suppressing duplicate reports on the link.
 	if info, ok := g.memberships[groupAddress]; ok && info.state.isDelayingMember() {
-		info.delayedReportJob.Cancel()
+		info.cancelDelayedReportJob()
 		info.lastToSendReport = false
 		info.state = idleMember
 		g.memberships[groupAddress] = info
@@ -445,20 +451,7 @@ func (g *GenericMulticastProtocolState) initializeNewMemberLocked(groupAddress t
 
 	info.lastToSendReport = false
 
-	if groupAddress == g.opts.AllNodesAddress {
-		// As per RFC 2236 section 6 page 10 (for IGMPv2),
-		//
-		//   The all-systems group (address 224.0.0.1) is handled as a special
-		//   case. The host starts in Idle Member state for that group on every
-		//   interface, never transitions to another state, and never sends a
-		//   report for that group.
-		//
-		// As per RFC 2710 section 5 page 10 (for MLDv1),
-		//
-		//   The link-scope all-nodes address (FF02::1) is handled as a special
-		//   case. The node starts in Idle Listener state for that address on
-		//   every interface, never transitions to another state, and never sends
-		//   a Report or Done for that address.
+	if !g.opts.Protocol.ShouldPerformProtocol(groupAddress) {
 		info.state = idleMember
 		return
 	}
@@ -527,20 +520,7 @@ func (g *GenericMulticastProtocolState) maybeSendLeave(groupAddress tcpip.Addres
 		return
 	}
 
-	if groupAddress == g.opts.AllNodesAddress {
-		// As per RFC 2236 section 6 page 10 (for IGMPv2),
-		//
-		//   The all-systems group (address 224.0.0.1) is handled as a special
-		//   case. The host starts in Idle Member state for that group on every
-		//   interface, never transitions to another state, and never sends a
-		//   report for that group.
-		//
-		// As per RFC 2710 section 5 page 10 (for MLDv1),
-		//
-		//   The link-scope all-nodes address (FF02::1) is handled as a special
-		//   case. The node starts in Idle Listener state for that address on
-		//   every interface, never transitions to another state, and never sends
-		//   a Report or Done for that address.
+	if !g.opts.Protocol.ShouldPerformProtocol(groupAddress) {
 		return
 	}
 
@@ -603,7 +583,7 @@ func (g *GenericMulticastProtocolState) transitionToNonMemberLocked(groupAddress
 		return
 	}
 
-	info.delayedReportJob.Cancel()
+	info.cancelDelayedReportJob()
 	g.maybeSendLeave(groupAddress, info.lastToSendReport)
 	info.lastToSendReport = false
 	info.state = nonMember
@@ -617,20 +597,7 @@ func (g *GenericMulticastProtocolState) setDelayTimerForAddressRLocked(groupAddr
 		return
 	}
 
-	if groupAddress == g.opts.AllNodesAddress {
-		// As per RFC 2236 section 6 page 10 (for IGMPv2),
-		//
-		//   The all-systems group (address 224.0.0.1) is handled as a special
-		//   case. The host starts in Idle Member state for that group on every
-		//   interface, never transitions to another state, and never sends a
-		//   report for that group.
-		//
-		// As per RFC 2710 section 5 page 10 (for MLDv1),
-		//
-		//   The link-scope all-nodes address (FF02::1) is handled as a special
-		//   case. The node starts in Idle Listener state for that address on
-		//   every interface, never transitions to another state, and never sends
-		//   a Report or Done for that address.
+	if !g.opts.Protocol.ShouldPerformProtocol(groupAddress) {
 		return
 	}
 
@@ -645,14 +612,24 @@ func (g *GenericMulticastProtocolState) setDelayTimerForAddressRLocked(groupAddr
 	//   If a timer for any address is already running, it is reset to the new
 	//   random value only if the requested Maximum Response Delay is less than
 	//   the remaining value of the running timer.
+	now := time.Unix(0 /* seconds */, g.opts.Clock.NowNanoseconds())
 	if info.state == delayingMember {
-		// TODO: Reset the timer if time remaining is greater than maxResponseTime.
-		return
+		if info.delayedReportJobFiresAt.IsZero() {
+			panic(fmt.Sprintf("delayed report unscheduled while in the delaying member state; group = %s", groupAddress))
+		}
+
+		if info.delayedReportJobFiresAt.Sub(now) <= maxResponseTime {
+			// The timer is scheduled to fire before the maximum response time so we
+			// leave our timer as is.
+			return
+		}
 	}
 
 	info.state = delayingMember
-	info.delayedReportJob.Cancel()
-	info.delayedReportJob.Schedule(g.calculateDelayTimerDuration(maxResponseTime))
+	info.cancelDelayedReportJob()
+	maxResponseTime = g.calculateDelayTimerDuration(maxResponseTime)
+	info.delayedReportJob.Schedule(maxResponseTime)
+	info.delayedReportJobFiresAt = now.Add(maxResponseTime)
 }
 
 // calculateDelayTimerDuration returns a random time between (0, maxRespTime].

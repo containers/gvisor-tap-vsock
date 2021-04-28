@@ -69,11 +69,11 @@ func (e *LinkEndpoint) MTU() uint32 {
 func (e *LinkEndpoint) Wait() {
 }
 
-func (e *LinkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	return 1, tcpip.ErrNoRoute
+func (e *LinkEndpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+	return 1, &tcpip.ErrNoRoute{}
 }
 
-func (e *LinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+func (e *LinkEndpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	// Preserve the src address if it's set in the route.
 	srcAddr := e.LinkAddress()
 	if r.LocalLinkAddress != "" {
@@ -83,7 +83,7 @@ func (e *LinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpi
 	eth.Encode(&header.EthernetFields{
 		Type:    protocol,
 		SrcAddr: srcAddr,
-		DstAddr: r.RemoteLinkAddress(),
+		DstAddr: r.RemoteLinkAddress,
 	})
 
 	if e.debug {
@@ -92,10 +92,10 @@ func (e *LinkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpi
 		log.Info(packet.String())
 	}
 
-	e.networkSwitch.DeliverNetworkPacket(r.RemoteLinkAddress(), srcAddr, protocol, pkt)
+	e.networkSwitch.DeliverNetworkPacket(r.RemoteLinkAddress, srcAddr, protocol, pkt)
 	return nil
 }
 
-func (e *LinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	return tcpip.ErrNoRoute
+func (e *LinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) tcpip.Error {
+	return &tcpip.ErrNoRoute{}
 }

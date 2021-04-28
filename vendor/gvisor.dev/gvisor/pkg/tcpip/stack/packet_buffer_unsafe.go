@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tcp
+package stack
 
-import (
-	"time"
-)
+import "unsafe"
 
-// saveT is invoked by stateify.
-func (c *cubicState) saveT() unixTime {
-	return unixTime{c.t.Unix(), c.t.UnixNano()}
-}
-
-// loadT is invoked by stateify.
-func (c *cubicState) loadT(unix unixTime) {
-	c.t = time.Unix(unix.second, unix.nano)
-}
+const packetBufferStructSize = int(unsafe.Sizeof(PacketBuffer{}))
