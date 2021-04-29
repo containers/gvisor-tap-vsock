@@ -30,6 +30,7 @@ var (
 	endpoint           string
 	iface              string
 	stopIfIfaceExist   string
+	mac                string
 	debug              bool
 	changeDefaultRoute bool
 )
@@ -38,6 +39,7 @@ func main() {
 	flag.StringVar(&endpoint, "url", fmt.Sprintf("vsock://2:1024%s", types.ConnectPath), "url where the tap send packets")
 	flag.StringVar(&iface, "iface", "tap0", "tap interface name")
 	flag.StringVar(&stopIfIfaceExist, "stop-if-exist", "eth0,ens3,enp0s1", "stop if one of these interfaces exists at startup")
+	flag.StringVar(&mac, "mac", "5a:94:ef:e4:0c:ee", "mac address")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.BoolVar(&changeDefaultRoute, "change-default-route", true, "change the default route to use this interface")
 	flag.Parse()
@@ -101,6 +103,10 @@ func run() error {
 	}
 	defer tap.Close()
 
+	if err := setMacAddress(err); err != nil {
+		return errors.Wrap(err, "cannot set mac address")
+	}
+
 	errCh := make(chan error, 1)
 	go tx(conn, tap, errCh, handshake.MTU)
 	go rx(conn, tap, errCh, handshake.MTU)
@@ -121,6 +127,21 @@ func run() error {
 		os.Exit(0)
 	}()
 	return <-errCh
+}
+
+func setMacAddress(err error) error {
+	if mac == "" {
+		return nil
+	}
+	link, err := netlink.LinkByName(iface)
+	if err != nil {
+		return err
+	}
+	hw, err := net.ParseMAC(mac)
+	if err != nil {
+		return err
+	}
+	return netlink.LinkSetHardwareAddr(link, hw)
 }
 
 func handshake(conn net.Conn) (types.Handshake, error) {
