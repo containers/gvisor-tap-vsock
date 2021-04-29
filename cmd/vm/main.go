@@ -2,16 +2,14 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
+	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
@@ -33,6 +31,7 @@ var (
 	mac                string
 	debug              bool
 	changeDefaultRoute bool
+	mtu                int
 )
 
 func main() {
@@ -42,6 +41,7 @@ func main() {
 	flag.StringVar(&mac, "mac", "5a:94:ef:e4:0c:ee", "mac address")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.BoolVar(&changeDefaultRoute, "change-default-route", true, "change the default route to use this interface")
+	flag.IntVar(&mtu, "mtu", 4000, "mtu")
 	flag.Parse()
 
 	expected := strings.Split(stopIfIfaceExist, ",")
@@ -87,11 +87,6 @@ func run() error {
 		return err
 	}
 
-	handshake, err := handshake(conn)
-	if err != nil {
-		return errors.Wrap(err, "cannot handshake")
-	}
-
 	tap, err := water.New(water.Config{
 		DeviceType: water.TAP,
 		PlatformSpecificParams: water.PlatformSpecificParams{
@@ -103,62 +98,50 @@ func run() error {
 	}
 	defer tap.Close()
 
-	if err := setMacAddress(err); err != nil {
+	if err := linkUp(); err != nil {
 		return errors.Wrap(err, "cannot set mac address")
 	}
 
 	errCh := make(chan error, 1)
-	go tx(conn, tap, errCh, handshake.MTU)
-	go rx(conn, tap, errCh, handshake.MTU)
-
-	c := make(chan os.Signal)
-	cleanup, err := linkUp(handshake)
-	defer func() {
-		signal.Stop(c)
-		cleanup()
-	}()
-	if err != nil {
-		return err
-	}
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go tx(conn, tap, errCh, mtu)
+	go rx(conn, tap, errCh, mtu)
 	go func() {
-		<-c
-		cleanup()
-		os.Exit(0)
+		if err := dhcp(); err != nil {
+			errCh <- errors.Wrap(err, "dhcp error")
+		}
 	}()
 	return <-errCh
 }
 
-func setMacAddress(err error) error {
-	if mac == "" {
-		return nil
-	}
+func linkUp() error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		return err
+	}
+	if mac == "" {
+		return netlink.LinkSetUp(link)
 	}
 	hw, err := net.ParseMAC(mac)
 	if err != nil {
 		return err
 	}
-	return netlink.LinkSetHardwareAddr(link, hw)
+	if err := netlink.LinkSetHardwareAddr(link, hw); err != nil {
+		return err
+	}
+	return netlink.LinkSetUp(link)
 }
 
-func handshake(conn net.Conn) (types.Handshake, error) {
-	sizeBuf := make([]byte, 2)
-	if _, err := io.ReadFull(conn, sizeBuf); err != nil {
-		return types.Handshake{}, err
+func dhcp() error {
+	if _, err := exec.LookPath("udhcpc"); err == nil { // busybox dhcp client
+		cmd := exec.Command("udhcpc", "-f", "-q", "-i", iface, "-v")
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		return cmd.Run()
 	}
-	size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
-	b := make([]byte, size)
-	if _, err := io.ReadFull(conn, b); err != nil {
-		return types.Handshake{}, err
-	}
-	var handshake types.Handshake
-	if err := json.Unmarshal(b, &handshake); err != nil {
-		return types.Handshake{}, err
-	}
-	return handshake, nil
+	cmd := exec.Command("dhclient", "-4", "-d", "-v", iface)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	return cmd.Run()
 }
 
 func rx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
@@ -228,68 +211,4 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 			return
 		}
 	}
-}
-
-func linkUp(handshake types.Handshake) (func(), error) {
-	link, err := netlink.LinkByName(iface)
-	if err != nil {
-		return func() {}, err
-	}
-	newDefaultRoute := netlink.Route{
-		LinkIndex: link.Attrs().Index,
-		Gw:        net.ParseIP(handshake.Gateway),
-	}
-	addr, err := netlink.ParseAddr(handshake.VM)
-	if err != nil {
-		return func() {}, err
-	}
-	if err := netlink.AddrAdd(link, addr); err != nil {
-		return func() {}, errors.Wrap(err, "cannot add address")
-	}
-	if err := netlink.LinkSetMTU(link, handshake.MTU); err != nil {
-		return func() {}, errors.Wrap(err, "cannot set link mtu")
-	}
-	if err := netlink.LinkSetUp(link); err != nil {
-		return func() {}, errors.Wrap(err, "cannot set link up")
-	}
-
-	if !changeDefaultRoute {
-		return func() {}, nil
-	}
-	defaultRoute, err := defaultRoute()
-	if err != nil {
-		log.Warn(err)
-	}
-	cleanup := func() {
-		if err := netlink.RouteDel(&newDefaultRoute); err != nil {
-			log.Errorf("cannot remove new default gateway: %v", err)
-		}
-		if defaultRoute != nil {
-			if err := netlink.RouteAdd(defaultRoute); err != nil {
-				log.Errorf("cannot restore old default gateway: %v", err)
-			}
-		}
-	}
-	if defaultRoute != nil {
-		if err := netlink.RouteDel(defaultRoute); err != nil {
-			return cleanup, errors.Wrap(err, "cannot remove old default gateway")
-		}
-	}
-	if err := netlink.RouteAdd(&newDefaultRoute); err != nil {
-		return cleanup, errors.Wrap(err, "cannot add new default gateway")
-	}
-	return cleanup, nil
-}
-
-func defaultRoute() (*netlink.Route, error) {
-	routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range routes {
-		if r.Dst == nil {
-			return &r, nil
-		}
-	}
-	return nil, errors.New("no default gateway found")
 }

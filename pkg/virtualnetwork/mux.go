@@ -25,7 +25,7 @@ func (n *VirtualNetwork) Mux() *http.ServeMux {
 		_ = json.NewEncoder(w).Encode(n.networkSwitch.CAM())
 	})
 	mux.HandleFunc("/leases", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(n.networkSwitch.IPs.Leases())
+		_ = json.NewEncoder(w).Encode(n.ipPool.Leases())
 	})
 	mux.HandleFunc(types.ConnectPath, func(w http.ResponseWriter, r *http.Request) {
 		hj, ok := w.(http.Hijacker)

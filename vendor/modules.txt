@@ -21,6 +21,13 @@ github.com/hpcloud/tail/ratelimiter
 github.com/hpcloud/tail/util
 github.com/hpcloud/tail/watch
 github.com/hpcloud/tail/winfile
+# github.com/insomniacslk/dhcp v0.0.0-20210428091707-95b2ff6905c9
+## explicit
+github.com/insomniacslk/dhcp/dhcpv4
+github.com/insomniacslk/dhcp/dhcpv4/server4
+github.com/insomniacslk/dhcp/iana
+github.com/insomniacslk/dhcp/interfaces
+github.com/insomniacslk/dhcp/rfc1035label
 # github.com/linuxkit/virtsock v0.0.0-20180830132707-8e79449dea07
 ## explicit
 github.com/linuxkit/virtsock/pkg/hvsock
@@ -78,9 +85,15 @@ github.com/songgao/packets/ethernet
 # github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 ## explicit
 github.com/songgao/water
-# github.com/stretchr/testify v1.5.1
+# github.com/stretchr/testify v1.6.1
 ## explicit
 github.com/stretchr/testify/assert
+# github.com/u-root/u-root v7.0.0+incompatible
+github.com/u-root/u-root/pkg/cmdline
+github.com/u-root/u-root/pkg/rand
+github.com/u-root/u-root/pkg/shlex
+github.com/u-root/u-root/pkg/ubinary
+github.com/u-root/u-root/pkg/uio
 # github.com/vishvananda/netlink v1.1.0
 ## explicit
 github.com/vishvananda/netlink
@@ -139,6 +152,8 @@ gopkg.in/fsnotify.v1
 gopkg.in/tomb.v1
 # gopkg.in/yaml.v2 v2.2.8
 gopkg.in/yaml.v2
+# gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
+gopkg.in/yaml.v3
 # gvisor.dev/gvisor v0.0.0-20210424070529-29f85eb7ca69
 ## explicit
 gvisor.dev/gvisor/pkg/gohacks

@@ -20,6 +20,8 @@ type Configuration struct {
 	Forwards map[string]string
 
 	NAT map[string]string
+
+	DHCPStaticLeases map[string]string
 }
 
 type Zone struct {

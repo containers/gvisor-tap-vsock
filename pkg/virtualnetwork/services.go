@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/code-ready/gvisor-tap-vsock/pkg/services/dhcp"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/services/dns"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/services/forwarder"
+	"github.com/code-ready/gvisor-tap-vsock/pkg/tap"
 	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -17,7 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-func addServices(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {
+func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool) (http.Handler, error) {
 	var natLock sync.Mutex
 	translation := parseNATTable(configuration)
 
@@ -30,12 +32,18 @@ func addServices(configuration *types.Configuration, s *stack.Stack) (http.Handl
 		return nil, err
 	}
 
+	dhcpMux, err := dhcpServer(configuration, s, ipPool)
+	if err != nil {
+		return nil, err
+	}
+
 	forwarderMux, err := forwardHostVM(configuration, s)
 	if err != nil {
 		return nil, err
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/forwarder/", http.StripPrefix("/forwarder", forwarderMux))
+	mux.Handle("/dhcp/", http.StripPrefix("/dhcp", dhcpMux))
 	return mux, nil
 }
 
@@ -63,6 +71,19 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
 		}
 	}()
 	return nil
+}
+
+func dhcpServer(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool) (http.Handler, error) {
+	server, err := dhcp.New(configuration, s, ipPool)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		if err := server.Serve(); err != nil {
+			log.Error(err)
+		}
+	}()
+	return server.Mux(), nil
 }
 
 func forwardHostVM(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {

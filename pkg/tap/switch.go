@@ -2,14 +2,12 @@ package tap
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"sync/atomic"
 
-	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/pkg/errors"
@@ -47,17 +45,14 @@ type Switch struct {
 	writeLock sync.Mutex
 
 	gateway VirtualDevice
-
-	IPs *IPPool
 }
 
-func NewSwitch(debug bool, mtu int, ipPool *IPPool) *Switch {
+func NewSwitch(debug bool, mtu int) *Switch {
 	return &Switch{
 		debug:               debug,
 		maxTransmissionUnit: mtu,
 		conns:               make(map[int]net.Conn),
 		cam:                 make(map[tcpip.LinkAddress]int),
-		IPs:                 ipPool,
 	}
 }
 
@@ -108,39 +103,8 @@ func (e *Switch) connect(conn net.Conn) (int, bool) {
 	id := e.nextConnID
 	e.nextConnID++
 
-	ip, err := e.IPs.Assign(id)
-	if err != nil {
-		log.Error(err)
-		return 0, true
-	}
-	if err := e.handshake(conn, fmt.Sprintf("%s/%d", ip, e.IPs.Mask())); err != nil {
-		log.Error(errors.Wrapf(err, "cannot handshake with %s", conn.RemoteAddr().String()))
-		return 0, true
-	}
-
 	e.conns[id] = conn
 	return id, false
-}
-
-func (e *Switch) handshake(conn net.Conn, vm string) error {
-	log.Infof("assigning %s to %s", vm, conn.RemoteAddr().String())
-	bin, err := json.Marshal(&types.Handshake{
-		MTU:     e.maxTransmissionUnit,
-		Gateway: e.gateway.IP(),
-		VM:      vm,
-	})
-	if err != nil {
-		return err
-	}
-	size := make([]byte, 2)
-	binary.LittleEndian.PutUint16(size, uint16(len(bin)))
-	if _, err := conn.Write(size); err != nil {
-		return err
-	}
-	if _, err := conn.Write(bin); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (e *Switch) tx(src, dst tcpip.LinkAddress, pkt *stack.PacketBuffer) error {
@@ -212,8 +176,6 @@ func (e *Switch) disconnect(id int, conn net.Conn) {
 	}
 	_ = conn.Close()
 	delete(e.conns, id)
-
-	e.IPs.Release(id)
 }
 
 func (e *Switch) rx(id int, conn net.Conn) error {

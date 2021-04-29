@@ -1,6 +1,8 @@
 package tap
 
 import (
+	"net"
+
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	log "github.com/sirupsen/logrus"
@@ -20,13 +22,17 @@ type LinkEndpoint struct {
 	networkSwitch NetworkSwitch
 }
 
-func NewLinkEndpoint(debug bool, mtu int, macAddress string, ip string) *LinkEndpoint {
+func NewLinkEndpoint(debug bool, mtu int, macAddress string, ip string) (*LinkEndpoint, error) {
+	linkAddr, err := net.ParseMAC(macAddress)
+	if err != nil {
+		return nil, err
+	}
 	return &LinkEndpoint{
 		debug: debug,
 		mtu:   mtu,
-		mac:   tcpip.LinkAddress(macAddress),
+		mac:   tcpip.LinkAddress(linkAddr),
 		ip:    ip,
-	}
+	}, nil
 }
 
 func (e *LinkEndpoint) ARPHardwareType() header.ARPHardwareType {
