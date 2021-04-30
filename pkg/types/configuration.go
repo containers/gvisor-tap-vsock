@@ -24,7 +24,16 @@ type Configuration struct {
 	DHCPStaticLeases map[string]string
 
 	VpnKitUUIDMacAddresses map[string]string
+
+	Protocol Protocol
 }
+
+type Protocol string
+
+const (
+	HyperKitProtocol Protocol = "hyperkit"
+	QemuProtocol     Protocol = "qemu"
+)
 
 type Zone struct {
 	Name      string

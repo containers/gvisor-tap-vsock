@@ -22,6 +22,7 @@ var (
 	mtu          int
 	endpoints    arrayFlags
 	vpnkitSocket string
+	qemuSocket   string
 )
 
 func main() {
@@ -29,6 +30,7 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.StringVar(&vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
+	flag.StringVar(&qemuSocket, "listen-qemu", "", "Socket to be used by Qemu")
 	flag.Parse()
 
 	if debug {
@@ -37,6 +39,15 @@ func main() {
 
 	if len(endpoints) == 0 {
 		endpoints = append(endpoints, transport.DefaultURL)
+	}
+
+	if vpnkitSocket != "" && qemuSocket != "" {
+		log.Fatal("cannot use qemu and vpnkit protocol at the same time")
+	}
+
+	protocol := types.HyperKitProtocol
+	if qemuSocket != "" {
+		protocol = types.QemuProtocol
 	}
 
 	if err := run(&types.Configuration{
@@ -89,6 +100,7 @@ func main() {
 		VpnKitUUIDMacAddresses: map[string]string{
 			"c3d68012-0208-11ea-9fd7-f2189899ab08": "5a:94:ef:e4:0c:ee",
 		},
+		Protocol: protocol,
 	}, endpoints); err != nil {
 		log.Fatal(err)
 	}
@@ -156,6 +168,27 @@ func run(configuration *types.Configuration, endpoints []string) error {
 				go func() {
 					if err := vn.AcceptVpnKit(conn); err != nil {
 						log.Errorf("vpnkit error: %s", err)
+					}
+				}()
+			}
+		}()
+	}
+
+	if qemuSocket != "" {
+		qemuListener, err := transport.Listen(qemuSocket)
+		if err != nil {
+			return err
+		}
+		go func() {
+			for {
+				conn, err := qemuListener.Accept()
+				if err != nil {
+					log.Errorf("qemu accept error: %s", err)
+					continue
+				}
+				go func() {
+					if err := vn.AcceptQemu(conn); err != nil {
+						log.Errorf("qemu error: %s", err)
 					}
 				}()
 			}

@@ -1,13 +1,13 @@
 package tap
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"sync/atomic"
 
+	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/pkg/errors"
@@ -45,14 +45,17 @@ type Switch struct {
 	writeLock sync.Mutex
 
 	gateway VirtualDevice
+
+	protocol protocol
 }
 
-func NewSwitch(debug bool, mtu int) *Switch {
+func NewSwitch(debug bool, mtu int, protocol types.Protocol) *Switch {
 	return &Switch{
 		debug:               debug,
 		maxTransmissionUnit: mtu,
 		conns:               make(map[int]net.Conn),
 		cam:                 make(map[tcpip.LinkAddress]int),
+		protocol:            protocolImplementation(protocol),
 	}
 }
 
@@ -108,8 +111,8 @@ func (e *Switch) connect(conn net.Conn) (int, bool) {
 }
 
 func (e *Switch) tx(src, dst tcpip.LinkAddress, pkt *stack.PacketBuffer) error {
-	size := make([]byte, 2)
-	binary.LittleEndian.PutUint16(size, uint16(pkt.Size()))
+	size := e.protocol.Buf()
+	e.protocol.Write(size, pkt.Size())
 
 	e.writeLock.Lock()
 	defer e.writeLock.Unlock()
@@ -179,17 +182,14 @@ func (e *Switch) disconnect(id int, conn net.Conn) {
 }
 
 func (e *Switch) rx(id int, conn net.Conn) error {
-	sizeBuf := make([]byte, 2)
+	sizeBuf := e.protocol.Buf()
 
 	for {
 		n, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read size from socket")
 		}
-		if n != 2 {
-			return fmt.Errorf("unexpected size %d", n)
-		}
-		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
+		size := int(e.protocol.Read(sizeBuf))
 
 		buf := make([]byte, size)
 		n, err = io.ReadFull(conn, buf)
@@ -234,4 +234,11 @@ func (e *Switch) rx(id int, conn net.Conn) error {
 
 		atomic.AddUint64(&e.Received, uint64(size))
 	}
+}
+
+func protocolImplementation(protocol types.Protocol) protocol {
+	if protocol == types.QemuProtocol {
+		return &qemuProtocol{}
+	}
+	return &hyperkitProtocol{}
 }
