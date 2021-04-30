@@ -18,15 +18,17 @@ import (
 )
 
 var (
-	debug     bool
-	mtu       int
-	endpoints arrayFlags
+	debug        bool
+	mtu          int
+	endpoints    arrayFlags
+	vpnkitSocket string
 )
 
 func main() {
 	flag.Var(&endpoints, "listen", fmt.Sprintf("url where the tap send packets (default %s)", transport.DefaultURL))
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&mtu, "mtu", 1500, "mtu")
+	flag.StringVar(&vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
 	flag.Parse()
 
 	if debug {
@@ -84,6 +86,9 @@ func main() {
 		NAT: map[string]string{
 			"192.168.127.254": "127.0.0.1",
 		},
+		VpnKitUUIDMacAddresses: map[string]string{
+			"c3d68012-0208-11ea-9fd7-f2189899ab08": "5a:94:ef:e4:0c:ee",
+		},
 	}, endpoints); err != nil {
 		log.Fatal(err)
 	}
@@ -135,6 +140,27 @@ func run(configuration *types.Configuration, endpoints []string) error {
 			time.Sleep(5 * time.Second)
 		}
 	}()
+
+	if vpnkitSocket != "" {
+		vpnkitListener, err := transport.Listen(vpnkitSocket)
+		if err != nil {
+			return err
+		}
+		go func() {
+			for {
+				conn, err := vpnkitListener.Accept()
+				if err != nil {
+					log.Errorf("vpnkit accept error: %s", err)
+					continue
+				}
+				go func() {
+					if err := vn.AcceptVpnKit(conn); err != nil {
+						log.Errorf("vpnkit error: %s", err)
+					}
+				}()
+			}
+		}()
+	}
 
 	ln, err := vn.Listen("tcp", fmt.Sprintf("%s:8080", configuration.GatewayIP))
 	if err != nil {

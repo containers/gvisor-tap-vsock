@@ -22,6 +22,8 @@ type Configuration struct {
 	NAT map[string]string
 
 	DHCPStaticLeases map[string]string
+
+	VpnKitUUIDMacAddresses map[string]string
 }
 
 type Zone struct {
