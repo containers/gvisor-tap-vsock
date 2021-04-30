@@ -29,6 +29,10 @@ func main() {
 	flag.IntVar(&mtu, "mtu", 1500, "mtu")
 	flag.Parse()
 
+	if debug {
+		log.SetLevel(log.DebugLevel)
+	}
+
 	if len(endpoints) == 0 {
 		endpoints = append(endpoints, transport.DefaultURL)
 	}
