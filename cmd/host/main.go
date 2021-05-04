@@ -97,6 +97,7 @@ func main() {
 		NAT: map[string]string{
 			"192.168.127.254": "127.0.0.1",
 		},
+		GatewayVirtualIPs: []string{"192.168.127.254"},
 		VpnKitUUIDMacAddresses: map[string]string{
 			"c3d68012-0208-11ea-9fd7-f2189899ab08": "5a:94:ef:e4:0c:ee",
 		},

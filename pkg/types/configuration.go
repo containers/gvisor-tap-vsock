@@ -21,6 +21,8 @@ type Configuration struct {
 
 	NAT map[string]string
 
+	GatewayVirtualIPs []string
+
 	DHCPStaticLeases map[string]string
 
 	VpnKitUUIDMacAddresses map[string]string

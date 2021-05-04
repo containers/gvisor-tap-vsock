@@ -41,7 +41,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		ipPool.Reserve(net.ParseIP(ip), mac)
 	}
 
-	tapEndpoint, err := tap.NewLinkEndpoint(configuration.Debug, configuration.MTU, configuration.GatewayMacAddress, configuration.GatewayIP)
+	tapEndpoint, err := tap.NewLinkEndpoint(configuration.Debug, configuration.MTU, configuration.GatewayMacAddress, configuration.GatewayIP, configuration.GatewayVirtualIPs)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot create tap endpoint")
 	}

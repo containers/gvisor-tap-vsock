@@ -13,25 +13,31 @@ import (
 )
 
 type LinkEndpoint struct {
-	debug bool
-	mtu   int
-	mac   tcpip.LinkAddress
-	ip    string
+	debug      bool
+	mtu        int
+	mac        tcpip.LinkAddress
+	ip         string
+	virtualIPs map[string]struct{}
 
 	dispatcher    stack.NetworkDispatcher
 	networkSwitch NetworkSwitch
 }
 
-func NewLinkEndpoint(debug bool, mtu int, macAddress string, ip string) (*LinkEndpoint, error) {
+func NewLinkEndpoint(debug bool, mtu int, macAddress string, ip string, virtualIPs []string) (*LinkEndpoint, error) {
 	linkAddr, err := net.ParseMAC(macAddress)
 	if err != nil {
 		return nil, err
 	}
+	set := make(map[string]struct{})
+	for _, virtualIP := range virtualIPs {
+		set[virtualIP] = struct{}{}
+	}
 	return &LinkEndpoint{
-		debug: debug,
-		mtu:   mtu,
-		mac:   tcpip.LinkAddress(linkAddr),
-		ip:    ip,
+		debug:      debug,
+		mtu:        mtu,
+		mac:        tcpip.LinkAddress(linkAddr),
+		ip:         ip,
+		virtualIPs: set,
 	}, nil
 }
 
@@ -96,10 +102,13 @@ func (e *LinkEndpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 
 	h := header.ARP(pkt.NetworkHeader().View())
 	if h.IsValid() &&
-		h.Op() == header.ARPReply &&
-		tcpip.Address(h.ProtocolAddressSender()).String() != e.IP() {
-		log.Errorf("Dropping spoofing packets")
-		return nil
+		h.Op() == header.ARPReply {
+		ip := tcpip.Address(h.ProtocolAddressSender()).String()
+		_, ok := e.virtualIPs[ip]
+		if ip != e.IP() && !ok {
+			log.Debugf("dropping spoofing packets from the gateway about IP %s", ip)
+			return nil
+		}
 	}
 
 	if e.debug {
