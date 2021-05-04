@@ -20,5 +20,6 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/vishvananda/netlink v1.1.0
 	golang.org/x/crypto v0.0.0-20201016220609-9e8e0b390897
+	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	gvisor.dev/gvisor v0.0.0-20210424070529-29f85eb7ca69
 )

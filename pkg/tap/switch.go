@@ -1,6 +1,7 @@
 package tap
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -79,7 +80,7 @@ func (e *Switch) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol 
 	}
 }
 
-func (e *Switch) Accept(conn net.Conn) {
+func (e *Switch) Accept(ctx context.Context, conn net.Conn) {
 	log.Infof("new connection from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 	id, failed := e.connect(conn)
 	if failed {
@@ -93,7 +94,7 @@ func (e *Switch) Accept(conn net.Conn) {
 		defer e.connLock.Unlock()
 		e.disconnect(id, conn)
 	}()
-	if err := e.rx(id, conn); err != nil {
+	if err := e.rx(ctx, id, conn); err != nil {
 		log.Error(errors.Wrapf(err, "cannot receive packets from %s, disconnecting", conn.RemoteAddr().String()))
 		return
 	}
@@ -181,10 +182,16 @@ func (e *Switch) disconnect(id int, conn net.Conn) {
 	delete(e.conns, id)
 }
 
-func (e *Switch) rx(id int, conn net.Conn) error {
+func (e *Switch) rx(ctx context.Context, id int, conn net.Conn) error {
 	sizeBuf := e.protocol.Buf()
-
+loop:
 	for {
+		select {
+		case <-ctx.Done():
+			break loop
+		default:
+			// passthrough
+		}
 		n, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read size from socket")
@@ -234,6 +241,7 @@ func (e *Switch) rx(id int, conn net.Conn) error {
 
 		atomic.AddUint64(&e.Received, uint64(size))
 	}
+	return nil
 }
 
 func protocolImplementation(protocol types.Protocol) protocol {
