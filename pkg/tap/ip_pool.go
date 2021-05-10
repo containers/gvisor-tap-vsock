@@ -11,7 +11,7 @@ import (
 type IPPool struct {
 	base   *net.IPNet
 	count  uint64
-	leases map[string]int
+	leases map[string]string
 	lock   sync.Mutex
 }
 
@@ -19,14 +19,14 @@ func NewIPPool(base *net.IPNet) *IPPool {
 	return &IPPool{
 		base:   base,
 		count:  cidr.AddressCount(base),
-		leases: make(map[string]int),
+		leases: make(map[string]string),
 	}
 }
 
-func (p *IPPool) Leases() map[string]int {
+func (p *IPPool) Leases() map[string]string {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	leases := map[string]int{}
+	leases := map[string]string{}
 	for key, value := range p.leases {
 		leases[key] = value
 	}
@@ -38,9 +38,15 @@ func (p *IPPool) Mask() int {
 	return ones
 }
 
-func (p *IPPool) Assign(id int) (net.IP, error) {
+func (p *IPPool) GetOrAssign(mac string) (net.IP, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+
+	for ip, candidate := range p.leases {
+		if candidate == mac {
+			return net.ParseIP(ip), nil
+		}
+	}
 
 	var i uint64
 	for i = 1; i < p.count; i++ {
@@ -49,27 +55,27 @@ func (p *IPPool) Assign(id int) (net.IP, error) {
 			continue
 		}
 		if _, ok := p.leases[candidate.String()]; !ok {
-			p.leases[candidate.String()] = id
+			p.leases[candidate.String()] = mac
 			return candidate, nil
 		}
 	}
 	return nil, errors.New("cannot find available IP")
 }
 
-func (p *IPPool) Reserve(ip net.IP, id int) {
+func (p *IPPool) Reserve(ip net.IP, mac string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	p.leases[ip.String()] = id
+	p.leases[ip.String()] = mac
 }
 
-func (p *IPPool) Release(given int) {
+func (p *IPPool) Release(given string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	var found string
-	for ip, id := range p.leases {
-		if id == given {
+	for ip, mac := range p.leases {
+		if mac == given {
 			found = ip
 			break
 		}

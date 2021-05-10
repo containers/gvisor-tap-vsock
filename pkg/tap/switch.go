@@ -1,8 +1,6 @@
 package tap
 
 import (
-	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -23,6 +21,7 @@ import (
 type VirtualDevice interface {
 	DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer)
 	LinkAddress() tcpip.LinkAddress
+	IP() string
 }
 
 type NetworkSwitch interface {
@@ -45,19 +44,18 @@ type Switch struct {
 
 	writeLock sync.Mutex
 
-	gatewayIP string
-	gateway   VirtualDevice
+	gateway VirtualDevice
 
-	IPs *IPPool
+	protocol protocol
 }
 
-func NewSwitch(debug bool, mtu int, ipPool *IPPool) *Switch {
+func NewSwitch(debug bool, mtu int, protocol types.Protocol) *Switch {
 	return &Switch{
 		debug:               debug,
 		maxTransmissionUnit: mtu,
 		conns:               make(map[int]net.Conn),
 		cam:                 make(map[tcpip.LinkAddress]int),
-		IPs:                 ipPool,
+		protocol:            protocolImplementation(protocol),
 	}
 }
 
@@ -71,9 +69,7 @@ func (e *Switch) CAM() map[string]int {
 	return ret
 }
 
-func (e *Switch) Connect(ip string, ep VirtualDevice) {
-	e.IPs.Reserve(net.ParseIP(ip), -1)
-	e.gatewayIP = ip
+func (e *Switch) Connect(ep VirtualDevice) {
 	e.gateway = ep
 }
 
@@ -110,44 +106,13 @@ func (e *Switch) connect(conn net.Conn) (int, bool) {
 	id := e.nextConnID
 	e.nextConnID++
 
-	ip, err := e.IPs.Assign(id)
-	if err != nil {
-		log.Error(err)
-		return 0, true
-	}
-	if err := e.handshake(conn, fmt.Sprintf("%s/%d", ip, e.IPs.Mask())); err != nil {
-		log.Error(errors.Wrapf(err, "cannot handshake with %s", conn.RemoteAddr().String()))
-		return 0, true
-	}
-
 	e.conns[id] = conn
 	return id, false
 }
 
-func (e *Switch) handshake(conn net.Conn, vm string) error {
-	log.Infof("assigning %s to %s", vm, conn.RemoteAddr().String())
-	bin, err := json.Marshal(&types.Handshake{
-		MTU:     e.maxTransmissionUnit,
-		Gateway: e.gatewayIP,
-		VM:      vm,
-	})
-	if err != nil {
-		return err
-	}
-	size := make([]byte, 2)
-	binary.LittleEndian.PutUint16(size, uint16(len(bin)))
-	if _, err := conn.Write(size); err != nil {
-		return err
-	}
-	if _, err := conn.Write(bin); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (e *Switch) tx(src, dst tcpip.LinkAddress, pkt *stack.PacketBuffer) error {
-	size := make([]byte, 2)
-	binary.LittleEndian.PutUint16(size, uint16(pkt.Size()))
+	size := e.protocol.Buf()
+	e.protocol.Write(size, pkt.Size())
 
 	e.writeLock.Lock()
 	defer e.writeLock.Unlock()
@@ -214,22 +179,17 @@ func (e *Switch) disconnect(id int, conn net.Conn) {
 	}
 	_ = conn.Close()
 	delete(e.conns, id)
-
-	e.IPs.Release(id)
 }
 
 func (e *Switch) rx(id int, conn net.Conn) error {
-	sizeBuf := make([]byte, 2)
+	sizeBuf := e.protocol.Buf()
 
 	for {
 		n, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read size from socket")
 		}
-		if n != 2 {
-			return fmt.Errorf("unexpected size %d", n)
-		}
-		size := int(binary.LittleEndian.Uint16(sizeBuf[0:2]))
+		size := int(e.protocol.Read(sizeBuf))
 
 		buf := make([]byte, size)
 		n, err = io.ReadFull(conn, buf)
@@ -274,4 +234,11 @@ func (e *Switch) rx(id int, conn net.Conn) error {
 
 		atomic.AddUint64(&e.Received, uint64(size))
 	}
+}
+
+func protocolImplementation(protocol types.Protocol) protocol {
+	if protocol == types.QemuProtocol {
+		return &qemuProtocol{}
+	}
+	return &hyperkitProtocol{}
 }

@@ -9,7 +9,7 @@ import (
 
 	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
 	"github.com/google/tcpproxy"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -25,7 +25,7 @@ func (n *VirtualNetwork) Mux() *http.ServeMux {
 		_ = json.NewEncoder(w).Encode(n.networkSwitch.CAM())
 	})
 	mux.HandleFunc("/leases", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(n.networkSwitch.IPs.Leases())
+		_ = json.NewEncoder(w).Encode(n.ipPool.Leases())
 	})
 	mux.HandleFunc(types.ConnectPath, func(w http.ResponseWriter, r *http.Request) {
 		hj, ok := w.(http.Hijacker)
@@ -91,7 +91,7 @@ func (n *VirtualNetwork) Mux() *http.ServeMux {
 				}, ipv4.ProtocolNumber)
 			},
 			OnDialError: func(src net.Conn, dstDialErr error) {
-				logrus.Errorf("cannot dial: %v", dstDialErr)
+				log.Errorf("cannot dial: %v", dstDialErr)
 			},
 		}
 		remote.HandleConn(conn)

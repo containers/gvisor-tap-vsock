@@ -24,6 +24,7 @@ type VirtualNetwork struct {
 	stack         *stack.Stack
 	networkSwitch *tap.Switch
 	servicesMux   http.Handler
+	ipPool        *tap.IPPool
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {
@@ -34,10 +35,19 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 
 	var endpoint stack.LinkEndpoint
 
-	tapEndpoint := tap.NewLinkEndpoint(configuration.Debug, configuration.MTU, configuration.GatewayMacAddress)
-	networkSwitch := tap.NewSwitch(configuration.Debug, configuration.MTU, tap.NewIPPool(subnet))
+	ipPool := tap.NewIPPool(subnet)
+	ipPool.Reserve(net.ParseIP(configuration.GatewayIP), configuration.GatewayMacAddress)
+	for ip, mac := range configuration.DHCPStaticLeases {
+		ipPool.Reserve(net.ParseIP(ip), mac)
+	}
+
+	tapEndpoint, err := tap.NewLinkEndpoint(configuration.Debug, configuration.MTU, configuration.GatewayMacAddress, configuration.GatewayIP, configuration.GatewayVirtualIPs)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot create tap endpoint")
+	}
+	networkSwitch := tap.NewSwitch(configuration.Debug, configuration.MTU, configuration.Protocol)
 	tapEndpoint.Connect(networkSwitch)
-	networkSwitch.Connect(configuration.GatewayIP, tapEndpoint)
+	networkSwitch.Connect(tapEndpoint)
 
 	if configuration.CaptureFile != "" {
 		_ = os.Remove(configuration.CaptureFile)
@@ -58,7 +68,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		return nil, errors.Wrap(err, "cannot create network stack")
 	}
 
-	mux, err := addServices(configuration, stack)
+	mux, err := addServices(configuration, stack, ipPool)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot add network services")
 	}
@@ -68,6 +78,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		stack:         stack,
 		networkSwitch: networkSwitch,
 		servicesMux:   mux,
+		ipPool:        ipPool,
 	}, nil
 }
 

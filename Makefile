@@ -27,7 +27,7 @@ lint:
 
 .PHONY: image
 image:
-	${CONTAINER_RUNTIME} build -t quay.io/crcont/gvisor-tap-vsock:$(TAG) -f images/ .
+	${CONTAINER_RUNTIME} build -t quay.io/crcont/gvisor-tap-vsock:$(TAG) -f images/Dockerfile .
 
 .PHONY: cross
 cross:
