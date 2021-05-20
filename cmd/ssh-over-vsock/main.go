@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
+	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )

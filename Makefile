@@ -5,7 +5,7 @@ LDFLAGS = -ldflags '-s -w -extldflags "-static"'
 
 .PHONY: build
 build:
-	go build $(LDFLAGS) -o bin/host ./cmd/host
+	go build $(LDFLAGS) -o bin/gvproxy ./cmd/gvproxy
 	GOOS=linux CGO_ENABLED=0 go build $(LDFLAGS) -o bin/vm ./cmd/vm
 
 .PHONY: clean
@@ -31,9 +31,9 @@ image:
 
 .PHONY: cross
 cross:
-	GOOS=windows go build $(LDFLAGS) -o bin/host-windows.exe ./cmd/host
-	GOOS=darwin  go build $(LDFLAGS) -o bin/host-darwin ./cmd/host
-	GOOS=linux   go build $(LDFLAGS) -o bin/host-linux ./cmd/host
+	GOOS=windows go build $(LDFLAGS) -o bin/gvproxy-windows.exe ./cmd/gvproxy
+	GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin ./cmd/gvproxy
+	GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux ./cmd/gvproxy
 
 .PHONY: test
 test: build

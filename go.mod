@@ -1,4 +1,4 @@
-module github.com/code-ready/gvisor-tap-vsock
+module github.com/containers/gvisor-tap-vsock
 
 go 1.14
 

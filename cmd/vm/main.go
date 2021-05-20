@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
-	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
+	"github.com/containers/gvisor-tap-vsock/pkg/transport"
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/pkg/errors"

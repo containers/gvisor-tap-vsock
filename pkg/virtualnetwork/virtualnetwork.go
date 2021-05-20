@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/code-ready/gvisor-tap-vsock/pkg/tap"
-	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
+	"github.com/containers/gvisor-tap-vsock/pkg/tap"
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"

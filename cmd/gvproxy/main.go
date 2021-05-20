@@ -16,9 +16,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/code-ready/gvisor-tap-vsock/pkg/transport"
-	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
-	"github.com/code-ready/gvisor-tap-vsock/pkg/virtualnetwork"
+	"github.com/containers/gvisor-tap-vsock/pkg/transport"
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
+	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
