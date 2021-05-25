@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/code-ready/gvisor-tap-vsock/pkg/types"
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 )
 
 type Client struct {

@@ -53,13 +53,13 @@ On Fedora 32, it worked out of the box. On others distros, you might have to loo
 
 #### macOS prerequisites
 
-Please locate the hyperkit state (there is a file called `connect` inside) folder and launch `host` with the following listen argument:
+Please locate the hyperkit state (there is a file called `connect` inside) folder and launch `gvproxy` with the following listen argument:
 `--listen vsock://null:1024/path_to_connect_directory`
 
 #### Run
 
 ```
-(host) $ sudo bin/host -debug -listen vsock://:1024 -listen unix:///tmp/network.sock
+(host) $ sudo bin/gvproxy -debug -listen vsock://:1024 -listen unix:///tmp/network.sock
 ```
 
 ### VM
@@ -80,7 +80,7 @@ With the executable:
 
 #### API
 
-The executable running on the host, `host`, exposes a HTTP API. It can be used with curl.
+The executable running on the host, `gvproxy`, exposes a HTTP API. It can be used with curl.
 
 ```
 $ curl  --unix-socket /tmp/network.sock http:/unix/stats 
@@ -138,7 +138,7 @@ $ curl  --unix-socket /tmp/network.sock http:/foo/services/forwarder/all | jq .
 #### Tunneling 
 
 The HTTP API exposed on the host can be used to connect to a specific IP and port inside the virtual network.
-An working example for SSH can be found [here](https://github.com/code-ready/gvisor-tap-vsock/blob/master/cmd/ssh-over-vsock).
+An working example for SSH can be found [here](https://github.com/containers/gvisor-tap-vsock/blob/master/cmd/ssh-over-vsock).
 
 ## Limitations
 
