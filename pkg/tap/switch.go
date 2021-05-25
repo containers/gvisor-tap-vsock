@@ -193,14 +193,14 @@ loop:
 		default:
 			// passthrough
 		}
-		n, err := io.ReadFull(conn, sizeBuf)
+		_, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read size from socket")
 		}
 		size := int(e.protocol.Read(sizeBuf))
 
 		buf := make([]byte, size)
-		n, err = io.ReadFull(conn, buf)
+		n, err := io.ReadFull(conn, buf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read packet from socket")
 		}
