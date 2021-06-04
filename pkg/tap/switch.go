@@ -80,13 +80,13 @@ func (e *Switch) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol 
 	}
 }
 
-func (e *Switch) Accept(ctx context.Context, conn net.Conn) {
+func (e *Switch) Accept(ctx context.Context, conn net.Conn) error {
 	log.Infof("new connection from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 	id, failed := e.connect(conn)
 	if failed {
 		log.Error("connection failed")
-		_ = conn.Close()
-		return
+		return conn.Close()
+
 	}
 
 	defer func() {
@@ -96,8 +96,9 @@ func (e *Switch) Accept(ctx context.Context, conn net.Conn) {
 	}()
 	if err := e.rx(ctx, id, conn); err != nil {
 		log.Error(errors.Wrapf(err, "cannot receive packets from %s, disconnecting", conn.RemoteAddr().String()))
-		return
+		return err
 	}
+	return nil
 }
 
 func (e *Switch) connect(conn net.Conn) (int, bool) {

@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"regexp"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -279,29 +278,15 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 			return os.Remove(qemuSocket)
 		})
 
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					break
-				default:
-					// passthrough
-				}
-				conn, err := qemuListener.Accept()
-				if err != nil {
-					if strings.Contains(err.Error(), "use of closed network connection") {
-						break
-					}
-					log.Errorf("qemu accept error: %s", err)
-					continue
-				}
-				g.Go(func() error {
-					return vn.AcceptQemu(ctx, conn)
-				})
-			}
-		}()
-	}
+		g.Go(func() error {
+			conn, err := qemuListener.Accept()
+			if err != nil {
+				return errors.Wrap(err, "qemu accept error")
 
+			}
+			return vn.AcceptQemu(ctx, conn)
+		})
+	}
 	return nil
 }
 
