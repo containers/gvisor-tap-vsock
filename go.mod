@@ -7,7 +7,7 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/google/gopacket v1.1.16
 	github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252
-	github.com/insomniacslk/dhcp v0.0.0-20210428091707-95b2ff6905c9
+	github.com/insomniacslk/dhcp v0.0.0-20210608085346-465dd6c35f6c
 	github.com/linuxkit/virtsock v0.0.0-20180830132707-8e79449dea07
 	github.com/mdlayher/vsock v0.0.0-20200508120832-7ad3638b3fbc
 	github.com/miekg/dns v1.1.35
