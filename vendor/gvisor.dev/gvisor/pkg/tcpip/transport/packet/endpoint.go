@@ -27,6 +27,7 @@ package packet
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -41,9 +42,8 @@ type packet struct {
 	packetEntry
 	// data holds the actual packet data, including any headers and
 	// payload.
-	data buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	// timestampNS is the unix time at which the packet was received.
-	timestampNS int64
+	data       buffer.VectorisedView `state:".(buffer.VectorisedView)"`
+	receivedAt time.Time             `state:".(int64)"`
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
 	// packetInfo holds additional information like the protocol
@@ -159,7 +159,7 @@ func (ep *endpoint) Close() {
 }
 
 // ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
-func (ep *endpoint) ModerateRecvBuf(copied int) {}
+func (*endpoint) ModerateRecvBuf(int) {}
 
 // Read implements tcpip.Endpoint.Read.
 func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
@@ -189,7 +189,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 		Total: packet.data.Size(),
 		ControlMessages: tcpip.ControlMessages{
 			HasTimestamp: true,
-			Timestamp:    packet.timestampNS,
+			Timestamp:    packet.receivedAt.UnixNano(),
 		},
 	}
 	if opts.NeedRemoteAddr {
@@ -208,7 +208,6 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 }
 
 func (*endpoint) Write(tcpip.Payloader, tcpip.WriteOptions) (int64, tcpip.Error) {
-	// TODO(gvisor.dev/issue/173): Implement.
 	return 0, &tcpip.ErrInvalidOptionValue{}
 }
 
@@ -220,19 +219,19 @@ func (*endpoint) Disconnect() tcpip.Error {
 
 // Connect implements tcpip.Endpoint.Connect. Packet sockets cannot be
 // connected, and this function always returnes *tcpip.ErrNotSupported.
-func (*endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
+func (*endpoint) Connect(tcpip.FullAddress) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
 // Shutdown implements tcpip.Endpoint.Shutdown. Packet sockets cannot be used
 // with Shutdown, and this function always returns *tcpip.ErrNotSupported.
-func (*endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
+func (*endpoint) Shutdown(tcpip.ShutdownFlags) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
 // Listen implements tcpip.Endpoint.Listen. Packet sockets cannot be used with
 // Listen, and this function always returns *tcpip.ErrNotSupported.
-func (*endpoint) Listen(backlog int) tcpip.Error {
+func (*endpoint) Listen(int) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
@@ -244,8 +243,6 @@ func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpi
 
 // Bind implements tcpip.Endpoint.Bind.
 func (ep *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
-	// TODO(gvisor.dev/issue/173): Add Bind support.
-
 	// "By default, all packets of the specified protocol type are passed
 	// to a packet socket.  To get packets only from a specific interface
 	// use bind(2) specifying an address in a struct sockaddr_ll to bind
@@ -318,7 +315,7 @@ func (ep *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 }
 
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
-func (ep *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
+func (*endpoint) SetSockOptInt(tcpip.SockOptInt, int) tcpip.Error {
 	return &tcpip.ErrUnknownProtocolOption{}
 }
 
@@ -339,7 +336,7 @@ func (ep *endpoint) UpdateLastError(err tcpip.Error) {
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (ep *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
+func (*endpoint) GetSockOpt(tcpip.GettableSocketOption) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
@@ -385,7 +382,6 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 
 	// Push new packet into receive list and increment the buffer size.
 	var packet packet
-	// TODO(gvisor.dev/issue/173): Return network protocol.
 	if !pkt.LinkHeader().View().IsEmpty() {
 		// Get info directly from the ethernet header.
 		hdr := header.Ethernet(pkt.LinkHeader().View())
@@ -424,7 +420,6 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 		default:
 			panic(fmt.Sprintf("unexpected PktType in pkt: %+v", pkt))
 		}
-
 	} else {
 		// Raw packets need their ethernet headers prepended before
 		// queueing.
@@ -451,7 +446,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 			packet.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 		}
 	}
-	packet.timestampNS = ep.stack.Clock().NowNanoseconds()
+	packet.receivedAt = ep.stack.Clock().Now()
 
 	ep.rcvList.PushBack(&packet)
 	ep.rcvBufSize += packet.data.Size()
@@ -484,7 +479,7 @@ func (ep *endpoint) Stats() tcpip.EndpointStats {
 }
 
 // SetOwner implements tcpip.Endpoint.SetOwner.
-func (ep *endpoint) SetOwner(owner tcpip.PacketOwner) {}
+func (*endpoint) SetOwner(tcpip.PacketOwner) {}
 
 // SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (ep *endpoint) SocketOptions() *tcpip.SocketOptions {

@@ -16,7 +16,7 @@ func (p *icmpPacket) StateFields() []string {
 		"icmpPacketEntry",
 		"senderAddress",
 		"data",
-		"timestamp",
+		"receivedAt",
 	}
 }
 
@@ -25,11 +25,14 @@ func (p *icmpPacket) beforeSave() {}
 // +checklocksignore
 func (p *icmpPacket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var dataValue buffer.VectorisedView = p.saveData()
+	var dataValue buffer.VectorisedView
+	dataValue = p.saveData()
 	stateSinkObject.SaveValue(2, dataValue)
+	var receivedAtValue int64
+	receivedAtValue = p.saveReceivedAt()
+	stateSinkObject.SaveValue(3, receivedAtValue)
 	stateSinkObject.Save(0, &p.icmpPacketEntry)
 	stateSinkObject.Save(1, &p.senderAddress)
-	stateSinkObject.Save(3, &p.timestamp)
 }
 
 func (p *icmpPacket) afterLoad() {}
@@ -38,8 +41,8 @@ func (p *icmpPacket) afterLoad() {}
 func (p *icmpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.icmpPacketEntry)
 	stateSourceObject.Load(1, &p.senderAddress)
-	stateSourceObject.Load(3, &p.timestamp)
 	stateSourceObject.LoadValue(2, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
+	stateSourceObject.LoadValue(3, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
 }
 
 func (e *endpoint) StateTypeName() string {

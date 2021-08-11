@@ -1040,6 +1040,55 @@ func (s *SockError) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &s.NetProto)
 }
 
+func (s *stdClock) StateTypeName() string {
+	return "pkg/tcpip.stdClock"
+}
+
+func (s *stdClock) StateFields() []string {
+	return []string{
+		"maxMonotonic",
+	}
+}
+
+func (s *stdClock) beforeSave() {}
+
+// +checklocksignore
+func (s *stdClock) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.maxMonotonic)
+}
+
+// +checklocksignore
+func (s *stdClock) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.maxMonotonic)
+	stateSourceObject.AfterLoad(s.afterLoad)
+}
+
+func (mt *MonotonicTime) StateTypeName() string {
+	return "pkg/tcpip.MonotonicTime"
+}
+
+func (mt *MonotonicTime) StateFields() []string {
+	return []string{
+		"nanoseconds",
+	}
+}
+
+func (mt *MonotonicTime) beforeSave() {}
+
+// +checklocksignore
+func (mt *MonotonicTime) StateSave(stateSinkObject state.Sink) {
+	mt.beforeSave()
+	stateSinkObject.Save(0, &mt.nanoseconds)
+}
+
+func (mt *MonotonicTime) afterLoad() {}
+
+// +checklocksignore
+func (mt *MonotonicTime) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mt.nanoseconds)
+}
+
 func (f *FullAddress) StateTypeName() string {
 	return "pkg/tcpip.FullAddress"
 }
@@ -1264,6 +1313,8 @@ func init() {
 	state.Register((*SocketOptions)(nil))
 	state.Register((*LocalSockError)(nil))
 	state.Register((*SockError)(nil))
+	state.Register((*stdClock)(nil))
+	state.Register((*MonotonicTime)(nil))
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))

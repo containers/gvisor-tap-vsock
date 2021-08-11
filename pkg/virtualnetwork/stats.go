@@ -67,8 +67,8 @@ func statsAsJSON(sent, received uint64, stats tcpip.Stats) Stats {
 	return Stats{
 		BytesSent:                  sent,
 		BytesReceived:              received,
-		UnknownProtocolRcvdPackets: stats.UnknownProtocolRcvdPackets.Value(),
-		MalformedRcvdPackets:       stats.MalformedRcvdPackets.Value(),
+		UnknownProtocolRcvdPackets: stats.NICs.UnknownL4ProtocolRcvdPackets.Value(),
+		MalformedRcvdPackets:       stats.NICs.MalformedL4RcvdPackets.Value(),
 		DroppedPackets:             stats.DroppedPackets.Value(),
 		IP: IPStats{
 			PacketsReceived:                     stats.IP.PacketsReceived.Value(),

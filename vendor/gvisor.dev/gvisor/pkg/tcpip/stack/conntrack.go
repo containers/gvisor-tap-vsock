@@ -35,7 +35,6 @@ import (
 // Currently, only TCP tracking is supported.
 
 // Our hash table has 16K buckets.
-// TODO(gvisor.dev/issue/170): These should be tunable.
 const numBuckets = 1 << 14
 
 // Direction of the tuple.
@@ -125,6 +124,8 @@ type conn struct {
 	tcb tcpconntrack.TCB
 	// lastUsed is the last time the connection saw a relevant packet, and
 	// is updated by each packet on the connection. It is protected by mu.
+	//
+	// TODO(gvisor.dev/issue/5939): do not use the ambient clock.
 	lastUsed time.Time `state:".(unixTime)"`
 }
 
@@ -163,8 +164,6 @@ func (cn *conn) updateLocked(tcpHeader header.TCP, hook Hook) {
 	// Update the state of tcb. tcb assumes it's always initialized on the
 	// client. However, we only need to know whether the connection is
 	// established or not, so the client/server distinction isn't important.
-	// TODO(gvisor.dev/issue/170): Add support in tcpconntrack to handle
-	// other tcp states.
 	if cn.tcb.IsEmpty() {
 		cn.tcb.Init(tcpHeader)
 	} else if hook == cn.tcbHook {
@@ -244,8 +243,7 @@ func (ct *ConnTrack) init() {
 // connFor gets the conn for pkt if it exists, or returns nil
 // if it does not. It returns an error when pkt does not contain a valid TCP
 // header.
-// TODO(gvisor.dev/issue/170): Only TCP packets are supported. Need to support
-// other transport protocols.
+// TODO(gvisor.dev/issue/6168): Support UDP.
 func (ct *ConnTrack) connFor(pkt *PacketBuffer) (*conn, direction) {
 	tid, err := packetToTupleID(pkt)
 	if err != nil {
@@ -365,7 +363,7 @@ func (ct *ConnTrack) insertConn(conn *conn) {
 	// Unlocking can happen in any order.
 	ct.buckets[tupleBucket].mu.Unlock()
 	if tupleBucket != replyBucket {
-		ct.buckets[replyBucket].mu.Unlock()
+		ct.buckets[replyBucket].mu.Unlock() // +checklocksforce
 	}
 }
 
@@ -383,7 +381,7 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 		return false
 	}
 
-	// TODO(gvisor.dev/issue/170): Support other transport protocols.
+	// TODO(gvisor.dev/issue/6168): Support UDP.
 	if pkt.Network().TransportProtocol() != header.TCPProtocolNumber {
 		return false
 	}
@@ -407,16 +405,23 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 	// validated if checksum offloading is off. It may require IP defrag if the
 	// packets are fragmented.
 
+	var newAddr tcpip.Address
+	var newPort uint16
+
+	updateSRCFields := false
+
 	switch hook {
 	case Prerouting, Output:
 		if conn.manip == manipDestination {
 			switch dir {
 			case dirOriginal:
-				tcpHeader.SetDestinationPort(conn.reply.srcPort)
-				netHeader.SetDestinationAddress(conn.reply.srcAddr)
+				newPort = conn.reply.srcPort
+				newAddr = conn.reply.srcAddr
 			case dirReply:
-				tcpHeader.SetSourcePort(conn.original.dstPort)
-				netHeader.SetSourceAddress(conn.original.dstAddr)
+				newPort = conn.original.dstPort
+				newAddr = conn.original.dstAddr
+
+				updateSRCFields = true
 			}
 			pkt.NatDone = true
 		}
@@ -424,11 +429,13 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 		if conn.manip == manipSource {
 			switch dir {
 			case dirOriginal:
-				tcpHeader.SetSourcePort(conn.reply.dstPort)
-				netHeader.SetSourceAddress(conn.reply.dstAddr)
+				newPort = conn.reply.dstPort
+				newAddr = conn.reply.dstAddr
+
+				updateSRCFields = true
 			case dirReply:
-				tcpHeader.SetDestinationPort(conn.original.srcPort)
-				netHeader.SetDestinationAddress(conn.original.srcAddr)
+				newPort = conn.original.srcPort
+				newAddr = conn.original.srcAddr
 			}
 			pkt.NatDone = true
 		}
@@ -439,33 +446,33 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 		return false
 	}
 
+	fullChecksum := false
+	updatePseudoHeader := false
 	switch hook {
 	case Prerouting, Input:
 	case Output, Postrouting:
 		// Calculate the TCP checksum and set it.
-		tcpHeader.SetChecksum(0)
-		length := uint16(len(tcpHeader) + pkt.Data().Size())
-		xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, netHeader.SourceAddress(), netHeader.DestinationAddress(), length)
 		if pkt.GSOOptions.Type != GSONone && pkt.GSOOptions.NeedsCsum {
-			tcpHeader.SetChecksum(xsum)
+			updatePseudoHeader = true
 		} else if r.RequiresTXTransportChecksum() {
-			xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
-			tcpHeader.SetChecksum(^tcpHeader.CalculateChecksum(xsum))
+			fullChecksum = true
+			updatePseudoHeader = true
 		}
 	default:
 		panic(fmt.Sprintf("unrecognized hook = %s", hook))
 	}
 
-	// After modification, IPv4 packets need a valid checksum.
-	if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
-		netHeader := header.IPv4(pkt.NetworkHeader().View())
-		netHeader.SetChecksum(0)
-		netHeader.SetChecksum(^netHeader.CalculateChecksum())
-	}
+	rewritePacket(
+		netHeader,
+		tcpHeader,
+		updateSRCFields,
+		fullChecksum,
+		updatePseudoHeader,
+		newPort,
+		newAddr,
+	)
 
 	// Update the state of tcb.
-	// TODO(gvisor.dev/issue/170): Add support in tcpcontrack to handle
-	// other tcp states.
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 
@@ -542,8 +549,6 @@ func (ct *ConnTrack) bucket(id tupleID) int {
 // reapUnused returns the next bucket that should be checked and the time after
 // which it should be called again.
 func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, time.Duration) {
-	// TODO(gvisor.dev/issue/170): This can be more finely controlled, as
-	// it is in Linux via sysctl.
 	const fractionPerReaping = 128
 	const maxExpiredPct = 50
 	const maxFullTraversal = 60 * time.Second
@@ -621,7 +626,7 @@ func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bucket int, now time.Time) bo
 
 	// Don't re-unlock if both tuples are in the same bucket.
 	if differentBuckets {
-		ct.buckets[replyBucket].mu.Unlock()
+		ct.buckets[replyBucket].mu.Unlock() // +checklocksforce
 	}
 
 	return true

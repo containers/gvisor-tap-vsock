@@ -16,6 +16,7 @@ package icmp
 
 import (
 	"io"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -26,14 +27,12 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// TODO(https://gvisor.dev/issues/5623): Unit test this package.
-
 // +stateify savable
 type icmpPacket struct {
 	icmpPacketEntry
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	timestamp     int64
+	receivedAt    time.Time             `state:".(int64)"`
 }
 
 type endpointState int
@@ -133,7 +132,8 @@ func (e *endpoint) Close() {
 	e.shutdownFlags = tcpip.ShutdownRead | tcpip.ShutdownWrite
 	switch e.state {
 	case stateBound, stateConnected:
-		e.stack.UnregisterTransportEndpoint([]tcpip.NetworkProtocolNumber{e.NetProto}, e.TransProto, e.ID, e, ports.Flags{}, 0 /* bindToDevice */)
+		bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
+		e.stack.UnregisterTransportEndpoint([]tcpip.NetworkProtocolNumber{e.NetProto}, e.TransProto, e.ID, e, ports.Flags{}, bindToDevice)
 	}
 
 	// Close the receive list and drain it.
@@ -160,7 +160,7 @@ func (e *endpoint) Close() {
 }
 
 // ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
-func (e *endpoint) ModerateRecvBuf(copied int) {}
+func (*endpoint) ModerateRecvBuf(int) {}
 
 // SetOwner implements tcpip.Endpoint.SetOwner.
 func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
@@ -193,7 +193,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		Total: p.data.Size(),
 		ControlMessages: tcpip.ControlMessages{
 			HasTimestamp: true,
-			Timestamp:    p.timestamp,
+			Timestamp:    p.receivedAt.UnixNano(),
 		},
 	}
 	if opts.NeedRemoteAddr {
@@ -213,6 +213,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 // reacquire the mutex in exclusive mode.
 //
 // Returns true for retry if preparation should be retried.
+// +checklocks:e.mu
 func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err tcpip.Error) {
 	switch e.state {
 	case stateInitial:
@@ -229,10 +230,8 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err tcpip
 	}
 
 	e.mu.RUnlock()
-	defer e.mu.RLock()
-
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	defer e.mu.DowngradeLock()
 
 	// The state changed when we released the shared locked and re-acquired
 	// it in exclusive mode. Try again.
@@ -304,6 +303,9 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
 		nicID := to.NIC
+		if nicID == 0 {
+			nicID = tcpip.NICID(e.ops.GetBindToDevice())
+		}
 		if e.BindNICID != 0 {
 			if nicID != 0 && nicID != e.BindNICID {
 				return 0, &tcpip.ErrNoRoute{}
@@ -348,8 +350,15 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	return int64(len(v)), nil
 }
 
+var _ tcpip.SocketOptionsHandler = (*endpoint)(nil)
+
+// HasNIC implements tcpip.SocketOptionsHandler.
+func (e *endpoint) HasNIC(id int32) bool {
+	return e.stack.HasNIC(tcpip.NICID(id))
+}
+
 // SetSockOpt sets a socket option.
-func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
+func (*endpoint) SetSockOpt(tcpip.SettableSocketOption) tcpip.Error {
 	return nil
 }
 
@@ -390,7 +399,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
+func (*endpoint) GetSockOpt(tcpip.GettableSocketOption) tcpip.Error {
 	return &tcpip.ErrUnknownProtocolOption{}
 }
 
@@ -606,18 +615,19 @@ func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpi
 	return nil, nil, &tcpip.ErrNotSupported{}
 }
 
-func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, tcpip.Error) {
+func (e *endpoint) registerWithStack(_ tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, tcpip.Error) {
+	bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
 	if id.LocalPort != 0 {
 		// The endpoint already has a local port, just attempt to
 		// register it.
-		err := e.stack.RegisterTransportEndpoint(netProtos, e.TransProto, id, e, ports.Flags{}, 0 /* bindToDevice */)
+		err := e.stack.RegisterTransportEndpoint(netProtos, e.TransProto, id, e, ports.Flags{}, bindToDevice)
 		return id, err
 	}
 
 	// We need to find a port for the endpoint.
-	_, err := e.stack.PickEphemeralPort(func(p uint16) (bool, tcpip.Error) {
+	_, err := e.stack.PickEphemeralPort(e.stack.Rand(), func(p uint16) (bool, tcpip.Error) {
 		id.LocalPort = p
-		err := e.stack.RegisterTransportEndpoint(netProtos, e.TransProto, id, e, ports.Flags{}, 0 /* bindtodevice */)
+		err := e.stack.RegisterTransportEndpoint(netProtos, e.TransProto, id, e, ports.Flags{}, bindToDevice)
 		switch err.(type) {
 		case nil:
 			return true, nil
@@ -747,8 +757,6 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
 		h := header.ICMPv4(pkt.TransportHeader().View())
-		// TODO(b/129292233): Determine if len(h) check is still needed after early
-		// parsing.
 		if len(h) < header.ICMPv4MinimumSize || h.Type() != header.ICMPv4EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
@@ -756,8 +764,6 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		}
 	case header.IPv6ProtocolNumber:
 		h := header.ICMPv6(pkt.TransportHeader().View())
-		// TODO(b/129292233): Determine if len(h) check is still needed after early
-		// parsing.
 		if len(h) < header.ICMPv6MinimumSize || h.Type() != header.ICMPv6EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
@@ -800,7 +806,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += packet.data.Size()
 
-	packet.timestamp = e.stack.Clock().NowNanoseconds()
+	packet.receivedAt = e.stack.Clock().Now()
 
 	e.rcvMu.Unlock()
 	e.stats.PacketsReceived.Increment()
