@@ -16,7 +16,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cmd := exec.Command(os.Args[2], os.Args[3:]...)
+	cmd := exec.Command(os.Args[2], os.Args[3:]...) // #nosec G204
 	cmd.ExtraFiles = append(cmd.ExtraFiles, fd)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
