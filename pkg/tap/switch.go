@@ -196,7 +196,7 @@ loop:
 		if err != nil {
 			return errors.Wrap(err, "cannot read size from socket")
 		}
-		size := int(e.protocol.Read(sizeBuf))
+		size := e.protocol.Read(sizeBuf)
 
 		buf := make([]byte, size)
 		_, err = io.ReadFull(conn, buf)
