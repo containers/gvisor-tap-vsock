@@ -1,6 +1,6 @@
 module github.com/containers/gvisor-tap-vsock
 
-go 1.14
+go 1.15
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
