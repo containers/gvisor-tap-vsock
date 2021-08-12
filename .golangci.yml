@@ -10,4 +10,4 @@ linters:
     - gocritic
     - deadcode
     - misspell
-    - golint
+    - revive
