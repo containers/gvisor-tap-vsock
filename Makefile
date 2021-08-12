@@ -6,6 +6,7 @@ LDFLAGS = -ldflags '-s -w -extldflags "-static"'
 .PHONY: build
 build:
 	go build $(LDFLAGS) -o bin/gvproxy ./cmd/gvproxy
+	go build $(LDFLAGS) -o bin/qemu-wrapper ./cmd/qemu-wrapper
 	GOOS=linux CGO_ENABLED=0 go build $(LDFLAGS) -o bin/vm ./cmd/vm
 
 .PHONY: clean
