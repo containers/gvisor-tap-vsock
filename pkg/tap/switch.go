@@ -2,7 +2,6 @@ package tap
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -193,19 +192,16 @@ loop:
 		default:
 			// passthrough
 		}
-		n, err := io.ReadFull(conn, sizeBuf)
+		_, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read size from socket")
 		}
-		size := int(e.protocol.Read(sizeBuf))
+		size := e.protocol.Read(sizeBuf)
 
 		buf := make([]byte, size)
-		n, err = io.ReadFull(conn, buf)
+		_, err = io.ReadFull(conn, buf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read packet from socket")
-		}
-		if n == 0 || n != size {
-			return fmt.Errorf("unexpected size %d != %d", n, size)
 		}
 
 		if e.debug {

@@ -1,7 +1,7 @@
 TAG ?= $(shell git describe --match=NeVeRmAtCh --always --abbrev=40 --dirty)
 CONTAINER_RUNTIME ?= podman
 
-LDFLAGS = -ldflags '-s -w -extldflags "-static"'
+LDFLAGS = -ldflags '-s -w'
 
 .PHONY: build
 build:

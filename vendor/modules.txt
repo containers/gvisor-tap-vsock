@@ -6,44 +6,48 @@ github.com/davecgh/go-spew/spew
 # github.com/dustin/go-humanize v1.0.0
 ## explicit
 github.com/dustin/go-humanize
+# github.com/fsnotify/fsnotify v1.4.9
+github.com/fsnotify/fsnotify
 # github.com/google/btree v1.0.0
 github.com/google/btree
-# github.com/google/gopacket v1.1.16
+# github.com/google/gopacket v1.1.19
 ## explicit
 github.com/google/gopacket
 github.com/google/gopacket/layers
 # github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252
 ## explicit
 github.com/google/tcpproxy
-# github.com/hpcloud/tail v1.0.0
-github.com/hpcloud/tail
-github.com/hpcloud/tail/ratelimiter
-github.com/hpcloud/tail/util
-github.com/hpcloud/tail/watch
-github.com/hpcloud/tail/winfile
-# github.com/insomniacslk/dhcp v0.0.0-20210608085346-465dd6c35f6c
+# github.com/insomniacslk/dhcp v0.0.0-20210812084645-decc701b3665
 ## explicit
 github.com/insomniacslk/dhcp/dhcpv4
 github.com/insomniacslk/dhcp/dhcpv4/server4
 github.com/insomniacslk/dhcp/iana
 github.com/insomniacslk/dhcp/interfaces
 github.com/insomniacslk/dhcp/rfc1035label
-# github.com/linuxkit/virtsock v0.0.0-20180830132707-8e79449dea07
+# github.com/linuxkit/virtsock v0.0.0-20201010232012-f8cee7dfc7a3
 ## explicit
 github.com/linuxkit/virtsock/pkg/hvsock
-# github.com/mdlayher/vsock v0.0.0-20200508120832-7ad3638b3fbc
+# github.com/mdlayher/vsock v0.0.0-20210303205602-10d591861736
 ## explicit
 github.com/mdlayher/vsock
-# github.com/miekg/dns v1.1.35
+# github.com/miekg/dns v1.1.43
 ## explicit
 github.com/miekg/dns
-# github.com/onsi/ginkgo v1.10.1
+# github.com/nxadm/tail v1.4.8
+github.com/nxadm/tail
+github.com/nxadm/tail/ratelimiter
+github.com/nxadm/tail/util
+github.com/nxadm/tail/watch
+github.com/nxadm/tail/winfile
+# github.com/onsi/ginkgo v1.16.4
 ## explicit
 github.com/onsi/ginkgo
 github.com/onsi/ginkgo/config
+github.com/onsi/ginkgo/formatter
 github.com/onsi/ginkgo/internal/codelocation
 github.com/onsi/ginkgo/internal/containernode
 github.com/onsi/ginkgo/internal/failer
+github.com/onsi/ginkgo/internal/global
 github.com/onsi/ginkgo/internal/leafnodes
 github.com/onsi/ginkgo/internal/remote
 github.com/onsi/ginkgo/internal/spec
@@ -57,14 +61,11 @@ github.com/onsi/ginkgo/reporters/stenographer
 github.com/onsi/ginkgo/reporters/stenographer/support/go-colorable
 github.com/onsi/ginkgo/reporters/stenographer/support/go-isatty
 github.com/onsi/ginkgo/types
-# github.com/onsi/gomega v1.7.0
+# github.com/onsi/gomega v1.15.0
 ## explicit
 github.com/onsi/gomega
 github.com/onsi/gomega/format
-github.com/onsi/gomega/internal/assertion
-github.com/onsi/gomega/internal/asyncassertion
-github.com/onsi/gomega/internal/oraclematcher
-github.com/onsi/gomega/internal/testingtsupport
+github.com/onsi/gomega/internal
 github.com/onsi/gomega/matchers
 github.com/onsi/gomega/matchers/support/goraph/bipartitegraph
 github.com/onsi/gomega/matchers/support/goraph/edge
@@ -76,7 +77,7 @@ github.com/onsi/gomega/types
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/sirupsen/logrus v1.7.0
+# github.com/sirupsen/logrus v1.8.1
 ## explicit
 github.com/sirupsen/logrus
 # github.com/songgao/packets v0.0.0-20160404182456-549a10cd4091
@@ -85,7 +86,7 @@ github.com/songgao/packets/ethernet
 # github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 ## explicit
 github.com/songgao/water
-# github.com/stretchr/testify v1.6.1
+# github.com/stretchr/testify v1.7.0
 ## explicit
 github.com/stretchr/testify/assert
 # github.com/u-root/uio v0.0.0-20210528114334-82958018845c
@@ -98,18 +99,20 @@ github.com/vishvananda/netlink
 github.com/vishvananda/netlink/nl
 # github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f
 github.com/vishvananda/netns
-# golang.org/x/crypto v0.0.0-20201016220609-9e8e0b390897
+# golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 ## explicit
 golang.org/x/crypto/blowfish
 golang.org/x/crypto/chacha20
 golang.org/x/crypto/curve25519
+golang.org/x/crypto/curve25519/internal/field
 golang.org/x/crypto/ed25519
 golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/internal/subtle
 golang.org/x/crypto/poly1305
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/net v0.0.0-20201224014010-6772e930b67b
+# golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d
+## explicit
 golang.org/x/net/bpf
 golang.org/x/net/html
 golang.org/x/net/html/atom
@@ -118,16 +121,18 @@ golang.org/x/net/internal/iana
 golang.org/x/net/internal/socket
 golang.org/x/net/ipv4
 golang.org/x/net/ipv6
-# golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
+# golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 ## explicit
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.0.0-20210525143221-35b2ab0089ea
+# golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e
+## explicit
 golang.org/x/sys/cpu
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/text v0.3.4
+# golang.org/x/text v0.3.7
+## explicit
 golang.org/x/text/encoding
 golang.org/x/text/encoding/charmap
 golang.org/x/text/encoding/htmlindex
@@ -147,13 +152,12 @@ golang.org/x/text/runes
 golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 golang.org/x/time/rate
-# gopkg.in/fsnotify.v1 v1.4.7
-gopkg.in/fsnotify.v1
 # gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7
 gopkg.in/tomb.v1
-# gopkg.in/yaml.v2 v2.2.8
+# gopkg.in/yaml.v2 v2.4.0
 gopkg.in/yaml.v2
-# gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
+# gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+## explicit
 gopkg.in/yaml.v3
 # gvisor.dev/gvisor v0.0.0-20210424070529-29f85eb7ca69
 ## explicit
