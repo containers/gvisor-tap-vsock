@@ -1,61 +1,55 @@
 package e2e
 
 import (
-	"context"
-	"io/ioutil"
-	"net"
-	"net/http"
-	"os/exec"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("connectivity", func() {
-	It("should ping the tap device", func() {
-		_, _, err := Exec(exec.Command("ping", "-c4", "192.168.127.2"), nil)
+	It("should configure the interface", func() {
+		out, err := sshExec("ifconfig $(route | grep '^default' | grep -o '[^ ]*$')")
 		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("mtu 1500"))
+		Expect(string(out)).To(ContainSubstring("inet 192.168.127.2"))
+		Expect(string(out)).To(ContainSubstring("netmask 255.255.255.0"))
+		Expect(string(out)).To(ContainSubstring("broadcast 192.168.127.255"))
+	})
+
+	It("should configure the default route", func() {
+		out, err := sshExec("ip route show")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(MatchRegexp(`default via 192\.168\.127\.1 dev (.*?) proto dhcp metric 100`))
+	})
+
+	It("should configure dns settings", func() {
+		out, err := sshExec("cat /etc/resolv.conf")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("nameserver 192.168.127.1"))
+	})
+
+	It("should ping the tap device", func() {
+		out, err := sshExec("ping -c2 192.168.127.2")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("2 packets transmitted, 2 received, 0% packet loss"))
 	})
 
 	It("should ping the gateway", func() {
-		_, _, err := Exec(exec.Command("ping", "-c4", "192.168.127.1"), nil)
+		out, err := sshExec("ping -c2 192.168.127.1")
 		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("2 packets transmitted, 2 received, 0% packet loss"))
 	})
 })
 
 var _ = Describe("dns", func() {
 	It("should resolve redhat.com", func() {
-		resolver := net.Resolver{
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				return net.Dial("udp", "192.168.127.1:53")
-			},
-		}
-		names, err := resolver.LookupIPAddr(context.Background(), "redhat.com")
+		out, err := sshExec("nslookup redhat.com")
 		Expect(err).ShouldNot(HaveOccurred())
-		Expect(names).To(HaveLen(1))
-		Expect(names[0].String()).To(Equal("209.132.183.105"))
+		Expect(string(out)).To(ContainSubstring("Address: 209.132.183.105"))
 	})
 
 	It("should resolve gateway.crc.testing", func() {
-		resolver := net.Resolver{
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				return net.Dial("udp", "192.168.127.1:53")
-			},
-		}
-		names, err := resolver.LookupIPAddr(context.Background(), "gateway.crc.testing")
+		out, err := sshExec("nslookup gateway.crc.testing")
 		Expect(err).ShouldNot(HaveOccurred())
-		Expect(names).To(HaveLen(1))
-		Expect(names[0].String()).To(Equal("192.168.127.1"))
-	})
-})
-
-var _ = Describe("http", func() {
-	It("should connect to the internal http server", func() {
-		res, err := http.Get("http://192.168.127.1")
-		Expect(err).ShouldNot(HaveOccurred())
-		bin, err := ioutil.ReadAll(res.Body)
-		defer res.Body.Close()
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(bin)).To(Equal("Hello world"))
+		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.1"))
 	})
 })
