@@ -16,7 +16,6 @@ package stack
 
 import (
 	"fmt"
-	"math/rand"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -217,13 +216,20 @@ func (epsByNIC *endpointsByNIC) registerEndpoint(d *transportDemuxer, netProto t
 			netProto:   netProto,
 			transProto: transProto,
 		}
-		epsByNIC.endpoints[bindToDevice] = multiPortEp
 	}
 
-	return multiPortEp.singleRegisterEndpoint(t, flags)
+	if err := multiPortEp.singleRegisterEndpoint(t, flags); err != nil {
+		return err
+	}
+	// Only add this newly created multiportEndpoint if the singleRegisterEndpoint
+	// succeeded.
+	if !ok {
+		epsByNIC.endpoints[bindToDevice] = multiPortEp
+	}
+	return nil
 }
 
-func (epsByNIC *endpointsByNIC) checkEndpoint(d *transportDemuxer, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, flags ports.Flags, bindToDevice tcpip.NICID) tcpip.Error {
+func (epsByNIC *endpointsByNIC) checkEndpoint(flags ports.Flags, bindToDevice tcpip.NICID) tcpip.Error {
 	epsByNIC.mu.RLock()
 	defer epsByNIC.mu.RUnlock()
 
@@ -407,7 +413,6 @@ func (ep *multiPortEndpoint) handlePacketAll(id TransportEndpointID, pkt *Packet
 func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, flags ports.Flags) tcpip.Error {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
-
 	bits := flags.Bits() & ports.MultiBindFlagMask
 
 	if len(ep.endpoints) != 0 {
@@ -470,17 +475,21 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 
 	eps.mu.Lock()
 	defer eps.mu.Unlock()
-
 	epsByNIC, ok := eps.endpoints[id]
 	if !ok {
 		epsByNIC = &endpointsByNIC{
 			endpoints: make(map[tcpip.NICID]*multiPortEndpoint),
-			seed:      rand.Uint32(),
+			seed:      d.stack.seed,
 		}
+	}
+	if err := epsByNIC.registerEndpoint(d, netProto, protocol, ep, flags, bindToDevice); err != nil {
+		return err
+	}
+	// Only add this newly created epsByNIC if registerEndpoint succeeded.
+	if !ok {
 		eps.endpoints[id] = epsByNIC
 	}
-
-	return epsByNIC.registerEndpoint(d, netProto, protocol, ep, flags, bindToDevice)
+	return nil
 }
 
 func (d *transportDemuxer) singleCheckEndpoint(netProto tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, flags ports.Flags, bindToDevice tcpip.NICID) tcpip.Error {
@@ -502,7 +511,7 @@ func (d *transportDemuxer) singleCheckEndpoint(netProto tcpip.NetworkProtocolNum
 		return nil
 	}
 
-	return epsByNIC.checkEndpoint(d, netProto, protocol, flags, bindToDevice)
+	return epsByNIC.checkEndpoint(flags, bindToDevice)
 }
 
 // unregisterEndpoint unregisters the endpoint with the given id such that it

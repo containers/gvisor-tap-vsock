@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tcp
+package tcpip
 
-import (
-	"time"
-)
+import "time"
 
-// saveLastRcvdAckTime is invoked by stateify.
-func (r *receiver) saveLastRcvdAckTime() unixTime {
-	return unixTime{r.lastRcvdAckTime.Unix(), r.lastRcvdAckTime.UnixNano()}
-}
+// afterLoad is invoked by stateify.
+func (s *stdClock) afterLoad() {
+	s.baseTime = time.Now()
 
-// loadLastRcvdAckTime is invoked by stateify.
-func (r *receiver) loadLastRcvdAckTime(unix unixTime) {
-	r.lastRcvdAckTime = time.Unix(unix.second, unix.nano)
+	s.monotonicMU.Lock()
+	defer s.monotonicMU.Unlock()
+	s.monotonicOffset = s.maxMonotonic
 }

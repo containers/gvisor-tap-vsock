@@ -16,10 +16,11 @@ package tcp
 
 import (
 	"encoding/binary"
+	"math/rand"
 
-	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -126,7 +127,7 @@ func (p *processor) start(wg *sync.WaitGroup) {
 				case !ep.segmentQueue.empty():
 					p.epQ.enqueue(ep)
 				}
-				ep.mu.Unlock()
+				ep.mu.Unlock() // +checklocksforce
 			} else {
 				ep.newSegmentWaker.Assert()
 			}
@@ -141,15 +142,16 @@ func (p *processor) start(wg *sync.WaitGroup) {
 // in-order.
 type dispatcher struct {
 	processors []processor
-	seed       uint32
-	wg         sync.WaitGroup
+	// seed is a random secret for a jenkins hash.
+	seed uint32
+	wg   sync.WaitGroup
 }
 
-func (d *dispatcher) init(nProcessors int) {
+func (d *dispatcher) init(rng *rand.Rand, nProcessors int) {
 	d.close()
 	d.wait()
 	d.processors = make([]processor, nProcessors)
-	d.seed = generateRandUint32()
+	d.seed = rng.Uint32()
 	for i := range d.processors {
 		p := &d.processors[i]
 		p.sleeper.AddWaker(&p.newEndpointWaker, newEndpointWaker)
@@ -172,12 +174,11 @@ func (d *dispatcher) wait() {
 	d.wg.Wait()
 }
 
-func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) {
 	ep := stackEP.(*endpoint)
 
-	s := newIncomingSegment(id, pkt)
+	s := newIncomingSegment(id, clock, pkt)
 	if !s.parse(pkt.RXTransportChecksumValidated) {
-		ep.stack.Stats().MalformedRcvdPackets.Increment()
 		ep.stack.Stats().TCP.InvalidSegmentsReceived.Increment()
 		ep.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 		s.decRef()
@@ -185,7 +186,6 @@ func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.Trans
 	}
 
 	if !s.csumValid {
-		ep.stack.Stats().MalformedRcvdPackets.Increment()
 		ep.stack.Stats().TCP.ChecksumErrors.Increment()
 		ep.stats.ReceiveErrors.ChecksumErrors.Increment()
 		s.decRef()
@@ -211,14 +211,6 @@ func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.Trans
 	}
 
 	d.selectProcessor(id).queueEndpoint(ep)
-}
-
-func generateRandUint32() uint32 {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return binary.LittleEndian.Uint32(b)
 }
 
 func (d *dispatcher) selectProcessor(id stack.TransportEndpointID) *processor {

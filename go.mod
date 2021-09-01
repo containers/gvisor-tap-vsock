@@ -25,5 +25,5 @@ require (
 	golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e // indirect
 	golang.org/x/text v0.3.7 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
-	gvisor.dev/gvisor v0.0.0-20210424070529-29f85eb7ca69
+	gvisor.dev/gvisor v0.0.0-20210819000450-790ff24dedce
 )

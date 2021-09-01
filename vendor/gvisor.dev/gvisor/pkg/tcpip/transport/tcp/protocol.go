@@ -96,6 +96,9 @@ type protocol struct {
 	maxRetries                 uint32
 	synRetries                 uint8
 	dispatcher                 dispatcher
+	// The following secrets are initialized once and stay unchanged after.
+	seqnumSecret     uint32
+	portOffsetSecret uint32
 }
 
 // Number returns the tcp protocol number.
@@ -105,7 +108,7 @@ func (*protocol) Number() tcpip.TransportProtocolNumber {
 
 // NewEndpoint creates a new tcp endpoint.
 func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
-	return newEndpoint(p.stack, netProto, waiterQueue), nil
+	return newEndpoint(p.stack, p, netProto, waiterQueue), nil
 }
 
 // NewRawEndpoint creates a new raw TCP endpoint. Raw TCP sockets are currently
@@ -131,7 +134,7 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error) {
 // goroutine which is responsible for dequeuing and doing full TCP dispatch of
 // the packet.
 func (p *protocol) QueuePacket(ep stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
-	p.dispatcher.queuePacket(ep, id, pkt)
+	p.dispatcher.queuePacket(ep, id, p.stack.Clock(), pkt)
 }
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
@@ -142,14 +145,14 @@ func (p *protocol) QueuePacket(ep stack.TransportEndpoint, id stack.TransportEnd
 // particular, SYNs addressed to a non-existent connection are rejected by this
 // means."
 func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
-	s := newIncomingSegment(id, pkt)
+	s := newIncomingSegment(id, p.stack.Clock(), pkt)
 	defer s.decRef()
 
 	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid {
 		return stack.UnknownDestinationPacketMalformed
 	}
 
-	if !s.flagIsSet(header.TCPFlagRst) {
+	if !s.flags.Contains(header.TCPFlagRst) {
 		replyWithReset(p.stack, s, stack.DefaultTOS, 0)
 	}
 
@@ -181,7 +184,7 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error {
 	//   reset has sequence number zero and the ACK field is set to the sum
 	//   of the sequence number and segment length of the incoming segment.
 	//   The connection remains in the CLOSED state.
-	if s.flagIsSet(header.TCPFlagAck) {
+	if s.flags.Contains(header.TCPFlagAck) {
 		seq = s.ackNumber
 	} else {
 		flags |= header.TCPFlagAck
@@ -401,7 +404,7 @@ func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Er
 
 	case *tcpip.TCPTimeWaitReuseOption:
 		p.mu.RLock()
-		*v = tcpip.TCPTimeWaitReuseOption(p.timeWaitReuse)
+		*v = p.timeWaitReuse
 		p.mu.RUnlock()
 		return nil
 
@@ -478,9 +481,15 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 		minRTO:                     MinRTO,
 		maxRTO:                     MaxRTO,
 		maxRetries:                 MaxRetries,
-		// TODO(gvisor.dev/issue/5243): Set recovery to tcpip.TCPRACKLossDetection.
-		recovery: 0,
+		recovery:                   tcpip.TCPRACKLossDetection,
+		seqnumSecret:               s.Rand().Uint32(),
+		portOffsetSecret:           s.Rand().Uint32(),
 	}
-	p.dispatcher.init(runtime.GOMAXPROCS(0))
+	p.dispatcher.init(s.Rand(), runtime.GOMAXPROCS(0))
 	return &p
+}
+
+// protocolFromStack retrieves the tcp.protocol instance from stack s.
+func protocolFromStack(s *stack.Stack) *protocol {
+	return s.TransportProtocolInstance(ProtocolNumber).(*protocol)
 }

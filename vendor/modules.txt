@@ -8,7 +8,7 @@ github.com/davecgh/go-spew/spew
 github.com/dustin/go-humanize
 # github.com/fsnotify/fsnotify v1.4.9
 github.com/fsnotify/fsnotify
-# github.com/google/btree v1.0.0
+# github.com/google/btree v1.0.1
 github.com/google/btree
 # github.com/google/gopacket v1.1.19
 ## explicit
@@ -159,8 +159,10 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 ## explicit
 gopkg.in/yaml.v3
-# gvisor.dev/gvisor v0.0.0-20210424070529-29f85eb7ca69
+# gvisor.dev/gvisor v0.0.0-20210819000450-790ff24dedce
 ## explicit
+gvisor.dev/gvisor/pkg/atomicbitops
+gvisor.dev/gvisor/pkg/buffer
 gvisor.dev/gvisor/pkg/gohacks
 gvisor.dev/gvisor/pkg/goid
 gvisor.dev/gvisor/pkg/linewriter

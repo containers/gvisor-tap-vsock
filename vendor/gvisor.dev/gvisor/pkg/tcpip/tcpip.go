@@ -37,9 +37,9 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -64,17 +64,47 @@ func (e *ErrSaveRejection) Error() string {
 	return "save rejected due to unsupported networking state: " + e.Err.Error()
 }
 
+// MonotonicTime is a monotonic clock reading.
+//
+// +stateify savable
+type MonotonicTime struct {
+	nanoseconds int64
+}
+
+// Before reports whether the monotonic clock reading mt is before u.
+func (mt MonotonicTime) Before(u MonotonicTime) bool {
+	return mt.nanoseconds < u.nanoseconds
+}
+
+// After reports whether the monotonic clock reading mt is after u.
+func (mt MonotonicTime) After(u MonotonicTime) bool {
+	return mt.nanoseconds > u.nanoseconds
+}
+
+// Add returns the monotonic clock reading mt+d.
+func (mt MonotonicTime) Add(d time.Duration) MonotonicTime {
+	return MonotonicTime{
+		nanoseconds: time.Unix(0, mt.nanoseconds).Add(d).Sub(time.Unix(0, 0)).Nanoseconds(),
+	}
+}
+
+// Sub returns the duration mt-u. If the result exceeds the maximum (or minimum)
+// value that can be stored in a Duration, the maximum (or minimum) duration
+// will be returned. To compute t-d for a duration d, use t.Add(-d).
+func (mt MonotonicTime) Sub(u MonotonicTime) time.Duration {
+	return time.Unix(0, mt.nanoseconds).Sub(time.Unix(0, u.nanoseconds))
+}
+
 // A Clock provides the current time and schedules work for execution.
 //
 // Times returned by a Clock should always be used for application-visible
 // time. Only monotonic times should be used for netstack internal timekeeping.
 type Clock interface {
-	// NowNanoseconds returns the current real time as a number of
-	// nanoseconds since the Unix epoch.
-	NowNanoseconds() int64
+	// Now returns the current local time.
+	Now() time.Time
 
-	// NowMonotonic returns a monotonic time value.
-	NowMonotonic() int64
+	// NowMonotonic returns the current monotonic clock reading.
+	NowMonotonic() MonotonicTime
 
 	// AfterFunc waits for the duration to elapse and then calls f in its own
 	// goroutine. It returns a Timer that can be used to cancel the call using
@@ -435,11 +465,11 @@ type ControlMessages struct {
 
 // PacketOwner is used to get UID and GID of the packet.
 type PacketOwner interface {
-	// UID returns UID of the packet.
-	UID() uint32
+	// UID returns KUID of the packet.
+	KUID() uint32
 
-	// GID returns GID of the packet.
-	GID() uint32
+	// GID returns KGID of the packet.
+	KGID() uint32
 }
 
 // ReadOptions contains options for Endpoint.Read.
@@ -861,6 +891,9 @@ type SettableSocketOption interface {
 	isSettableSocketOption()
 }
 
+// EndpointState represents the state of an endpoint.
+type EndpointState uint8
+
 // CongestionControlState indicates the current congestion control state for
 // TCP sender.
 type CongestionControlState int
@@ -896,6 +929,9 @@ type TCPInfoOption struct {
 
 	// RTO is the retransmission timeout for the endpoint.
 	RTO time.Duration
+
+	// State is the current endpoint protocol state.
+	State EndpointState
 
 	// CcState is the congestion control state.
 	CcState CongestionControlState
@@ -1107,6 +1143,7 @@ const (
 // LingerOption is used by SetSockOpt/GetSockOpt to set/get the
 // duration for which a socket lingers before returning from Close.
 //
+// +marshal
 // +stateify savable
 type LingerOption struct {
 	Enabled bool
@@ -1219,7 +1256,7 @@ type NetworkProtocolNumber uint32
 
 // A StatCounter keeps track of a statistic.
 type StatCounter struct {
-	count uint64
+	count atomicbitops.AlignedAtomicUint64
 }
 
 // Increment adds one to the counter.
@@ -1234,12 +1271,12 @@ func (s *StatCounter) Decrement() {
 
 // Value returns the current value of the counter.
 func (s *StatCounter) Value(name ...string) uint64 {
-	return atomic.LoadUint64(&s.count)
+	return s.count.Load()
 }
 
 // IncrementBy increments the counter by v.
 func (s *StatCounter) IncrementBy(v uint64) {
-	atomic.AddUint64(&s.count, v)
+	s.count.Add(v)
 }
 
 func (s *StatCounter) String() string {
@@ -1527,12 +1564,56 @@ type IGMPStats struct {
 	// LINT.ThenChange(network/ipv4/stats.go:multiCounterIGMPStats)
 }
 
+// IPForwardingStats collects stats related to IP forwarding (both v4 and v6).
+type IPForwardingStats struct {
+	// LINT.IfChange(IPForwardingStats)
+
+	// Unrouteable is the number of IP packets received which were dropped
+	// because a route to their destination could not be constructed.
+	Unrouteable *StatCounter
+
+	// ExhaustedTTL is the number of IP packets received which were dropped
+	// because their TTL was exhausted.
+	ExhaustedTTL *StatCounter
+
+	// LinkLocalSource is the number of IP packets which were dropped
+	// because they contained a link-local source address.
+	LinkLocalSource *StatCounter
+
+	// LinkLocalDestination is the number of IP packets which were dropped
+	// because they contained a link-local destination address.
+	LinkLocalDestination *StatCounter
+
+	// PacketTooBig is the number of IP packets which were dropped because they
+	// were too big for the outgoing MTU.
+	PacketTooBig *StatCounter
+
+	// HostUnreachable is the number of IP packets received which could not be
+	// successfully forwarded due to an unresolvable next hop.
+	HostUnreachable *StatCounter
+
+	// ExtensionHeaderProblem is the number of IP packets which were dropped
+	// because of a problem encountered when processing an IPv6 extension
+	// header.
+	ExtensionHeaderProblem *StatCounter
+
+	// Errors is the number of IP packets received which could not be
+	// successfully forwarded.
+	Errors *StatCounter
+
+	// LINT.ThenChange(network/internal/ip/stats.go:multiCounterIPForwardingStats)
+}
+
 // IPStats collects IP-specific stats (both v4 and v6).
 type IPStats struct {
 	// LINT.IfChange(IPStats)
 
 	// PacketsReceived is the number of IP packets received from the link layer.
 	PacketsReceived *StatCounter
+
+	// ValidPacketsReceived is the number of valid IP packets that reached the IP
+	// layer.
+	ValidPacketsReceived *StatCounter
 
 	// DisabledPacketsReceived is the number of IP packets received from the link
 	// layer when the IP layer is disabled.
@@ -1573,6 +1654,10 @@ type IPStats struct {
 	// chain.
 	IPTablesInputDropped *StatCounter
 
+	// IPTablesForwardDropped is the number of IP packets dropped in the Forward
+	// chain.
+	IPTablesForwardDropped *StatCounter
+
 	// IPTablesOutputDropped is the number of IP packets dropped in the Output
 	// chain.
 	IPTablesOutputDropped *StatCounter
@@ -1594,6 +1679,9 @@ type IPStats struct {
 
 	// OptionUnknownReceived is the number of unknown IP options seen.
 	OptionUnknownReceived *StatCounter
+
+	// Forwarding collects stats related to IP forwarding.
+	Forwarding IPForwardingStats
 
 	// LINT.ThenChange(network/internal/ip/stats.go:MultiCounterIPStats)
 }
@@ -1757,6 +1845,10 @@ type TCPStats struct {
 	// FailedPortReservations is the number of times TCP failed to reserve
 	// a port.
 	FailedPortReservations *StatCounter
+
+	// SegmentsAckedWithDSACK is the number of segments acknowledged with
+	// DSACK.
+	SegmentsAckedWithDSACK *StatCounter
 }
 
 // UDPStats collects UDP-specific stats.
@@ -1787,37 +1879,104 @@ type UDPStats struct {
 	ChecksumErrors *StatCounter
 }
 
+// NICNeighborStats holds metrics for the neighbor table.
+type NICNeighborStats struct {
+	// LINT.IfChange(NICNeighborStats)
+
+	// UnreachableEntryLookups counts the number of lookups performed on an
+	// entry in Unreachable state.
+	UnreachableEntryLookups *StatCounter
+
+	// LINT.ThenChange(stack/nic_stats.go:multiCounterNICNeighborStats)
+}
+
+// NICPacketStats holds basic packet statistics.
+type NICPacketStats struct {
+	// LINT.IfChange(NICPacketStats)
+
+	// Packets is the number of packets counted.
+	Packets *StatCounter
+
+	// Bytes is the number of bytes counted.
+	Bytes *StatCounter
+
+	// LINT.ThenChange(stack/nic_stats.go:multiCounterNICPacketStats)
+}
+
+// NICStats holds NIC statistics.
+type NICStats struct {
+	// LINT.IfChange(NICStats)
+
+	// UnknownL3ProtocolRcvdPackets is the number of packets received that were
+	// for an unknown or unsupported network protocol.
+	UnknownL3ProtocolRcvdPackets *StatCounter
+
+	// UnknownL4ProtocolRcvdPackets is the number of packets received that were
+	// for an unknown or unsupported transport protocol.
+	UnknownL4ProtocolRcvdPackets *StatCounter
+
+	// MalformedL4RcvdPackets is the number of packets received by a NIC that
+	// could not be delivered to a transport endpoint because the L4 header could
+	// not be parsed.
+	MalformedL4RcvdPackets *StatCounter
+
+	// Tx contains statistics about transmitted packets.
+	Tx NICPacketStats
+
+	// Rx contains statistics about received packets.
+	Rx NICPacketStats
+
+	// DisabledRx contains statistics about received packets on disabled NICs.
+	DisabledRx NICPacketStats
+
+	// Neighbor contains statistics about neighbor entries.
+	Neighbor NICNeighborStats
+
+	// LINT.ThenChange(stack/nic_stats.go:multiCounterNICStats)
+}
+
+// FillIn returns a copy of s with nil fields initialized to new StatCounters.
+func (s NICStats) FillIn() NICStats {
+	InitStatCounters(reflect.ValueOf(&s).Elem())
+	return s
+}
+
 // Stats holds statistics about the networking stack.
-//
-// All fields are optional.
 type Stats struct {
-	// UnknownProtocolRcvdPackets is the number of packets received by the
-	// stack that were for an unknown or unsupported protocol.
-	UnknownProtocolRcvdPackets *StatCounter
+	// TODO(https://gvisor.dev/issues/5986): Make the DroppedPackets stat less
+	// ambiguous.
 
-	// MalformedRcvdPackets is the number of packets received by the stack
-	// that were deemed malformed.
-	MalformedRcvdPackets *StatCounter
-
-	// DroppedPackets is the number of packets dropped due to full queues.
+	// DroppedPackets is the number of packets dropped at the transport layer.
 	DroppedPackets *StatCounter
 
-	// ICMP breaks out ICMP-specific stats (both v4 and v6).
+	// NICs is an aggregation of every NIC's statistics. These should not be
+	// incremented using this field, but using the relevant NIC multicounters.
+	NICs NICStats
+
+	// ICMP is an aggregation of every NetworkEndpoint's ICMP statistics (both v4
+	// and v6). These should not be incremented using this field, but using the
+	// relevant NetworkEndpoint ICMP multicounters.
 	ICMP ICMPStats
 
-	// IGMP breaks out IGMP-specific stats.
+	// IGMP is an aggregation of every NetworkEndpoint's IGMP statistics. These
+	// should not be incremented using this field, but using the relevant
+	// NetworkEndpoint IGMP multicounters.
 	IGMP IGMPStats
 
-	// IP breaks out IP-specific stats (both v4 and v6).
+	// IP is an aggregation of every NetworkEndpoint's IP statistics. These should
+	// not be incremented using this field, but using the relevant NetworkEndpoint
+	// IP multicounters.
 	IP IPStats
 
-	// ARP breaks out ARP-specific stats.
+	// ARP is an aggregation of every NetworkEndpoint's ARP statistics. These
+	// should not be incremented using this field, but using the relevant
+	// NetworkEndpoint ARP multicounters.
 	ARP ARPStats
 
-	// TCP breaks out TCP-specific stats.
+	// TCP holds TCP-specific stats.
 	TCP TCPStats
 
-	// UDP breaks out UDP-specific stats.
+	// UDP holds UDP-specific stats.
 	UDP UDPStats
 }
 
