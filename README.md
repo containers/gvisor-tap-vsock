@@ -1,4 +1,4 @@
-# gvisor-tap-vsock 
+# gvisor-tap-vsock
 
 
 A replacement for [libslirp](https://gitlab.com/qemu-project/libslirp) and [VPNKit](https://github.com/moby/vpnkit), written in pure Go.
@@ -84,7 +84,7 @@ With the executable:
 The executable running on the host, `gvproxy`, exposes a HTTP API. It can be used with curl.
 
 ```
-$ curl  --unix-socket /tmp/network.sock http:/unix/stats 
+$ curl  --unix-socket /tmp/network.sock http:/unix/stats
 {
   "BytesSent": 0,
   "BytesReceived": 0,
@@ -117,7 +117,7 @@ $ curl  --unix-socket /tmp/network.sock http:/unix/services/forwarder/expose -X 
 
 Unexpose a port:
 ```
-$ curl  --unix-socket /tmp/network.sock http:/unix/services/forwarder/expose -X POST -d '{"local":":6443"}'
+$ curl  --unix-socket /tmp/network.sock http:/unix/services/forwarder/unexpose -X POST -d '{"local":":6443"}'
 ```
 
 List exposed ports:
@@ -136,7 +136,7 @@ $ curl  --unix-socket /tmp/network.sock http:/foo/services/forwarder/all | jq .
 
 ```
 
-#### Tunneling 
+#### Tunneling
 
 The HTTP API exposed on the host can be used to connect to a specific IP and port inside the virtual network.
 A working example for SSH can be found [here](https://github.com/containers/gvisor-tap-vsock/blob/master/cmd/ssh-over-vsock).
