@@ -37,6 +37,8 @@ var (
 	exitCode     int
 )
 
+const gatewayIP = "192.168.127.1"
+
 func main() {
 	flag.Var(&endpoints, "listen", fmt.Sprintf("URL where the tap send packets (default %s)", transport.DefaultURL))
 	flag.BoolVar(&debug, "debug", false, "Print debug info")
@@ -107,7 +109,7 @@ func main() {
 		CaptureFile:       captureFile(),
 		MTU:               mtu,
 		Subnet:            "192.168.127.0/24",
-		GatewayIP:         "192.168.127.1",
+		GatewayIP:         gatewayIP,
 		GatewayMacAddress: "5a:94:ef:e4:0c:dd",
 		DHCPStaticLeases: map[string]string{
 			"192.168.127.2": "5a:94:ef:e4:0c:ee",
@@ -118,7 +120,7 @@ func main() {
 				Records: []types.Record{
 					{
 						Name: "gateway",
-						IP:   net.ParseIP("192.168.127.1"),
+						IP:   net.ParseIP(gatewayIP),
 					},
 					{
 						Name: "host",
@@ -131,7 +133,7 @@ func main() {
 				Records: []types.Record{
 					{
 						Name: "gateway",
-						IP:   net.ParseIP("192.168.127.1"),
+						IP:   net.ParseIP(gatewayIP),
 					},
 					{
 						Name: "host",
@@ -207,21 +209,19 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 		if err != nil {
 			return errors.Wrap(err, "cannot listen")
 		}
-		g.Go(func() error {
-			<-ctx.Done()
-			return ln.Close()
-		})
-		g.Go(func() error {
-			err := http.Serve(ln, withProfiler(vn))
-			if err != nil {
-				if err != http.ErrServerClosed {
-					return err
-				}
-				return err
-			}
-			return nil
-		})
+		httpServe(ctx, g, ln, withProfiler(vn))
 	}
+
+	ln, err := vn.Listen("tcp", fmt.Sprintf("%s:80", gatewayIP))
+	if err != nil {
+		return err
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/services/forwarder/all", vn.Mux())
+	mux.Handle("/services/forwarder/expose", vn.Mux())
+	mux.Handle("/services/forwarder/unexpose", vn.Mux())
+	httpServe(ctx, g, ln, mux)
+
 	if debug {
 		g.Go(func() error {
 		debugLog:
@@ -288,6 +288,23 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 		})
 	}
 	return nil
+}
+
+func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http.Handler) {
+	g.Go(func() error {
+		<-ctx.Done()
+		return ln.Close()
+	})
+	g.Go(func() error {
+		err := http.Serve(ln, mux)
+		if err != nil {
+			if err != http.ErrServerClosed {
+				return err
+			}
+			return err
+		}
+		return nil
+	})
 }
 
 func withProfiler(vn *virtualnetwork.VirtualNetwork) http.Handler {
