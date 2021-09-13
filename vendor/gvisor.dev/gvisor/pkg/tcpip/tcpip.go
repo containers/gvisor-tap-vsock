@@ -19,7 +19,7 @@
 // The starting point is the creation and configuration of a stack. A stack can
 // be created by calling the New() function of the tcpip/stack/stack package;
 // configuring a stack involves creating NICs (via calls to Stack.CreateNIC()),
-// adding network addresses (via calls to Stack.AddAddress()), and
+// adding network addresses (via calls to Stack.AddProtocolAddress()), and
 // setting a route table (via a call to Stack.SetRouteTable()).
 //
 // Once a stack is configured, endpoints can be created by calling
@@ -450,6 +450,12 @@ type ControlMessages struct {
 
 	// PacketInfo holds interface and address data on an incoming packet.
 	PacketInfo IPPacketInfo
+
+	// HasIPv6PacketInfo indicates whether IPv6PacketInfo is set.
+	HasIPv6PacketInfo bool
+
+	// IPv6PacketInfo holds interface and address data on an incoming packet.
+	IPv6PacketInfo IPv6PacketInfo
 
 	// HasOriginalDestinationAddress indicates whether OriginalDstAddress is
 	// set.
@@ -1164,6 +1170,14 @@ type IPPacketInfo struct {
 	DestinationAddr Address
 }
 
+// IPv6PacketInfo is the message structure for IPV6_PKTINFO.
+//
+// +stateify savable
+type IPv6PacketInfo struct {
+	Addr Address
+	NIC  NICID
+}
+
 // SendBufferSizeOption is used by stack.(Stack*).Option/SetOption to
 // get/set the default, min and max send buffer sizes.
 type SendBufferSizeOption struct {
@@ -1255,6 +1269,8 @@ type TransportProtocolNumber uint32
 type NetworkProtocolNumber uint32
 
 // A StatCounter keeps track of a statistic.
+//
+// +stateify savable
 type StatCounter struct {
 	count atomicbitops.AlignedAtomicUint64
 }
@@ -1981,6 +1997,8 @@ type Stats struct {
 }
 
 // ReceiveErrors collects packet receive errors within transport endpoint.
+//
+// +stateify savable
 type ReceiveErrors struct {
 	// ReceiveBufferOverflow is the number of received packets dropped
 	// due to the receive buffer being full.
@@ -1998,8 +2016,10 @@ type ReceiveErrors struct {
 	ChecksumErrors StatCounter
 }
 
-// SendErrors collects packet send errors within the transport layer for
-// an endpoint.
+// SendErrors collects packet send errors within the transport layer for an
+// endpoint.
+//
+// +stateify savable
 type SendErrors struct {
 	// SendToNetworkFailed is the number of packets failed to be written to
 	// the network endpoint.
@@ -2010,6 +2030,8 @@ type SendErrors struct {
 }
 
 // ReadErrors collects segment read errors from an endpoint read call.
+//
+// +stateify savable
 type ReadErrors struct {
 	// ReadClosed is the number of received packet drops because the endpoint
 	// was shutdown for read.
@@ -2025,6 +2047,8 @@ type ReadErrors struct {
 }
 
 // WriteErrors collects packet write errors from an endpoint write call.
+//
+// +stateify savable
 type WriteErrors struct {
 	// WriteClosed is the number of packet drops because the endpoint
 	// was shutdown for write.
@@ -2040,6 +2064,8 @@ type WriteErrors struct {
 }
 
 // TransportEndpointStats collects statistics about the endpoint.
+//
+// +stateify savable
 type TransportEndpointStats struct {
 	// PacketsReceived is the number of successful packet receives.
 	PacketsReceived StatCounter
