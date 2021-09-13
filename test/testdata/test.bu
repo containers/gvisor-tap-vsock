@@ -1,0 +1,19 @@
+variant: fcos
+version: 1.4.0
+passwd:
+  users:
+    - name: test
+      password_hash: $y$j9T$TqJWt3/mKJbH0sYi6B/LD1$QjVRuUgntjTHjAdAkqhkr4F73m.Be4jBXdAaKw98sPC
+      groups:
+        - wheel
+        - sudo
+storage:
+  files:
+    - path: /etc/ssh/sshd_config.d/20-enable-passwords.conf
+      mode: 0644
+      contents:
+        inline: |
+          # Fedora CoreOS disables SSH password login by default.
+          # Enable it.
+          # This file must sort before 40-disable-passwords.conf.
+          PasswordAuthentication yes

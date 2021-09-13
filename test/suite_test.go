@@ -1,17 +1,17 @@
 package e2e
 
 import (
-	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -23,24 +23,37 @@ func TestSuite(t *testing.T) {
 	RunSpecs(t, "gvisor-tap-vsock suite")
 }
 
-const sock = "/tmp/mysock"
+const (
+	sock             = "/tmp/gvproxy-api.sock"
+	qemuPort         = 5555
+	sshPort          = 2222
+	ignitionUser     = "test"
+	ignitionPassword = "test"
+)
 
 var (
-	binDir             string
-	changeDefaultRoute bool
-	host               *exec.Cmd
-	client             *exec.Cmd
+	tmpDir string
+	binDir string
+	host   *exec.Cmd
+	client *exec.Cmd
 )
 
 func init() {
+	flag.StringVar(&tmpDir, "tmpDir", "../tmp", "temporary working directory")
 	flag.StringVar(&binDir, "bin", "../bin", "directory with compiled binaries")
-	flag.BoolVar(&changeDefaultRoute, "change-default-route", false, "change the default route to use this interface")
 }
 
 var _ = BeforeSuite(func() {
+	Expect(os.MkdirAll(filepath.Join(tmpDir, "disks"), os.ModePerm)).Should(Succeed())
+
+	downloader, err := NewFcosDownloader(filepath.Join(tmpDir, "disks"))
+	Expect(err).ShouldNot(HaveOccurred())
+	qemuImage, err := downloader.DownloadImage()
+	Expect(err).ShouldNot(HaveOccurred())
+
 	_ = os.Remove(sock)
 	// #nosec
-	host = exec.Command(filepath.Join(binDir, "host"), fmt.Sprintf("--listen=unix://%s", sock))
+	host = exec.Command(filepath.Join(binDir, "gvproxy"), fmt.Sprintf("--listen=unix://%s", sock), fmt.Sprintf("--listen-qemu=tcp://127.0.0.1:%d", qemuPort))
 	host.Stderr = os.Stderr
 	host.Stdout = os.Stdout
 	Expect(host.Start()).Should(Succeed())
@@ -60,10 +73,9 @@ var _ = BeforeSuite(func() {
 		break
 	}
 
+	template := `%s -m 2048 -nographic -snapshot -drive if=virtio,file=%s -fw_cfg name=opt/com.coreos/config,file=%s -netdev socket,id=vlan,connect=127.0.0.1:%d -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee`
 	// #nosec
-	client = exec.Command("sudo", filepath.Join(binDir, "vm"), fmt.Sprintf("--url=unix://%s", sock), fmt.Sprintf("--change-default-route=%v", changeDefaultRoute))
-	client.Stderr = os.Stderr
-	client.Stdout = os.Stdout
+	client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), qemuImage, filepath.Join("testdata", "test.ign"), qemuPort), " ")...)
 	Expect(client.Start()).Should(Succeed())
 	go func() {
 		if err := client.Wait(); err != nil {
@@ -71,36 +83,52 @@ var _ = BeforeSuite(func() {
 		}
 	}()
 
-	client := http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return net.Dial("unix", sock)
-			},
-		},
-	}
-
 	for {
-		cam, err := camTable(client)
-		Expect(err).ShouldNot(HaveOccurred())
-		if len(cam) > 0 {
+		_, err := sshExec("whoami")
+		if err == nil {
 			break
 		}
-		log.Info("waiting for client to connect")
+		log.Infof("waiting for client to connect: %v", err)
 		time.Sleep(time.Second)
 	}
 })
 
-func camTable(client http.Client) (map[string]int, error) {
-	res, err := client.Get("http://unix/cam")
+func qemuExecutable() string {
+	if runtime.GOOS == "darwin" {
+		return "qemu-system-x86_64"
+	}
+	return "qemu-kvm"
+}
+
+func qemuArgs() string {
+	if runtime.GOOS == "darwin" {
+		return "-machine q35,accel=hvf:tcg -smp 4"
+	}
+	return "-cpu host"
+}
+
+func sshExec(cmd ...string) ([]byte, error) {
+	client, err := ssh.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", sshPort), &ssh.ClientConfig{
+		User: ignitionUser,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(ignitionPassword),
+		},
+		// #nosec
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
-	var cam map[string]int
-	if err := json.NewDecoder(res.Body).Decode(&cam); err != nil {
+	defer client.Close()
+
+	sess, err := client.NewSession()
+	if err != nil {
 		return nil, err
 	}
-	return cam, nil
+	defer sess.Close()
+
+	return sess.CombinedOutput(strings.Join(cmd, " "))
 }
 
 var _ = AfterSuite(func() {
