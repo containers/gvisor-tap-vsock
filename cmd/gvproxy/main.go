@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"regexp"
 	"strconv"
 	"syscall"
 	"time"
@@ -125,11 +124,7 @@ func main() {
 				},
 			},
 			{
-				Name:      "apps-crc.testing.",
-				DefaultIP: net.ParseIP("192.168.127.2"),
-			},
-			{
-				Name: "crc.testing.",
+				Name: "crc.testing.", // still used by current version of podman machine CNI
 				Records: []types.Record{
 					{
 						Name: "gateway",
@@ -138,18 +133,6 @@ func main() {
 					{
 						Name: "host",
 						IP:   net.ParseIP("192.168.127.254"),
-					},
-					{
-						Name: "api",
-						IP:   net.ParseIP("192.168.127.2"),
-					},
-					{
-						Name: "api-int",
-						IP:   net.ParseIP("192.168.127.2"),
-					},
-					{
-						Regexp: regexp.MustCompile("crc-(.*?)-master-0"),
-						IP:     net.ParseIP("192.168.126.11"),
 					},
 				},
 			},
