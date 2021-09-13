@@ -46,5 +46,5 @@ cross:
 	GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux ./cmd/gvproxy
 
 .PHONY: test
-test: build
+test: gvproxy
 	go test -v ./test
