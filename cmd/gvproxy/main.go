@@ -112,6 +112,19 @@ func main() {
 		},
 		DNS: []types.Zone{
 			{
+				Name: "containers.internal.",
+				Records: []types.Record{
+					{
+						Name: "gateway",
+						IP:   net.ParseIP("192.168.127.1"),
+					},
+					{
+						Name: "host",
+						IP:   net.ParseIP("192.168.127.254"),
+					},
+				},
+			},
+			{
 				Name:      "apps-crc.testing.",
 				DefaultIP: net.ParseIP("192.168.127.2"),
 			},
