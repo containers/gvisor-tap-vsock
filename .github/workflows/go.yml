@@ -20,3 +20,8 @@ jobs:
 
     - name: Build
       run: make cross qemu-wrapper vm
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: gvproxy
+        path: bin/gvproxy*
