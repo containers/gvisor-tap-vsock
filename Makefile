@@ -4,13 +4,19 @@ CONTAINER_RUNTIME ?= podman
 LDFLAGS = -ldflags '-s -w'
 
 .PHONY: build
-build: gvproxy
-	go build $(LDFLAGS) -o bin/qemu-wrapper ./cmd/qemu-wrapper
-	GOOS=linux CGO_ENABLED=0 go build $(LDFLAGS) -o bin/vm ./cmd/vm
+build: gvproxy qemu-wrapper vm
 
 .PHONY: gvproxy
 gvproxy:
 	go build $(LDFLAGS) -o bin/gvproxy ./cmd/gvproxy
+
+.PHONY: qemu-wrapper
+qemu-wrapper:
+	go build $(LDFLAGS) -o bin/qemu-wrapper ./cmd/qemu-wrapper
+
+.PHONY: vm
+vm:
+	GOOS=linux CGO_ENABLED=0 go build $(LDFLAGS) -o bin/vm ./cmd/vm
 
 .PHONY: clean
 clean:
