@@ -2,8 +2,11 @@ package e2e
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"net"
 	"net/http"
+	"os/exec"
 
 	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
@@ -72,6 +75,42 @@ var _ = Describe("port forwarding", func() {
 			_, err = net.Dial("tcp", "127.0.0.1:9090")
 			g.Expect(err.Error()).To(HaveSuffix("connection refused"))
 		}).Should(Succeed())
+	})
+
+	It("should reach a dns server in the VM using dynamic port forwarding", func() {
+		const dnsmasqConfiguration = `user=root
+port=53
+bind-interfaces
+address=/foobar/1.2.3.4
+`
+		base64Data := base64.StdEncoding.EncodeToString([]byte(dnsmasqConfiguration))
+		_, err := sshExec(fmt.Sprintf("sudo install -m 0%o /dev/null %s && cat <<EOF | base64 --decode | sudo tee %s\n%s\nEOF", 0644, "/tmp/cfg", "/tmp/cfg", base64Data))
+		Expect(err).ShouldNot(HaveOccurred())
+
+		_, err = sshExec("sudo podman run --rm --name dns-test -v /tmp/cfg:/etc/dnsmasq.conf:z -d -p 53:53/udp -t quay.io/crcont/dnsmasq")
+		Expect(err).ShouldNot(HaveOccurred())
+		defer func() {
+			_, err := sshExec("sudo podman stop dns-test")
+			Expect(err).ShouldNot(HaveOccurred())
+		}()
+
+		Expect(client.Expose(&types.ExposeRequest{
+			Local:    ":53",
+			Remote:   "192.168.127.2:53",
+			Protocol: "udp",
+		})).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("nslookup", "-timeout=1", "foobar", "127.0.0.1")
+			out, err := cmd.CombinedOutput()
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(string(out)).To(ContainSubstring("Address: 1.2.3.4"))
+		}).Should(Succeed())
+
+		Expect(client.Unexpose(&types.UnexposeRequest{
+			Local:    ":53",
+			Protocol: "udp",
+		})).Should(Succeed())
 	})
 
 	It("should reach a http server in the VM using the tunneling of the daemon", func() {
