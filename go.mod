@@ -13,7 +13,7 @@ require (
 	github.com/mdlayher/vsock v0.0.0-20210303205602-10d591861736
 	github.com/miekg/dns v1.1.43
 	github.com/onsi/ginkgo v1.16.4
-	github.com/onsi/gomega v1.15.0
+	github.com/onsi/gomega v1.16.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.1
