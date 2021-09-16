@@ -47,9 +47,15 @@ var _ = Describe("dns", func() {
 		Expect(string(out)).To(ContainSubstring("Address: 209.132.183.105"))
 	})
 
-	It("should resolve gateway.crc.testing", func() {
-		out, err := sshExec("nslookup gateway.crc.testing")
+	It("should resolve gateway.containers.internal", func() {
+		out, err := sshExec("nslookup gateway.containers.internal")
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.1"))
+	})
+
+	It("should resolve host.containers.internal", func() {
+		out, err := sshExec("nslookup host.containers.internal")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.254"))
 	})
 })

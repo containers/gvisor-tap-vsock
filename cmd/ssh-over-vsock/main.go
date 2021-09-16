@@ -13,12 +13,16 @@ import (
 var (
 	ip       string
 	port     int
+	user     string
+	key      string
 	endpoint string
 )
 
 func main() {
 	flag.StringVar(&ip, "ip", "192.168.127.2", "ip of the host")
 	flag.IntVar(&port, "port", 22, "port of the host")
+	flag.StringVar(&user, "user", "", "ssh user")
+	flag.StringVar(&key, "key", "", "ssh key")
 	flag.StringVar(&endpoint, "url", "/tmp/network.sock", "url of the daemon")
 	flag.Parse()
 
@@ -38,7 +42,7 @@ func run() error {
 		return err
 	}
 
-	client, err := newClient(conn, "core", "/home/guillaumerose/.crc/machines/crc/id_rsa")
+	client, err := newClient(conn, user, key)
 	if err != nil {
 		return err
 	}

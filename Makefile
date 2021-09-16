@@ -22,10 +22,6 @@ vm:
 clean:
 	rm -rf ./bin
 
-.PHONY: crc
-crc: build
-	scp bin/vm crc:
-
 .PHONY: vendor
 vendor:
 	go mod tidy
