@@ -139,6 +139,12 @@ func (f *PortsForwarder) Mux() http.Handler {
 		for _, proxy := range f.proxies {
 			ret = append(ret, proxy)
 		}
+		sort.Slice(ret, func(i, j int) bool {
+			if ret[i].Local == ret[j].Local {
+				return ret[i].Protocol < ret[j].Protocol
+			}
+			return ret[i].Local < ret[j].Local
+		})
 		_ = json.NewEncoder(w).Encode(ret)
 	})
 	mux.HandleFunc("/expose", func(w http.ResponseWriter, r *http.Request) {
