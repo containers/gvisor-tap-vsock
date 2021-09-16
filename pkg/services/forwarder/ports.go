@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,7 +32,8 @@ type PortsForwarder struct {
 type proxy struct {
 	Local      string `json:"local"`
 	Remote     string `json:"remote"`
-	underlying *tcpproxy.Proxy
+	Protocol   string `json:"protocol"`
+	underlying io.Closer
 }
 
 func NewPortsForwarder(s *stack.Stack) *PortsForwarder {
@@ -39,7 +43,7 @@ func NewPortsForwarder(s *stack.Stack) *PortsForwarder {
 	}
 }
 
-func (f *PortsForwarder) Expose(local, remote string) error {
+func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote string) error {
 	f.proxiesLock.Lock()
 	defer f.proxiesLock.Unlock()
 	if _, ok := f.proxies[local]; ok {
@@ -54,51 +58,93 @@ func (f *PortsForwarder) Expose(local, remote string) error {
 	if err != nil {
 		return err
 	}
-	var p tcpproxy.Proxy
-	p.AddRoute(local, &tcpproxy.DialProxy{
-		Addr: remote,
-		DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
-			return gonet.DialContextTCP(ctx, f.stack, tcpip.FullAddress{
-				NIC:  1,
-				Addr: tcpip.Address(net.ParseIP(split[0]).To4()),
-				Port: uint16(port),
-			}, ipv4.ProtocolNumber)
-		},
-	})
-	if err := p.Start(); err != nil {
-		return err
+	address := tcpip.FullAddress{
+		NIC:  1,
+		Addr: tcpip.Address(net.ParseIP(split[0]).To4()),
+		Port: uint16(port),
 	}
-	go func() {
-		if err := p.Wait(); err != nil {
-			log.Error(err)
+
+	switch protocol {
+	case types.UDP:
+		addr, err := net.ResolveUDPAddr("udp", local)
+		if err != nil {
+			return err
 		}
-	}()
-	f.proxies[local] = proxy{
-		Local:      local,
-		Remote:     remote,
-		underlying: &p,
+		listener, err := net.ListenUDP("udp", addr)
+		if err != nil {
+			return err
+		}
+		p, err := NewUDPProxy(listener, func() (net.Conn, error) {
+			return gonet.DialUDP(f.stack, nil, &address, ipv4.ProtocolNumber)
+		})
+		if err != nil {
+			return err
+		}
+		go p.Run()
+		f.proxies[key(protocol, local)] = proxy{
+			Protocol:   "udp",
+			Local:      local,
+			Remote:     remote,
+			underlying: p,
+		}
+	case types.TCP:
+		var p tcpproxy.Proxy
+		p.AddRoute(local, &tcpproxy.DialProxy{
+			Addr: remote,
+			DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
+				return gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
+			},
+		})
+		if err := p.Start(); err != nil {
+			return err
+		}
+		go func() {
+			if err := p.Wait(); err != nil {
+				log.Error(err)
+			}
+		}()
+		f.proxies[key(protocol, local)] = proxy{
+			Protocol:   "tcp",
+			Local:      local,
+			Remote:     remote,
+			underlying: &p,
+		}
+	default:
+		return fmt.Errorf("unknown protocol %s", protocol)
 	}
 	return nil
 }
 
-func (f *PortsForwarder) Unexpose(local string) error {
+func key(protocol types.TransportProtocol, local string) string {
+	return fmt.Sprintf("%s/%s", protocol, local)
+}
+
+func (f *PortsForwarder) Unexpose(protocol types.TransportProtocol, local string) error {
 	f.proxiesLock.Lock()
 	defer f.proxiesLock.Unlock()
-	proxy, ok := f.proxies[local]
+	proxy, ok := f.proxies[key(protocol, local)]
 	if !ok {
 		return errors.New("proxy not found")
 	}
-	delete(f.proxies, local)
+	delete(f.proxies, key(protocol, local))
 	return proxy.underlying.Close()
 }
 
 func (f *PortsForwarder) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/all", func(w http.ResponseWriter, r *http.Request) {
+		f.proxiesLock.Lock()
+		defer f.proxiesLock.Unlock()
 		ret := make([]proxy, 0)
 		for _, proxy := range f.proxies {
 			ret = append(ret, proxy)
 		}
+		sort.Slice(ret, func(i, j int) bool {
+			if ret[i].Local == ret[j].Local {
+				return ret[i].Protocol < ret[j].Protocol
+			}
+			return ret[i].Local < ret[j].Local
+		})
 		_ = json.NewEncoder(w).Encode(ret)
 	})
 	mux.HandleFunc("/expose", func(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +157,10 @@ func (f *PortsForwarder) Mux() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := f.Expose(req.Local, req.Remote); err != nil {
+		if req.Protocol == "" {
+			req.Protocol = types.TCP
+		}
+		if err := f.Expose(req.Protocol, req.Local, req.Remote); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -127,7 +176,10 @@ func (f *PortsForwarder) Mux() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := f.Unexpose(req.Local); err != nil {
+		if req.Protocol == "" {
+			req.Protocol = types.TCP
+		}
+		if err := f.Unexpose(req.Protocol, req.Local); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
