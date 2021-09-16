@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -132,6 +133,8 @@ func (f *PortsForwarder) Unexpose(protocol types.TransportProtocol, local string
 func (f *PortsForwarder) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/all", func(w http.ResponseWriter, r *http.Request) {
+		f.proxiesLock.Lock()
+		defer f.proxiesLock.Unlock()
 		ret := make([]proxy, 0)
 		for _, proxy := range f.proxies {
 			ret = append(ret, proxy)
