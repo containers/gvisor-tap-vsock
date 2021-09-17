@@ -5,6 +5,7 @@ package forwarder
 
 import (
 	"encoding/binary"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -50,14 +51,14 @@ type connTrackMap map[connTrackKey]net.Conn
 // interface to handle UDP traffic forwarding between the frontend and backend
 // addresses.
 type UDPProxy struct {
-	listener       *net.UDPConn
+	listener       udpConn
 	dialer         func() (net.Conn, error)
 	connTrackTable connTrackMap
 	connTrackLock  sync.Mutex
 }
 
 // NewUDPProxy creates a new UDPProxy.
-func NewUDPProxy(listener *net.UDPConn, dialer func() (net.Conn, error)) (*UDPProxy, error) {
+func NewUDPProxy(listener udpConn, dialer func() (net.Conn, error)) (*UDPProxy, error) {
 	return &UDPProxy{
 		listener:       listener,
 		connTrackTable: make(connTrackMap),
@@ -65,7 +66,7 @@ func NewUDPProxy(listener *net.UDPConn, dialer func() (net.Conn, error)) (*UDPPr
 	}, nil
 }
 
-func (proxy *UDPProxy) replyLoop(proxyConn net.Conn, clientAddr *net.UDPAddr, clientKey *connTrackKey) {
+func (proxy *UDPProxy) replyLoop(proxyConn net.Conn, clientAddr net.Addr, clientKey *connTrackKey) {
 	defer func() {
 		proxy.connTrackLock.Lock()
 		delete(proxy.connTrackTable, *clientKey)
@@ -90,7 +91,7 @@ func (proxy *UDPProxy) replyLoop(proxyConn net.Conn, clientAddr *net.UDPAddr, cl
 			return
 		}
 		for i := 0; i != read; {
-			written, err := proxy.listener.WriteToUDP(readBuf[i:read], clientAddr)
+			written, err := proxy.listener.WriteTo(readBuf[i:read], clientAddr)
 			if err != nil {
 				return
 			}
@@ -103,7 +104,7 @@ func (proxy *UDPProxy) replyLoop(proxyConn net.Conn, clientAddr *net.UDPAddr, cl
 func (proxy *UDPProxy) Run() {
 	readBuf := make([]byte, UDPBufSize)
 	for {
-		read, from, err := proxy.listener.ReadFromUDP(readBuf)
+		read, from, err := proxy.listener.ReadFrom(readBuf)
 		if err != nil {
 			// NOTE: Apparently ReadFrom doesn't return
 			// ECONNREFUSED like Read do (see comment in
@@ -114,7 +115,7 @@ func (proxy *UDPProxy) Run() {
 			break
 		}
 
-		fromKey := newConnTrackKey(from)
+		fromKey := newConnTrackKey(from.(*net.UDPAddr))
 		proxy.connTrackLock.Lock()
 		proxyConn, hit := proxy.connTrackTable[*fromKey]
 		if !hit {
@@ -158,4 +159,10 @@ func isClosedError(err error) bool {
 	 * https://groups.google.com/forum/#!msg/golang-nuts/0_aaCvBmOcM/SptmDyX1XJMJ
 	 */
 	return strings.HasSuffix(err.Error(), "use of closed network connection")
+}
+
+type udpConn interface {
+	ReadFrom(b []byte) (int, net.Addr, error)
+	WriteTo(b []byte, addr net.Addr) (int, error)
+	io.Closer
 }
