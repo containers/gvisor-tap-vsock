@@ -17,6 +17,7 @@ type Stream struct {
 // Metadata for a release or stream
 type Metadata struct {
 	LastModified string `json:"last-modified"`
+	Generator    string `json:"generator,omitempty"`
 }
 
 // Arch contains release details for a particular hardware architecture
