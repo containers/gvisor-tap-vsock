@@ -110,7 +110,7 @@ func (proxy *UDPProxy) Run() {
 			// ECONNREFUSED like Read do (see comment in
 			// UDPProxy.replyLoop)
 			if !isClosedError(err) {
-				log.Printf("Stopping udp proxy (%s)", err)
+				log.Debugf("Stopping udp proxy (%s)", err)
 			}
 			break
 		}
@@ -121,7 +121,7 @@ func (proxy *UDPProxy) Run() {
 		if !hit {
 			proxyConn, err = proxy.dialer()
 			if err != nil {
-				log.Printf("Can't proxy a datagram to udp: %s\n", err)
+				log.Errorf("Can't proxy a datagram to udp: %s\n", err)
 				proxy.connTrackLock.Unlock()
 				continue
 			}
@@ -132,7 +132,7 @@ func (proxy *UDPProxy) Run() {
 		for i := 0; i != read; {
 			written, err := proxyConn.Write(readBuf[i:read])
 			if err != nil {
-				log.Printf("Can't proxy a datagram to udp: %s\n", err)
+				log.Errorf("Can't proxy a datagram to udp: %s\n", err)
 				break
 			}
 			i += written
