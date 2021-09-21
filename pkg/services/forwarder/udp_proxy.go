@@ -164,5 +164,28 @@ func isClosedError(err error) bool {
 type udpConn interface {
 	ReadFrom(b []byte) (int, net.Addr, error)
 	WriteTo(b []byte, addr net.Addr) (int, error)
+	SetReadDeadline(t time.Time) error
 	io.Closer
+}
+
+type autoStoppingListener struct {
+	underlying udpConn
+}
+
+func (l *autoStoppingListener) ReadFrom(b []byte) (int, net.Addr, error) {
+	_ = l.underlying.SetReadDeadline(time.Now().Add(UDPConnTrackTimeout))
+	return l.underlying.ReadFrom(b)
+}
+
+func (l *autoStoppingListener) WriteTo(b []byte, addr net.Addr) (int, error) {
+	_ = l.underlying.SetReadDeadline(time.Now().Add(UDPConnTrackTimeout))
+	return l.underlying.WriteTo(b, addr)
+}
+
+func (l *autoStoppingListener) SetReadDeadline(t time.Time) error {
+	return l.underlying.SetReadDeadline(t)
+}
+
+func (l *autoStoppingListener) Close() error {
+	return l.underlying.Close()
 }
