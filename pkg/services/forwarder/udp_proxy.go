@@ -130,6 +130,7 @@ func (proxy *UDPProxy) Run() {
 		}
 		proxy.connTrackLock.Unlock()
 		for i := 0; i != read; {
+			_ = proxyConn.SetReadDeadline(time.Now().Add(UDPConnTrackTimeout))
 			written, err := proxyConn.Write(readBuf[i:read])
 			if err != nil {
 				log.Errorf("Can't proxy a datagram to udp: %s\n", err)
