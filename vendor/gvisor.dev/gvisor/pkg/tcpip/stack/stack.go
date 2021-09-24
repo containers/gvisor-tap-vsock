@@ -72,7 +72,8 @@ type Stack struct {
 
 	// rawFactory creates raw endpoints. If nil, raw endpoints are
 	// disabled. It is set during Stack creation and is immutable.
-	rawFactory RawFactory
+	rawFactory                   RawFactory
+	packetEndpointWriteSupported bool
 
 	demux *transportDemuxer
 
@@ -160,6 +161,10 @@ type Stack struct {
 	// This is required to prevent potential ACK loops.
 	// Setting this to 0 will disable all rate limiting.
 	tcpInvalidRateLimit time.Duration
+
+	// tsOffsetSecret is the secret key for generating timestamp offsets
+	// initialized at stack startup.
+	tsOffsetSecret uint32
 }
 
 // UniqueID is an abstract generator of unique identifiers.
@@ -213,6 +218,10 @@ type Options struct {
 	// RawFactory produces raw endpoints. Raw endpoints are enabled only if
 	// this is non-nil.
 	RawFactory RawFactory
+
+	// AllowPacketEndpointWrite determines if packet endpoints support write
+	// operations.
+	AllowPacketEndpointWrite bool
 
 	// RandSource is an optional source to use to generate random
 	// numbers. If omitted it defaults to a Source seeded by the data
@@ -355,23 +364,24 @@ func New(opts Options) *Stack {
 	opts.NUDConfigs.resetInvalidFields()
 
 	s := &Stack{
-		transportProtocols:       make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
-		networkProtocols:         make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
-		nics:                     make(map[tcpip.NICID]*nic),
-		defaultForwardingEnabled: make(map[tcpip.NetworkProtocolNumber]struct{}),
-		cleanupEndpoints:         make(map[TransportEndpoint]struct{}),
-		PortManager:              ports.NewPortManager(),
-		clock:                    clock,
-		stats:                    opts.Stats.FillIn(),
-		handleLocal:              opts.HandleLocal,
-		tables:                   opts.IPTables,
-		icmpRateLimiter:          NewICMPRateLimiter(),
-		seed:                     seed,
-		nudConfigs:               opts.NUDConfigs,
-		uniqueIDGenerator:        opts.UniqueID,
-		nudDisp:                  opts.NUDDisp,
-		randomGenerator:          randomGenerator,
-		secureRNG:                opts.SecureRNG,
+		transportProtocols:           make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
+		networkProtocols:             make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
+		nics:                         make(map[tcpip.NICID]*nic),
+		packetEndpointWriteSupported: opts.AllowPacketEndpointWrite,
+		defaultForwardingEnabled:     make(map[tcpip.NetworkProtocolNumber]struct{}),
+		cleanupEndpoints:             make(map[TransportEndpoint]struct{}),
+		PortManager:                  ports.NewPortManager(),
+		clock:                        clock,
+		stats:                        opts.Stats.FillIn(),
+		handleLocal:                  opts.HandleLocal,
+		tables:                       opts.IPTables,
+		icmpRateLimiter:              NewICMPRateLimiter(clock),
+		seed:                         seed,
+		nudConfigs:                   opts.NUDConfigs,
+		uniqueIDGenerator:            opts.UniqueID,
+		nudDisp:                      opts.NUDDisp,
+		randomGenerator:              randomGenerator,
+		secureRNG:                    opts.SecureRNG,
 		sendBufferSize: tcpip.SendBufferSizeOption{
 			Min:     MinBufferSize,
 			Default: DefaultBufferSize,
@@ -383,6 +393,7 @@ func New(opts Options) *Stack {
 			Max:     DefaultMaxBufferSize,
 		},
 		tcpInvalidRateLimit: defaultTCPInvalidRateLimit,
+		tsOffsetSecret:      randomGenerator.Uint32(),
 	}
 
 	// Add specified network protocols.
@@ -905,46 +916,9 @@ type NICStateFlags struct {
 	Loopback bool
 }
 
-// AddAddress adds a new network-layer address to the specified NIC.
-func (s *Stack) AddAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
-	return s.AddAddressWithOptions(id, protocol, addr, CanBePrimaryEndpoint)
-}
-
-// AddAddressWithPrefix is the same as AddAddress, but allows you to specify
-// the address prefix.
-func (s *Stack) AddAddressWithPrefix(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.AddressWithPrefix) tcpip.Error {
-	ap := tcpip.ProtocolAddress{
-		Protocol:          protocol,
-		AddressWithPrefix: addr,
-	}
-	return s.AddProtocolAddressWithOptions(id, ap, CanBePrimaryEndpoint)
-}
-
-// AddProtocolAddress adds a new network-layer protocol address to the
-// specified NIC.
-func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress) tcpip.Error {
-	return s.AddProtocolAddressWithOptions(id, protocolAddress, CanBePrimaryEndpoint)
-}
-
-// AddAddressWithOptions is the same as AddAddress, but allows you to specify
-// whether the new endpoint can be primary or not.
-func (s *Stack) AddAddressWithOptions(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, peb PrimaryEndpointBehavior) tcpip.Error {
-	netProto, ok := s.networkProtocols[protocol]
-	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
-	}
-	return s.AddProtocolAddressWithOptions(id, tcpip.ProtocolAddress{
-		Protocol: protocol,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   addr,
-			PrefixLen: netProto.DefaultPrefixLen(),
-		},
-	}, peb)
-}
-
-// AddProtocolAddressWithOptions is the same as AddProtocolAddress, but allows
-// you to specify whether the new endpoint can be primary or not.
-func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) tcpip.Error {
+// AddProtocolAddress adds an address to the specified NIC, possibly with extra
+// properties.
+func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress, properties AddressProperties) tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -953,7 +927,7 @@ func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tc
 		return &tcpip.ErrUnknownNICID{}
 	}
 
-	return nic.addAddress(protocolAddress, peb)
+	return nic.addAddress(protocolAddress, properties)
 }
 
 // RemoveAddress removes an existing network-layer address from the specified
@@ -1648,7 +1622,25 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 		ReserveHeaderBytes: int(nic.MaxHeaderLength()),
 		Data:               payload,
 	})
+	pkt.NetworkProtocolNumber = netProto
 	return nic.WritePacketToRemote(remote, netProto, pkt)
+}
+
+// WriteRawPacket writes data directly to the specified NIC without adding any
+// headers.
+func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) tcpip.Error {
+	s.mu.RLock()
+	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
+	if !ok {
+		return &tcpip.ErrUnknownNICID{}
+	}
+
+	pkt := NewPacketBuffer(PacketBufferOptions{
+		Data: payload,
+	})
+	pkt.NetworkProtocolNumber = proto
+	return nic.WriteRawPacket(pkt)
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the
@@ -1818,6 +1810,13 @@ func (s *Stack) SetNUDConfigurations(id tcpip.NICID, proto tcpip.NetworkProtocol
 	return nic.setNUDConfigs(proto, c)
 }
 
+// Seed returns a 32 bit value that can be used as a seed value.
+//
+// NOTE: The seed is generated once during stack initialization only.
+func (s *Stack) Seed() uint32 {
+	return s.seed
+}
+
 // Rand returns a reference to a pseudo random generator that can be used
 // to generate random numbers as required.
 func (s *Stack) Rand() *rand.Rand {
@@ -1934,4 +1933,10 @@ func (s *Stack) IsSubnetBroadcast(nicID tcpip.NICID, protocol tcpip.NetworkProto
 	}
 
 	return false
+}
+
+// PacketEndpointWriteSupported returns true iff packet endpoints support write
+// operations.
+func (s *Stack) PacketEndpointWriteSupported() bool {
+	return s.packetEndpointWriteSupported
 }

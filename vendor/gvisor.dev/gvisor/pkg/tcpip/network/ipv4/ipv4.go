@@ -167,6 +167,13 @@ func (p *protocol) findEndpointWithAddress(addr tcpip.Address) *endpoint {
 	return nil
 }
 
+func (p *protocol) getEndpointForNIC(id tcpip.NICID) (*endpoint, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	ep, ok := p.mu.eps[id]
+	return ep, ok
+}
+
 func (p *protocol) forgetEndpoint(nicID tcpip.NICID) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -240,7 +247,7 @@ func (e *endpoint) Enable() tcpip.Error {
 	}
 
 	// Create an endpoint to receive broadcast packets on this interface.
-	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(ipv4BroadcastAddr, stack.NeverPrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */)
+	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(ipv4BroadcastAddr, stack.AddressProperties{PEB: stack.NeverPrimaryEndpoint})
 	if err != nil {
 		return err
 	}
@@ -419,7 +426,7 @@ func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams,
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-	if ok := e.protocol.stack.IPTables().Check(stack.Output, pkt, r, "" /* preroutingAddr */, "" /* inNicName */, outNicName); !ok {
+	if ok := e.protocol.stack.IPTables().CheckOutput(pkt, r, outNicName); !ok {
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesOutputDropped.Increment()
 		return nil
@@ -459,7 +466,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, headerIn
 	// Postrouting NAT can only change the source address, and does not alter the
 	// route or outgoing interface of the packet.
 	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-	if ok := e.protocol.stack.IPTables().Check(stack.Postrouting, pkt, r, "" /* preroutingAddr */, "" /* inNicName */, outNicName); !ok {
+	if ok := e.protocol.stack.IPTables().CheckPostrouting(pkt, r, outNicName); !ok {
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesPostroutingDropped.Increment()
 		return nil
@@ -542,7 +549,7 @@ func (e *endpoint) WritePackets(r *stack.Route, pkts stack.PacketBufferList, par
 	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
 	// iptables filtering. All packets that reach here are locally
 	// generated.
-	outputDropped, natPkts := e.protocol.stack.IPTables().CheckPackets(stack.Output, pkts, r, "" /* inNicName */, outNicName)
+	outputDropped, natPkts := e.protocol.stack.IPTables().CheckOutputPackets(pkts, r, outNicName)
 	stats.IPTablesOutputDropped.IncrementBy(uint64(len(outputDropped)))
 	for pkt := range outputDropped {
 		pkts.Remove(pkt)
@@ -569,7 +576,7 @@ func (e *endpoint) WritePackets(r *stack.Route, pkts stack.PacketBufferList, par
 	// We ignore the list of NAT-ed packets here because Postrouting NAT can only
 	// change the source address, and does not alter the route or outgoing
 	// interface of the packet.
-	postroutingDropped, _ := e.protocol.stack.IPTables().CheckPackets(stack.Postrouting, pkts, r, "" /* inNicName */, outNicName)
+	postroutingDropped, _ := e.protocol.stack.IPTables().CheckPostroutingPackets(pkts, r, outNicName)
 	stats.IPTablesPostroutingDropped.IncrementBy(uint64(len(postroutingDropped)))
 	for pkt := range postroutingDropped {
 		pkts.Remove(pkt)
@@ -710,7 +717,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	if ep := e.protocol.findEndpointWithAddress(dstAddr); ep != nil {
 		inNicName := stk.FindNICNameFromID(e.nic.ID())
 		outNicName := stk.FindNICNameFromID(ep.nic.ID())
-		if ok := stk.IPTables().Check(stack.Forward, pkt, nil, "" /* preroutingAddr */, inNicName, outNicName); !ok {
+		if ok := stk.IPTables().CheckForward(pkt, inNicName, outNicName); !ok {
 			// iptables is telling us to drop the packet.
 			e.stats.ip.IPTablesForwardDropped.Increment()
 			return nil
@@ -737,7 +744,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 
 	inNicName := stk.FindNICNameFromID(e.nic.ID())
 	outNicName := stk.FindNICNameFromID(r.NICID())
-	if ok := stk.IPTables().Check(stack.Forward, pkt, nil, "" /* preroutingAddr */, inNicName, outNicName); !ok {
+	if ok := stk.IPTables().CheckForward(pkt, inNicName, outNicName); !ok {
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesForwardDropped.Increment()
 		return nil
@@ -746,7 +753,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	// We need to do a deep copy of the IP packet because
 	// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
 	// not own it.
-	newHdr := header.IPv4(stack.PayloadSince(pkt.NetworkHeader()))
+	newPkt := pkt.DeepCopyForForwarding(int(r.MaxHeaderLength()))
+	newHdr := header.IPv4(newPkt.NetworkHeader().View())
 
 	// As per RFC 791 page 30, Time to Live,
 	//
@@ -755,12 +763,19 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	//   Even if no local information is available on the time actually
 	//   spent, the field must be decremented by 1.
 	newHdr.SetTTL(ttl - 1)
+	// We perform a full checksum as we may have updated options above. The IP
+	// header is relatively small so this is not expected to be an expensive
+	// operation.
+	newHdr.SetChecksum(0)
+	newHdr.SetChecksum(^newHdr.CalculateChecksum())
 
-	switch err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		Data:               buffer.View(newHdr).ToVectorisedView(),
-		IsForwardedPacket:  true,
-	})); err.(type) {
+	forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
+	if !ok {
+		// The interface was removed after we obtained the route.
+		return &ip.ErrOther{Err: &tcpip.ErrUnknownDevice{}}
+	}
+
+	switch err := forwardToEp.writePacket(r, newPkt, true /* headerIncluded */); err.(type) {
 	case nil:
 		return nil
 	case *tcpip.ErrMessageTooLong:
@@ -826,7 +841,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 		// Loopback traffic skips the prerouting chain.
 		inNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-		if ok := e.protocol.stack.IPTables().Check(stack.Prerouting, pkt, nil, e.MainAddress().Address, inNicName, "" /* outNicName */); !ok {
+		if ok := e.protocol.stack.IPTables().CheckPrerouting(pkt, e, inNicName); !ok {
 			// iptables is telling us to drop the packet.
 			stats.IPTablesPreroutingDropped.Increment()
 			return
@@ -856,6 +871,8 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 }
 
 func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer, inNICName string) {
+	pkt.NICID = e.nic.ID()
+
 	// Raw socket packets are delivered based solely on the transport protocol
 	// number. We only require that the packet be valid IPv4, and that they not
 	// be fragmented.
@@ -863,7 +880,6 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 		e.dispatcher.DeliverRawPacket(h.TransportProtocol(), pkt)
 	}
 
-	pkt.NICID = e.nic.ID()
 	stats := e.stats
 	stats.ip.ValidPacketsReceived.Increment()
 
@@ -924,7 +940,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
-	if ok := e.protocol.stack.IPTables().Check(stack.Input, pkt, nil, "" /* preroutingAddr */, inNICName, "" /* outNicName */); !ok {
+	if ok := e.protocol.stack.IPTables().CheckInput(pkt, inNICName); !ok {
 		// iptables is telling us to drop the packet.
 		stats.ip.IPTablesInputDropped.Increment()
 		return
@@ -1074,11 +1090,11 @@ func (e *endpoint) Close() {
 }
 
 // AddAndAcquirePermanentAddress implements stack.AddressableEndpoint.
-func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb stack.PrimaryEndpointBehavior, configType stack.AddressConfigType, deprecated bool) (stack.AddressEndpoint, tcpip.Error) {
+func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, properties stack.AddressProperties) (stack.AddressEndpoint, tcpip.Error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, peb, configType, deprecated)
+	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, properties)
 	if err == nil {
 		e.mu.igmp.sendQueuedReports()
 	}
@@ -1199,6 +1215,9 @@ type protocol struct {
 		// eps is keyed by NICID to allow protocol methods to retrieve an endpoint
 		// when handling a packet, by looking at which NIC handled the packet.
 		eps map[tcpip.NICID]*endpoint
+
+		// ICMP types for which the stack's global rate limiting must apply.
+		icmpRateLimitedTypes map[header.ICMPv4Type]struct{}
 	}
 
 	// defaultTTL is the current default TTL for the protocol. Only the
@@ -1223,11 +1242,6 @@ func (p *protocol) Number() tcpip.NetworkProtocolNumber {
 // MinimumPacketSize returns the minimum valid ipv4 packet size.
 func (p *protocol) MinimumPacketSize() int {
 	return header.IPv4MinimumSize
-}
-
-// DefaultPrefixLen returns the IPv4 default prefix length.
-func (p *protocol) DefaultPrefixLen() int {
-	return header.IPv4AddressSize * 8
 }
 
 // ParseAddresses implements stack.NetworkProtocol.
@@ -1319,6 +1333,23 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 	return ipHdr.TransportProtocol(), !ipHdr.More() && ipHdr.FragmentOffset() == 0, true
 }
 
+// allowICMPReply reports whether an ICMP reply with provided type and code may
+// be sent following the rate mask options and global ICMP rate limiter.
+func (p *protocol) allowICMPReply(icmpType header.ICMPv4Type, code header.ICMPv4Code) bool {
+	// Mimic linux and never rate limit for PMTU discovery.
+	// https://github.com/torvalds/linux/blob/9e9fb7655ed585da8f468e29221f0ba194a5f613/net/ipv4/icmp.c#L288
+	if icmpType == header.ICMPv4DstUnreachable && code == header.ICMPv4FragmentationNeeded {
+		return true
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if _, ok := p.mu.icmpRateLimitedTypes[icmpType]; ok {
+		return p.stack.AllowICMPMessage()
+	}
+	return true
+}
+
 // calculateNetworkMTU calculates the network-layer payload MTU based on the
 // link-layer payload mtu.
 func calculateNetworkMTU(linkMTU, networkHeaderSize uint32) (uint32, tcpip.Error) {
@@ -1398,6 +1429,14 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 		}
 		p.fragmentation = fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
 		p.mu.eps = make(map[tcpip.NICID]*endpoint)
+		// Set ICMP rate limiting to Linux defaults.
+		// See https://man7.org/linux/man-pages/man7/icmp.7.html.
+		p.mu.icmpRateLimitedTypes = map[header.ICMPv4Type]struct{}{
+			header.ICMPv4DstUnreachable: struct{}{},
+			header.ICMPv4SrcQuench:      struct{}{},
+			header.ICMPv4TimeExceeded:   struct{}{},
+			header.ICMPv4ParamProblem:   struct{}{},
+		}
 		return p
 	}
 }

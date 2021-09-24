@@ -121,8 +121,8 @@ func (e *LinkEndpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 	return nil
 }
 
-func (e *LinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) tcpip.Error {
-	return &tcpip.ErrNoRoute{}
+func (e *LinkEndpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error {
+	return &tcpip.ErrNotSupported{}
 }
 
 func (e *LinkEndpoint) IP() string {

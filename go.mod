@@ -28,5 +28,5 @@ require (
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
-	gvisor.dev/gvisor v0.0.0-20210819000450-790ff24dedce
+	gvisor.dev/gvisor v0.0.0-20210924063838-a1b00da7bd8d
 )

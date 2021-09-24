@@ -25,7 +25,6 @@
 package packet
 
 import (
-	"fmt"
 	"io"
 	"time"
 
@@ -60,52 +59,47 @@ type packet struct {
 //
 // +stateify savable
 type endpoint struct {
-	stack.TransportEndpointInfo
 	tcpip.DefaultSocketOptionsHandler
 
 	// The following fields are initialized at creation time and are
 	// immutable.
 	stack       *stack.Stack `state:"manual"`
-	netProto    tcpip.NetworkProtocolNumber
 	waiterQueue *waiter.Queue
 	cooked      bool
+	ops         tcpip.SocketOptions
+	stats       tcpip.TransportEndpointStats
 
-	// The following fields are used to manage the receive queue and are
-	// protected by rcvMu.
-	rcvMu      sync.Mutex `state:"nosave"`
-	rcvList    packetList
+	// The following fields are used to manage the receive queue.
+	rcvMu sync.Mutex `state:"nosave"`
+	// +checklocks:rcvMu
+	rcvList packetList
+	// +checklocks:rcvMu
 	rcvBufSize int
-	rcvClosed  bool
+	// +checklocks:rcvMu
+	rcvClosed bool
+	// +checklocks:rcvMu
+	rcvDisabled bool
 
-	// The following fields are protected by mu.
-	mu       sync.RWMutex `state:"nosave"`
-	closed   bool
-	stats    tcpip.TransportEndpointStats `state:"nosave"`
-	bound    bool
+	mu sync.RWMutex `state:"nosave"`
+	// +checklocks:mu
+	closed bool
+	// +checklocks:mu
+	boundNetProto tcpip.NetworkProtocolNumber
+	// +checklocks:mu
 	boundNIC tcpip.NICID
 
-	// lastErrorMu protects lastError.
 	lastErrorMu sync.Mutex `state:"nosave"`
-	lastError   tcpip.Error
-
-	// ops is used to get socket level options.
-	ops tcpip.SocketOptions
-
-	// frozen indicates if the packets should be delivered to the endpoint
-	// during restore.
-	frozen bool
+	// +checklocks:lastErrorMu
+	lastError tcpip.Error
 }
 
 // NewEndpoint returns a new packet endpoint.
 func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	ep := &endpoint{
-		stack: s,
-		TransportEndpointInfo: stack.TransportEndpointInfo{
-			NetProto: netProto,
-		},
-		cooked:      cooked,
-		netProto:    netProto,
-		waiterQueue: waiterQueue,
+		stack:         s,
+		cooked:        cooked,
+		boundNetProto: netProto,
+		waiterQueue:   waiterQueue,
 	}
 	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	ep.ops.SetReceiveBufferSize(32*1024, false /* notify */)
@@ -141,7 +135,7 @@ func (ep *endpoint) Close() {
 		return
 	}
 
-	ep.stack.UnregisterPacketEndpoint(0, ep.netProto, ep)
+	ep.stack.UnregisterPacketEndpoint(ep.boundNIC, ep.boundNetProto, ep)
 
 	ep.rcvMu.Lock()
 	defer ep.rcvMu.Unlock()
@@ -154,7 +148,6 @@ func (ep *endpoint) Close() {
 	}
 
 	ep.closed = true
-	ep.bound = false
 	ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 }
 
@@ -207,8 +200,52 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 	return res, nil
 }
 
-func (*endpoint) Write(tcpip.Payloader, tcpip.WriteOptions) (int64, tcpip.Error) {
-	return 0, &tcpip.ErrInvalidOptionValue{}
+func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
+	if !ep.stack.PacketEndpointWriteSupported() {
+		return 0, &tcpip.ErrNotSupported{}
+	}
+
+	ep.mu.Lock()
+	closed := ep.closed
+	nicID := ep.boundNIC
+	proto := ep.boundNetProto
+	ep.mu.Unlock()
+	if closed {
+		return 0, &tcpip.ErrClosedForSend{}
+	}
+
+	var remote tcpip.LinkAddress
+	if to := opts.To; to != nil {
+		remote = tcpip.LinkAddress(to.Addr)
+
+		if n := to.NIC; n != 0 {
+			nicID = n
+		}
+
+		if p := to.Port; p != 0 {
+			proto = tcpip.NetworkProtocolNumber(p)
+		}
+	}
+
+	if nicID == 0 {
+		return 0, &tcpip.ErrInvalidOptionValue{}
+	}
+
+	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
+	payloadBytes := make(buffer.View, p.Len())
+	if _, err := io.ReadFull(p, payloadBytes); err != nil {
+		return 0, &tcpip.ErrBadBuffer{}
+	}
+
+	if err := func() tcpip.Error {
+		if ep.cooked {
+			return ep.stack.WritePacketToRemote(nicID, remote, proto, payloadBytes.ToVectorisedView())
+		}
+		return ep.stack.WriteRawPacket(nicID, proto, payloadBytes.ToVectorisedView())
+	}(); err != nil {
+		return 0, err
+	}
+	return int64(len(payloadBytes)), nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect. Packet sockets cannot be
@@ -253,29 +290,42 @@ func (ep *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	if ep.bound && ep.boundNIC == addr.NIC {
-		// If the NIC being bound is the same then just return success.
+	netProto := tcpip.NetworkProtocolNumber(addr.Port)
+	if netProto == 0 {
+		// Do not allow unbinding the network protocol.
+		netProto = ep.boundNetProto
+	}
+
+	if ep.boundNIC == addr.NIC && ep.boundNetProto == netProto {
+		// Already bound to the requested NIC and network protocol.
 		return nil
 	}
 
-	// Unregister endpoint with all the nics.
-	ep.stack.UnregisterPacketEndpoint(0, ep.netProto, ep)
-	ep.bound = false
+	// TODO(https://gvisor.dev/issue/6618): Unregister after registering the new
+	// binding.
+	ep.stack.UnregisterPacketEndpoint(ep.boundNIC, ep.boundNetProto, ep)
+	ep.boundNIC = 0
+	ep.boundNetProto = 0
 
 	// Bind endpoint to receive packets from specific interface.
-	if err := ep.stack.RegisterPacketEndpoint(addr.NIC, ep.netProto, ep); err != nil {
+	if err := ep.stack.RegisterPacketEndpoint(addr.NIC, netProto, ep); err != nil {
 		return err
 	}
 
-	ep.bound = true
 	ep.boundNIC = addr.NIC
-
+	ep.boundNetProto = netProto
 	return nil
 }
 
 // GetLocalAddress implements tcpip.Endpoint.GetLocalAddress.
-func (*endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
-	return tcpip.FullAddress{}, &tcpip.ErrNotSupported{}
+func (ep *endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
+
+	return tcpip.FullAddress{
+		NIC:  ep.boundNIC,
+		Port: uint16(ep.boundNetProto),
+	}, nil
 }
 
 // GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress.
@@ -371,7 +421,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 	}
 
 	rcvBufSize := ep.ops.GetReceiveBufferSize()
-	if ep.frozen || ep.rcvBufSize >= int(rcvBufSize) {
+	if ep.rcvDisabled || ep.rcvBufSize >= int(rcvBufSize) {
 		ep.rcvMu.Unlock()
 		ep.stack.Stats().DroppedPackets.Increment()
 		ep.stats.ReceiveErrors.ReceiveBufferOverflow.Increment()
@@ -380,76 +430,39 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 
 	wasEmpty := ep.rcvBufSize == 0
 
-	// Push new packet into receive list and increment the buffer size.
-	var packet packet
+	rcvdPkt := packet{
+		packetInfo: tcpip.LinkPacketInfo{
+			Protocol: netProto,
+			PktType:  pkt.PktType,
+		},
+		senderAddr: tcpip.FullAddress{
+			NIC: nicID,
+		},
+		receivedAt: ep.stack.Clock().Now(),
+	}
+
 	if !pkt.LinkHeader().View().IsEmpty() {
-		// Get info directly from the ethernet header.
 		hdr := header.Ethernet(pkt.LinkHeader().View())
-		packet.senderAddr = tcpip.FullAddress{
-			NIC:  nicID,
-			Addr: tcpip.Address(hdr.SourceAddress()),
-		}
-		packet.packetInfo.Protocol = netProto
-		packet.packetInfo.PktType = pkt.PktType
-	} else {
-		// Guess the would-be ethernet header.
-		packet.senderAddr = tcpip.FullAddress{
-			NIC:  nicID,
-			Addr: tcpip.Address(localAddr),
-		}
-		packet.packetInfo.Protocol = netProto
-		packet.packetInfo.PktType = pkt.PktType
+		rcvdPkt.senderAddr.Addr = tcpip.Address(hdr.SourceAddress())
 	}
 
 	if ep.cooked {
-		// Cooked packets can simply be queued.
-		switch pkt.PktType {
-		case tcpip.PacketHost:
-			packet.data = pkt.Data().ExtractVV()
-		case tcpip.PacketOutgoing:
-			// Strip Link Header.
-			var combinedVV buffer.VectorisedView
-			if v := pkt.NetworkHeader().View(); !v.IsEmpty() {
-				combinedVV.AppendView(v)
-			}
-			if v := pkt.TransportHeader().View(); !v.IsEmpty() {
-				combinedVV.AppendView(v)
-			}
-			combinedVV.Append(pkt.Data().ExtractVV())
-			packet.data = combinedVV
-		default:
-			panic(fmt.Sprintf("unexpected PktType in pkt: %+v", pkt))
+		// Cooked packet endpoints don't include the link-headers in received
+		// packets.
+		if v := pkt.NetworkHeader().View(); !v.IsEmpty() {
+			rcvdPkt.data.AppendView(v)
 		}
+		if v := pkt.TransportHeader().View(); !v.IsEmpty() {
+			rcvdPkt.data.AppendView(v)
+		}
+		rcvdPkt.data.Append(pkt.Data().ExtractVV())
 	} else {
-		// Raw packets need their ethernet headers prepended before
-		// queueing.
-		var linkHeader buffer.View
-		if pkt.PktType != tcpip.PacketOutgoing {
-			if pkt.LinkHeader().View().IsEmpty() {
-				// We weren't provided with an actual ethernet header,
-				// so fake one.
-				ethFields := header.EthernetFields{
-					SrcAddr: tcpip.LinkAddress([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
-					DstAddr: localAddr,
-					Type:    netProto,
-				}
-				fakeHeader := make(header.Ethernet, header.EthernetMinimumSize)
-				fakeHeader.Encode(&ethFields)
-				linkHeader = buffer.View(fakeHeader)
-			} else {
-				linkHeader = append(buffer.View(nil), pkt.LinkHeader().View()...)
-			}
-			combinedVV := linkHeader.ToVectorisedView()
-			combinedVV.Append(pkt.Data().ExtractVV())
-			packet.data = combinedVV
-		} else {
-			packet.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
-		}
+		// Raw packet endpoints include link-headers in received packets.
+		rcvdPkt.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 	}
-	packet.receivedAt = ep.stack.Clock().Now()
 
-	ep.rcvList.PushBack(&packet)
-	ep.rcvBufSize += packet.data.Size()
+	ep.rcvList.PushBack(&rcvdPkt)
+	ep.rcvBufSize += rcvdPkt.data.Size()
 
 	ep.rcvMu.Unlock()
 	ep.stats.PacketsReceived.Increment()
@@ -467,10 +480,8 @@ func (*endpoint) State() uint32 {
 // Info returns a copy of the endpoint info.
 func (ep *endpoint) Info() tcpip.EndpointInfo {
 	ep.mu.RLock()
-	// Make a copy of the endpoint info.
-	ret := ep.TransportEndpointInfo
-	ep.mu.RUnlock()
-	return &ret
+	defer ep.mu.RUnlock()
+	return &stack.TransportEndpointInfo{NetProto: ep.boundNetProto}
 }
 
 // Stats returns a pointer to the endpoint stats.
@@ -484,19 +495,4 @@ func (*endpoint) SetOwner(tcpip.PacketOwner) {}
 // SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (ep *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &ep.ops
-}
-
-// freeze prevents any more packets from being delivered to the endpoint.
-func (ep *endpoint) freeze() {
-	ep.mu.Lock()
-	ep.frozen = true
-	ep.mu.Unlock()
-}
-
-// thaw unfreezes a previously frozen endpoint using endpoint.freeze() allows
-// new packets to be delivered again.
-func (ep *endpoint) thaw() {
-	ep.mu.Lock()
-	ep.frozen = false
-	ep.mu.Unlock()
 }

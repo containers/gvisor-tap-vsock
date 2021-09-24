@@ -335,9 +335,45 @@ func (pk *PacketBuffer) CloneToInbound() *PacketBuffer {
 	// tell if a noop connection should be inserted at Input hook. Once conntrack
 	// redefines the manipulation field as mutable, we won't need the special noop
 	// connection.
-	if pk.NatDone {
-		newPk.NatDone = true
+	newPk.NatDone = pk.NatDone
+	return newPk
+}
+
+// DeepCopyForForwarding creates a deep copy of the packet buffer for
+// forwarding.
+//
+// The returned packet buffer will have the network and transport headers
+// set if the original packet buffer did.
+func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBuffer {
+	newPk := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: reservedHeaderBytes,
+		Data:               PayloadSince(pk.NetworkHeader()).ToVectorisedView(),
+		IsForwardedPacket:  true,
+	})
+
+	{
+		consumeBytes := pk.NetworkHeader().View().Size()
+		if _, consumed := newPk.NetworkHeader().Consume(consumeBytes); !consumed {
+			panic(fmt.Sprintf("expected to consume network header %d bytes from new packet", consumeBytes))
+		}
+		newPk.NetworkProtocolNumber = pk.NetworkProtocolNumber
 	}
+
+	{
+		consumeBytes := pk.TransportHeader().View().Size()
+		if _, consumed := newPk.TransportHeader().Consume(consumeBytes); !consumed {
+			panic(fmt.Sprintf("expected to consume transport header %d bytes from new packet", consumeBytes))
+		}
+		newPk.TransportProtocolNumber = pk.TransportProtocolNumber
+	}
+
+	// TODO(gvisor.dev/issue/5696): reimplement conntrack so that no need to
+	// maintain this flag in the packet. Currently conntrack needs this flag to
+	// tell if a noop connection should be inserted at Input hook. Once conntrack
+	// redefines the manipulation field as mutable, we won't need the special noop
+	// connection.
+	newPk.NatDone = pk.NatDone
+
 	return newPk
 }
 

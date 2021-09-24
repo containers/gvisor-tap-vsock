@@ -318,8 +318,7 @@ type PrimaryEndpointBehavior int
 
 const (
 	// CanBePrimaryEndpoint indicates the endpoint can be used as a primary
-	// endpoint for new connections with no local address. This is the
-	// default when calling NIC.AddAddress.
+	// endpoint for new connections with no local address.
 	CanBePrimaryEndpoint PrimaryEndpointBehavior = iota
 
 	// FirstPrimaryEndpoint indicates the endpoint should be the first
@@ -331,6 +330,19 @@ const (
 	// primary endpoint.
 	NeverPrimaryEndpoint
 )
+
+func (peb PrimaryEndpointBehavior) String() string {
+	switch peb {
+	case CanBePrimaryEndpoint:
+		return "CanBePrimaryEndpoint"
+	case FirstPrimaryEndpoint:
+		return "FirstPrimaryEndpoint"
+	case NeverPrimaryEndpoint:
+		return "NeverPrimaryEndpoint"
+	default:
+		panic(fmt.Sprintf("unknown primary endpoint behavior: %d", peb))
+	}
+}
 
 // AddressConfigType is the method used to add an address.
 type AddressConfigType int
@@ -350,6 +362,14 @@ const (
 	// to be valid (or preferred) forever; hence the term temporary.
 	AddressConfigSlaacTemp
 )
+
+// AddressProperties contains additional properties that can be configured when
+// adding an address.
+type AddressProperties struct {
+	PEB        PrimaryEndpointBehavior
+	ConfigType AddressConfigType
+	Deprecated bool
+}
 
 // AssignableAddressEndpoint is a reference counted address endpoint that may be
 // assigned to a NetworkEndpoint.
@@ -457,7 +477,7 @@ type AddressableEndpoint interface {
 	// Returns *tcpip.ErrDuplicateAddress if the address exists.
 	//
 	// Acquires and returns the AddressEndpoint for the added address.
-	AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior, configType AddressConfigType, deprecated bool) (AddressEndpoint, tcpip.Error)
+	AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, properties AddressProperties) (AddressEndpoint, tcpip.Error)
 
 	// RemovePermanentAddress removes the passed address if it is a permanent
 	// address.
@@ -685,9 +705,6 @@ type NetworkProtocol interface {
 	// than this targeted at this protocol.
 	MinimumPacketSize() int
 
-	// DefaultPrefixLen returns the protocol's default prefix length.
-	DefaultPrefixLen() int
-
 	// ParseAddresses returns the source and destination addresses stored in a
 	// packet of this protocol.
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
@@ -733,16 +750,6 @@ type NetworkDispatcher interface {
 	//
 	// DeliverNetworkPacket takes ownership of pkt.
 	DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
-
-	// DeliverOutboundPacket is called by link layer when a packet is being
-	// sent out.
-	//
-	// pkt.LinkHeader may or may not be set before calling
-	// DeliverOutboundPacket. Some packets do not have link headers (e.g.
-	// packets sent via loopback), and won't have the field set.
-	//
-	// DeliverOutboundPacket takes ownership of pkt.
-	DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities
@@ -846,6 +853,14 @@ type LinkEndpoint interface {
 	// offload is enabled. If it will be used for something else, syscall filters
 	// may need to be updated.
 	WritePackets(RouteInfo, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
+
+	// WriteRawPacket writes a packet directly to the link.
+	//
+	// If the link-layer has its own header, the payload must already include the
+	// header.
+	//
+	// WriteRawPacket takes ownership of the packet.
+	WriteRawPacket(*PacketBuffer) tcpip.Error
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are
