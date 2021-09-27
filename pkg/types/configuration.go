@@ -28,6 +28,9 @@ type Configuration struct {
 	// Built-in DNS records that will be served by the DNS server embedded in the gateway
 	DNS []Zone
 
+	// List of search domains that will be added in all DHCP replies
+	DNSSearchDomains []string
+
 	// Port forwarding between the machine running the gateway and the virtual network.
 	Forwards map[string]string
 
