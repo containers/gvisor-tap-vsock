@@ -40,7 +40,7 @@ var (
 const gatewayIP = "192.168.127.1"
 
 func main() {
-	flag.Var(&endpoints, "listen", fmt.Sprintf("URL where the tap send packets (default %s)", transport.DefaultURL))
+	flag.Var(&endpoints, "listen", "control endpoint")
 	flag.BoolVar(&debug, "debug", false, "Print debug info")
 	flag.IntVar(&mtu, "mtu", 1500, "Set the MTU")
 	flag.IntVar(&sshPort, "ssh-port", 2222, "Port to access the guest virtual machine. Must be between 1024 and 65535")
@@ -60,9 +60,7 @@ func main() {
 	if debug {
 		log.SetLevel(log.DebugLevel)
 	}
-	if len(endpoints) == 0 {
-		endpoints = append(endpoints, transport.DefaultURL)
-	}
+
 	// Make sure the qemu socket provided is valid syntax
 	if len(qemuSocket) > 0 {
 		uri, err := url.Parse(qemuSocket)
