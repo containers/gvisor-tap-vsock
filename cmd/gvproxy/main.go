@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -10,7 +11,9 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -137,6 +140,7 @@ func main() {
 				},
 			},
 		},
+		DNSSearchDomains: searchDomains(),
 		Forwards: map[string]string{
 			fmt.Sprintf(":%d", sshPort): "192.168.127.2:22",
 		},
@@ -300,4 +304,29 @@ func withProfiler(vn *virtualnetwork.VirtualNetwork) http.Handler {
 func exitWithError(err error) {
 	log.Error(err)
 	os.Exit(1)
+}
+
+func searchDomains() []string {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		f, err := os.Open("/etc/resolv.conf")
+		if err != nil {
+			log.Errorf("open file error: %v", err)
+			return nil
+		}
+		defer f.Close()
+		sc := bufio.NewScanner(f)
+		searchPrefix := "search "
+		for sc.Scan() {
+			if strings.HasPrefix(sc.Text(), searchPrefix) {
+				searchDomains := strings.Split(strings.TrimPrefix(sc.Text(), searchPrefix), " ")
+				log.Debugf("Using search domains: %v", searchDomains)
+				return searchDomains
+			}
+		}
+		if err := sc.Err(); err != nil {
+			log.Errorf("scan file error: %v", err)
+			return nil
+		}
+	}
+	return nil
 }
