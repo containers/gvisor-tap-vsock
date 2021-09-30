@@ -122,6 +122,7 @@ golang.org/x/crypto/internal/subtle
 golang.org/x/crypto/poly1305
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
+golang.org/x/crypto/ssh/knownhosts
 # golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d
 ## explicit
 golang.org/x/net/bpf

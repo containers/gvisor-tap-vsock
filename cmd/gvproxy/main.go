@@ -27,17 +27,24 @@ import (
 )
 
 var (
-	debug        bool
-	mtu          int
-	endpoints    arrayFlags
-	vpnkitSocket string
-	qemuSocket   string
-	sshPort      int
-	pidFile      string
-	exitCode     int
+	debug           bool
+	mtu             int
+	endpoints       arrayFlags
+	vpnkitSocket    string
+	qemuSocket      string
+	forwardSocket   string
+	forwardDest     string
+	forwardUser     string
+	forwardIdentify string
+	sshPort         int
+	pidFile         string
+	exitCode        int
 )
 
-const gatewayIP = "192.168.127.1"
+const (
+	gatewayIP   = "192.168.127.1"
+	sshHostPort = "192.168.127.2:22"
+)
 
 func main() {
 	flag.Var(&endpoints, "listen", "control endpoint")
@@ -46,6 +53,10 @@ func main() {
 	flag.IntVar(&sshPort, "ssh-port", 2222, "Port to access the guest virtual machine. Must be between 1024 and 65535")
 	flag.StringVar(&vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
 	flag.StringVar(&qemuSocket, "listen-qemu", "", "Socket to be used by Qemu")
+	flag.StringVar(&forwardSocket, "forward-sock", "", "Forwards a unix socket to the guest virtual machine over SSH")
+	flag.StringVar(&forwardDest, "forward-dest", "", "Forwards a unix socket to the guest virtual machine over SSH")
+	flag.StringVar(&forwardUser, "forward-user", "", "SSH user to use for unix socket forward")
+	flag.StringVar(&forwardIdentify, "forward-identity", "", "Path to SSH identity key for forwarding")
 	flag.StringVar(&pidFile, "pid-file", "", "Generate a file with the PID in it")
 	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -82,6 +93,28 @@ func main() {
 	protocol := types.HyperKitProtocol
 	if qemuSocket != "" {
 		protocol = types.QemuProtocol
+	}
+
+	forwardCount := 0
+	if forwardDest != "" {
+		forwardCount++
+	}
+	if forwardIdentify != "" {
+		_, err := os.Stat(forwardIdentify)
+		if err != nil {
+			exitWithError(errors.Wrapf(err, "Identity file %s can't be loaded", forwardIdentify))
+		}
+		forwardCount++
+	}
+	if forwardUser != "" {
+		forwardCount++
+	}
+	if forwardSocket != "" {
+		forwardCount++
+	}
+
+	if forwardCount > 0 && forwardCount < 4 {
+		exitWithError(errors.New("-forward-sock, --forward-dest, --forward-user, and --forward-identity must all be specified together, or none specified"))
 	}
 
 	// Create a PID file if requested
@@ -142,7 +175,7 @@ func main() {
 		},
 		DNSSearchDomains: searchDomains(),
 		Forwards: map[string]string{
-			fmt.Sprintf(":%d", sshPort): "192.168.127.2:22",
+			fmt.Sprintf(":%d", sshPort): sshHostPort,
 		},
 		NAT: map[string]string{
 			"192.168.127.254": "127.0.0.1",
@@ -285,6 +318,42 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 			return vn.AcceptQemu(ctx, conn)
 		})
 	}
+
+	if forwardSocket != "" {
+		dest := url.URL{
+			Scheme: "ssh",
+			User:   url.User(forwardUser),
+			Host:   sshHostPort,
+			Path:   forwardDest,
+		}
+		g.Go(func() error {
+			defer os.Remove(forwardSocket)
+			forward, err := CreateSSHForward(ctx, forwardSocket, dest, forwardIdentify, vn)
+			if err != nil {
+				return err
+			}
+			go func() {
+				<-ctx.Done()
+				// Abort pending accepts
+				forward.Close()
+			}()
+		loop:
+			for {
+				select {
+				case <-ctx.Done():
+					break loop
+				default:
+					// proceed
+				}
+				err := forward.AcceptAndTunnel(ctx)
+				if err != nil {
+					log.Debugf("Error occurred handling ssh forwarded connection: %q", err)
+				}
+			}
+			return nil
+		})
+	}
+
 	return nil
 }
 
