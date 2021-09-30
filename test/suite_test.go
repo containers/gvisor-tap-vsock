@@ -3,6 +3,7 @@ package e2e
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
@@ -23,23 +25,31 @@ func TestSuite(t *testing.T) {
 }
 
 const (
-	sock             = "/tmp/gvproxy-api.sock"
-	qemuPort         = 5555
-	sshPort          = 2222
-	ignitionUser     = "test"
-	ignitionPassword = "test"
+	sock         = "/tmp/gvproxy-api.sock"
+	qemuPort     = 5555
+	sshPort      = 2222
+	ignitionUser = "test"
+
+	// #nosec "test" (for manual usage)
+	ignitionPasswordHash = "$y$j9T$TqJWt3/mKJbH0sYi6B/LD1$QjVRuUgntjTHjAdAkqhkr4F73m.Be4jBXdAaKw98sPC"
 )
 
 var (
-	tmpDir string
-	binDir string
-	host   *exec.Cmd
-	client *exec.Cmd
+	tmpDir         string
+	binDir         string
+	host           *exec.Cmd
+	client         *exec.Cmd
+	privateKeyFile string
+	publicKeyFile  string
+	ignFile        string
 )
 
 func init() {
 	flag.StringVar(&tmpDir, "tmpDir", "../tmp", "temporary working directory")
 	flag.StringVar(&binDir, "bin", "../bin", "directory with compiled binaries")
+	privateKeyFile = filepath.Join(tmpDir, "id_test")
+	publicKeyFile = privateKeyFile + ".pub"
+	ignFile = filepath.Join(tmpDir, "test.ign")
 }
 
 var _ = BeforeSuite(func() {
@@ -48,6 +58,12 @@ var _ = BeforeSuite(func() {
 	downloader, err := NewFcosDownloader(filepath.Join(tmpDir, "disks"))
 	Expect(err).ShouldNot(HaveOccurred())
 	qemuImage, err := downloader.DownloadImage()
+	Expect(err).ShouldNot(HaveOccurred())
+
+	publicKey, err := createSSHKeys()
+	Expect(err).ShouldNot(HaveOccurred())
+
+	err = CreateIgnition(ignFile, publicKey, ignitionUser, ignitionPasswordHash)
 	Expect(err).ShouldNot(HaveOccurred())
 
 	_ = os.Remove(sock)
@@ -74,7 +90,7 @@ var _ = BeforeSuite(func() {
 
 	template := `%s -m 2048 -nographic -snapshot -drive if=virtio,file=%s -fw_cfg name=opt/com.coreos/config,file=%s -netdev socket,id=vlan,connect=127.0.0.1:%d -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee`
 	// #nosec
-	client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), qemuImage, filepath.Join("testdata", "test.ign"), qemuPort), " ")...)
+	client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), qemuImage, ignFile, qemuPort), " ")...)
 	Expect(client.Start()).Should(Succeed())
 	go func() {
 		if err := client.Wait(); err != nil {
@@ -106,11 +122,48 @@ func qemuArgs() string {
 	return "-cpu host"
 }
 
+func createSSHKeys() (string, error) {
+	_ = os.Remove(publicKeyFile)
+	_ = os.Remove(privateKeyFile)
+	err := exec.Command("ssh-keygen", "-N", "", "-t", "ed25519", "-f", privateKeyFile).Run()
+	if err != nil {
+		return "", errors.Wrap(err, "Could not generate ssh keys")
+	}
+
+	return readPublicKey()
+}
+
+func readPublicKey() (string, error) {
+	publicKey, err := ioutil.ReadFile(publicKeyFile)
+	if err != nil {
+		return "", nil
+	}
+
+	return strings.TrimSpace(string(publicKey)), nil
+}
+
+func parsePrivateKey(path string) (ssh.Signer, error) {
+	key, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return signer, nil
+}
+
 func sshExec(cmd ...string) ([]byte, error) {
+	key, err := parsePrivateKey(privateKeyFile)
+	if err != nil {
+		return nil, err
+	}
+
 	client, err := ssh.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", sshPort), &ssh.ClientConfig{
 		User: ignitionUser,
 		Auth: []ssh.AuthMethod{
-			ssh.Password(ignitionPassword),
+			ssh.PublicKeys(key),
 		},
 		// #nosec
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
