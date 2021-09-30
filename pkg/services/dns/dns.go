@@ -144,6 +144,26 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 					A: ip.IP.To4(),
 				})
 			}
+		case dns.TypeAAAA:
+			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
+			if err != nil {
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+			for _, ip := range ips {
+				if len(ip.IP) != net.IPv6len {
+					continue
+				}
+				m.Answer = append(m.Answer, &dns.AAAA{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeAAAA,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					AAAA: ip.IP.To16(),
+				})
+			}
 		case dns.TypeCNAME:
 			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
 			if err != nil {
