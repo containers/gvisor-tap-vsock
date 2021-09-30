@@ -8,7 +8,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 )
 
 type LinkEndpoint struct {
@@ -125,6 +127,17 @@ func (e *LinkEndpoint) writePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 		if ip != e.IP() && !ok {
 			log.Debugf("dropping spoofing packets from the gateway about IP %s", ip)
 			return nil
+		}
+	}
+
+	if pkt.NetworkProtocolNumber == ipv6.ProtocolNumber && pkt.TransportProtocolNumber == icmp.ProtocolNumber6 {
+		transportLayer := header.ICMPv6(pkt.TransportHeader().View())
+		if transportLayer.Type() == header.ICMPv6NeighborAdvert {
+			ip := header.NDPNeighborAdvert(transportLayer.MessageBody()).TargetAddress().String()
+			if ip != "fe80::1" {
+				log.Debugf("dropping spoofing packets from the gateway about IP %s", ip)
+				return nil
+			}
 		}
 	}
 
