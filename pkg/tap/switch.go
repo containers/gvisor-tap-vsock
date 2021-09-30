@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -283,6 +284,20 @@ func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
 			NotificationType: types.ConnectionEstablished,
 			MacAddress:       eth.SourceAddress().String(),
 		})
+	}
+
+	if eth.Type() == ipv6.ProtocolNumber {
+		networkLayer := header.IPv6(buf[header.EthernetMinimumSize:])
+		if networkLayer.TransportProtocol() == header.ICMPv6ProtocolNumber {
+			transportLayer := header.ICMPv6(networkLayer.Payload())
+			if transportLayer.Type() == header.ICMPv6RouterSolicit {
+				routerAdvertisement := raBufSimple(e.gateway.LinkAddress(), eth.SourceAddress(), tcpip.AddrFrom16Slice(net.ParseIP("fe80::1")), 1000)
+				if err := e.tx(routerAdvertisement); err != nil {
+					log.Error(err)
+				}
+				routerAdvertisement.DecRef()
+			}
+		}
 	}
 
 	if eth.DestinationAddress() != e.gateway.LinkAddress() {
