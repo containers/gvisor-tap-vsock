@@ -87,6 +87,8 @@ address=/foobar/1.2.3.4
 		_, err := sshExec(fmt.Sprintf("sudo install -m 0%o /dev/null %s && cat <<EOF | base64 --decode | sudo tee %s\n%s\nEOF", 0644, "/tmp/cfg", "/tmp/cfg", base64Data))
 		Expect(err).ShouldNot(HaveOccurred())
 
+		_, _ = sshExec("sudo podman pull quay.io/crcont/dnsmasq")
+
 		_, err = sshExec("sudo podman run --rm --name dns-test -v /tmp/cfg:/etc/dnsmasq.conf:z -d -p 53:53/udp -t quay.io/crcont/dnsmasq")
 		Expect(err).ShouldNot(HaveOccurred())
 		defer func() {
@@ -95,20 +97,20 @@ address=/foobar/1.2.3.4
 		}()
 
 		Expect(client.Expose(&types.ExposeRequest{
-			Local:    ":53",
+			Local:    ":1053",
 			Remote:   "192.168.127.2:53",
 			Protocol: "udp",
 		})).Should(Succeed())
 
 		Eventually(func(g Gomega) {
-			cmd := exec.Command("nslookup", "-timeout=1", "foobar", "127.0.0.1")
+			cmd := exec.Command("nslookup", "-timeout=1", "-port=1053", "foobar", "127.0.0.1")
 			out, err := cmd.CombinedOutput()
 			g.Expect(err).ShouldNot(HaveOccurred())
 			g.Expect(string(out)).To(ContainSubstring("Address: 1.2.3.4"))
 		}).Should(Succeed())
 
 		Expect(client.Unexpose(&types.UnexposeRequest{
-			Local:    ":53",
+			Local:    ":1053",
 			Protocol: "udp",
 		})).Should(Succeed())
 	})
