@@ -25,3 +25,15 @@ jobs:
       with:
         name: gvproxy
         path: bin/gvproxy*
+
+  tests:
+    runs-on: macos-11 # Only Mac runners support nested virt
+    needs: build # Don't bother testing if cross arch build fails
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install
+      run: |
+        brew install qemu
+        touch continue
+    - name: Test
+      run: make test
