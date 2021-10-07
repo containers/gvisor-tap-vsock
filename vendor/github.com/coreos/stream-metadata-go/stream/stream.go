@@ -45,7 +45,7 @@ type ImageFormat struct {
 // Artifact represents one image file, plus its metadata
 type Artifact struct {
 	Location           string `json:"location"`
-	Signature          string `json:"signature"`
+	Signature          string `json:"signature,omitempty"`
 	Sha256             string `json:"sha256"`
 	UncompressedSha256 string `json:"uncompressed-sha256,omitempty"`
 }
