@@ -25,13 +25,12 @@ import (
 )
 
 var (
-	endpoint           string
-	iface              string
-	stopIfIfaceExist   string
-	mac                string
-	debug              bool
-	changeDefaultRoute bool
-	mtu                int
+	endpoint         string
+	iface            string
+	stopIfIfaceExist string
+	mac              string
+	debug            bool
+	mtu              int
 )
 
 func main() {
@@ -40,7 +39,6 @@ func main() {
 	flag.StringVar(&stopIfIfaceExist, "stop-if-exist", "eth0,ens3,enp0s1", "stop if one of these interfaces exists at startup")
 	flag.StringVar(&mac, "mac", "5a:94:ef:e4:0c:ee", "mac address")
 	flag.BoolVar(&debug, "debug", false, "debug")
-	flag.BoolVar(&changeDefaultRoute, "change-default-route", true, "change the default route to use this interface")
 	flag.IntVar(&mtu, "mtu", 4000, "mtu")
 	flag.Parse()
 
