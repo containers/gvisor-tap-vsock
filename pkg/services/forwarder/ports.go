@@ -160,7 +160,12 @@ func (f *PortsForwarder) Mux() http.Handler {
 		if req.Protocol == "" {
 			req.Protocol = types.TCP
 		}
-		if err := f.Expose(req.Protocol, req.Local, req.Remote); err != nil {
+		remote, err := remote(req, r.RemoteAddr)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := f.Expose(req.Protocol, req.Local, remote); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -186,4 +191,20 @@ func (f *PortsForwarder) Mux() http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux
+}
+
+// if the request doesn't have an IP in the remote field, use the IP from the incoming http request.
+func remote(req types.ExposeRequest, ip string) (string, error) {
+	remoteIP, _, err := net.SplitHostPort(req.Remote)
+	if err != nil {
+		return "", err
+	}
+	if remoteIP == "" {
+		host, _, err := net.SplitHostPort(ip)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%s%s", host, req.Remote), nil
+	}
+	return req.Remote, nil
 }

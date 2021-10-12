@@ -141,4 +141,33 @@ address=/foobar/1.2.3.4
 			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		}).Should(Succeed())
 	})
+
+	It("should reach a http server in the VM using dynamic port forwarding configured within the VM", func() {
+		_, err := sshExec("sudo podman run --rm --name http-test -d -p 8080:80 -t docker.io/library/nginx:alpine")
+		Expect(err).ShouldNot(HaveOccurred())
+		defer func() {
+			_, err := sshExec("sudo podman stop http-test")
+			Expect(err).ShouldNot(HaveOccurred())
+		}()
+
+		_, err = net.Dial("tcp", "127.0.0.1:9090")
+		Expect(err.Error()).To(HaveSuffix("connection refused"))
+
+		_, err = sshExec(`curl http://gateway.containers.internal/services/forwarder/expose -X POST -d'{"local":":9090", "remote":":8080"}'`)
+		Expect(err).ShouldNot(HaveOccurred())
+
+		Eventually(func(g Gomega) {
+			resp, err := http.Get("http://127.0.0.1:9090")
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		}).Should(Succeed())
+
+		_, err = sshExec(`curl http://gateway.containers.internal/services/forwarder/unexpose -X POST -d'{"local":":9090"}'`)
+		Expect(err).ShouldNot(HaveOccurred())
+
+		Eventually(func(g Gomega) {
+			_, err = net.Dial("tcp", "127.0.0.1:9090")
+			g.Expect(err.Error()).To(HaveSuffix("connection refused"))
+		}).Should(Succeed())
+	})
 })
