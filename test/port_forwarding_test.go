@@ -54,6 +54,7 @@ var _ = Describe("port forwarding", func() {
 		}()
 
 		_, err = net.Dial("tcp", "127.0.0.1:9090")
+		Expect(err).Should(HaveOccurred())
 		Expect(err.Error()).To(HaveSuffix("connection refused"))
 
 		Expect(client.Expose(&types.ExposeRequest{
@@ -73,6 +74,7 @@ var _ = Describe("port forwarding", func() {
 
 		Eventually(func(g Gomega) {
 			_, err = net.Dial("tcp", "127.0.0.1:9090")
+			g.Expect(err).Should(HaveOccurred())
 			g.Expect(err.Error()).To(HaveSuffix("connection refused"))
 		}).Should(Succeed())
 	})
@@ -151,6 +153,7 @@ address=/foobar/1.2.3.4
 		}()
 
 		_, err = net.Dial("tcp", "127.0.0.1:9090")
+		Expect(err).Should(HaveOccurred())
 		Expect(err.Error()).To(HaveSuffix("connection refused"))
 
 		_, err = sshExec(`curl http://gateway.containers.internal/services/forwarder/expose -X POST -d'{"local":":9090", "remote":":8080"}'`)
@@ -167,6 +170,7 @@ address=/foobar/1.2.3.4
 
 		Eventually(func(g Gomega) {
 			_, err = net.Dial("tcp", "127.0.0.1:9090")
+			g.Expect(err).Should(HaveOccurred())
 			g.Expect(err.Error()).To(HaveSuffix("connection refused"))
 		}).Should(Succeed())
 	})
