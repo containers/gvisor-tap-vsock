@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os/exec"
@@ -172,6 +173,29 @@ address=/foobar/1.2.3.4
 			_, err = net.Dial("tcp", "127.0.0.1:9090")
 			g.Expect(err).Should(HaveOccurred())
 			g.Expect(err.Error()).To(HaveSuffix("connection refused"))
+		}).Should(Succeed())
+	})
+
+	It("should reach podman API using unix socket forwarding over ssh", func() {
+		httpClient := &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return net.Dial("unix", forwardSock)
+				},
+			},
+		}
+
+		Eventually(func(g Gomega) {
+			resp, err := httpClient.Get("http://host/_ping")
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			g.Expect(resp.ContentLength).To(Equal(int64(2)))
+
+			reply := make([]byte, resp.ContentLength)
+			_, err = io.ReadAtLeast(resp.Body, reply, len(reply))
+
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(string(reply)).To(Equal("OK"))
 		}).Should(Succeed())
 	})
 })

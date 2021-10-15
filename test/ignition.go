@@ -6,13 +6,23 @@ import (
 	"net/url"
 )
 
+var (
+	mode    = 0644
+	dirMode = 0744
+	root    = "root"
+	test    = "test"
+	yes     = true
+	no      = false
+)
+
 func CreateIgnition(ignitionFile string, publicKey string, user string, password string) error {
-	var (
-		mode = 0644
-		root = "root"
-		yes  = true
-		no   = false
-	)
+
+	linger := `[Unit]
+Description=Activate podman socket
+Wants=podman.socket
+[Service]
+ExecStart=/usr/bin/sleep infinity
+`
 
 	systemd := Systemd{
 		Units: []Unit{
@@ -20,6 +30,10 @@ func CreateIgnition(ignitionFile string, publicKey string, user string, password
 				Name:    "systemd-resolved.service",
 				Enabled: &no,
 				Mask:    &yes,
+			},
+			{
+				Name:    "podman.socket",
+				Enabled: &yes,
 			},
 		},
 	}
@@ -51,11 +65,58 @@ func CreateIgnition(ignitionFile string, publicKey string, user string, password
 					Overwrite: &yes,
 				},
 				FileEmbedded1: FileEmbedded1{
-					Append: nil,
 					Contents: Resource{
 						Source: encodeData(""),
 					},
 					Mode: &mode,
+				},
+			},
+			{
+				Node: Node{
+					Group:     NodeGroup{Name: &test},
+					Path:      "/home/" + test + "/.config/systemd/user/linger-podman.service",
+					User:      NodeUser{Name: &test},
+					Overwrite: &yes,
+				},
+				FileEmbedded1: FileEmbedded1{
+					Contents: Resource{
+						Source: encodeData(linger),
+					},
+					Mode: &mode,
+				},
+			},
+			{
+				Node: Node{
+					Group:     NodeGroup{Name: &test},
+					Path:      "/var/lib/systemd/linger/" + test,
+					User:      NodeUser{Name: &test},
+					Overwrite: &yes,
+				},
+				FileEmbedded1: FileEmbedded1{
+					Contents: Resource{
+						Source: encodeData(""),
+					},
+					Mode: &mode,
+				},
+			},
+		},
+		Directories: []Directory{
+			dir("/home/" + test + "/.config"),
+			dir("/home/" + test + "/.config/containers"),
+			dir("/home/" + test + "/.config/systemd"),
+			dir("/home/" + test + "/.config/systemd/user"),
+			dir("/home/" + test + "/.config/systemd/user/default.target.wants"),
+		},
+		Links: []Link{
+			{
+				Node: Node{
+					Group: NodeGroup{Name: &test},
+					Path:  "/home/" + test + "/.config/systemd/user/default.target.wants/linger-podman.service",
+					User:  NodeUser{Name: &test},
+				},
+				LinkEmbedded1: LinkEmbedded1{
+					Hard:   &no,
+					Target: "/home/" + test + "/.config/systemd/user/linger-podman.service",
 				},
 			},
 		},
@@ -75,6 +136,17 @@ func CreateIgnition(ignitionFile string, publicKey string, user string, password
 
 	// #nosec
 	return ioutil.WriteFile(ignitionFile, contents, 0644)
+}
+
+func dir(path string) Directory {
+	return Directory{
+		Node: Node{
+			Group: NodeGroup{Name: &test},
+			Path:  path,
+			User:  NodeUser{Name: &test},
+		},
+		DirectoryEmbedded1: DirectoryEmbedded1{Mode: &dirMode},
+	}
 }
 
 func encodeData(data string) *string {

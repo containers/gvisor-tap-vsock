@@ -31,6 +31,7 @@ const (
 	sshPort      = 2222
 	ignitionUser = "test"
 	qconLog      = "qcon.log"
+	podmanSock   = "/run/user/1001/podman/podman.sock"
 
 	// #nosec "test" (for manual usage)
 	ignitionPasswordHash = "$y$j9T$TqJWt3/mKJbH0sYi6B/LD1$QjVRuUgntjTHjAdAkqhkr4F73m.Be4jBXdAaKw98sPC"
@@ -44,6 +45,7 @@ var (
 	privateKeyFile string
 	publicKeyFile  string
 	ignFile        string
+	forwardSock    string
 )
 
 func init() {
@@ -52,6 +54,7 @@ func init() {
 	privateKeyFile = filepath.Join(tmpDir, "id_test")
 	publicKeyFile = privateKeyFile + ".pub"
 	ignFile = filepath.Join(tmpDir, "test.ign")
+	forwardSock = filepath.Join(tmpDir, "podman-remote.sock")
 }
 
 var _ = BeforeSuite(func() {
@@ -73,7 +76,9 @@ outer:
 		_ = os.Remove(sock)
 
 		// #nosec
-		host = exec.Command(filepath.Join(binDir, "gvproxy"), fmt.Sprintf("--listen=unix://%s", sock), fmt.Sprintf("--listen-qemu=tcp://127.0.0.1:%d", qemuPort))
+		host = exec.Command(filepath.Join(binDir, "gvproxy"), fmt.Sprintf("--listen=unix://%s", sock), fmt.Sprintf("--listen-qemu=tcp://127.0.0.1:%d", qemuPort),
+			fmt.Sprintf("--forward-sock=%s", forwardSock), fmt.Sprintf("--forward-dest=%s", podmanSock), fmt.Sprintf("--forward-user=%s", ignitionUser),
+			fmt.Sprintf("--forward-identity=%s", privateKeyFile))
 		host.Stderr = os.Stderr
 		host.Stdout = os.Stdout
 		Expect(host.Start()).Should(Succeed())
