@@ -100,8 +100,6 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 		return &SSHForward{}, err
 	}
 
-	logrus.Infof("Socket forward listening on: %s\n", socketURI)
-
 	connectFunc := func(bastion *sshclient.Bastion) (net.Conn, error) {
 		timeout := 5 * time.Second
 		if bastion != nil {
@@ -126,7 +124,7 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 		return &SSHForward{}, err
 	}
 
-	logrus.Infof("SSH Bastion connected: %s\n", dest)
+	logrus.Infof("Socket forward established: %s to %s\n", socketURI.Path, dest.Path)
 
 	return &SSHForward{listener, &bastion, socketURI}, nil
 }
