@@ -51,6 +51,13 @@ ExecStart=/usr/bin/sleep infinity
 					"sudo",
 				},
 			},
+			{
+				Name:         "root",
+				PasswordHash: &password,
+				SSHAuthorizedKeys: []SSHAuthorizedKey{
+					SSHAuthorizedKey(publicKey),
+				},
+			},
 		},
 	}
 
