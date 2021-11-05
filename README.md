@@ -1,5 +1,7 @@
 # gvisor-tap-vsock
 
+[![Go](https://github.com/containers/gvisor-tap-vsock/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/containers/gvisor-tap-vsock/actions?query=branch%3Amain)
+
 
 A replacement for [libslirp](https://gitlab.com/qemu-project/libslirp) and [VPNKit](https://github.com/moby/vpnkit), written in pure Go.
 It is based on the network stack of [gVisor](https://github.com/google/gvisor/tree/master/pkg/tcpip).
