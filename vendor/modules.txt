@@ -1,7 +1,7 @@
 # github.com/apparentlymart/go-cidr v1.1.0
 ## explicit
 github.com/apparentlymart/go-cidr/cidr
-# github.com/coreos/stream-metadata-go v0.1.5
+# github.com/coreos/stream-metadata-go v0.1.6
 ## explicit
 github.com/coreos/stream-metadata-go/fedoracoreos
 github.com/coreos/stream-metadata-go/fedoracoreos/internals
