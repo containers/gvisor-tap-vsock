@@ -3,8 +3,9 @@ package types
 type TransportProtocol string
 
 const (
-	UDP TransportProtocol = "udp"
-	TCP TransportProtocol = "tcp"
+	UDP  TransportProtocol = "udp"
+	TCP  TransportProtocol = "tcp"
+	UNIX TransportProtocol = "unix"
 )
 
 type ExposeRequest struct {
