@@ -33,7 +33,7 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 		natLock.Unlock()
 		outbound, err := net.Dial("tcp", fmt.Sprintf("%s:%d", localAddress, r.ID().LocalPort))
 		if err != nil {
-			log.Errorf("net.Dial() = %v", err)
+			log.Tracef("net.Dial() = %v", err)
 			r.Complete(true)
 			return
 		}
