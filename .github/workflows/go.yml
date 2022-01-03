@@ -31,9 +31,16 @@ jobs:
     needs: build # Don't bother testing if cross arch build fails
     steps:
     - uses: actions/checkout@v2
+
     - name: Install
       run: |
         brew install qemu
         touch continue
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.17
+
     - name: Test
       run: make test
