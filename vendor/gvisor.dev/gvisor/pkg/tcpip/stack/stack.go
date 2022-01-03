@@ -238,7 +238,7 @@ type Options struct {
 	// DefaultIPTables is an optional iptables rules constructor that is called
 	// if IPTables is nil. If both fields are nil, iptables will allow all
 	// traffic.
-	DefaultIPTables func(uint32) *IPTables
+	DefaultIPTables func(clock tcpip.Clock, rand *rand.Rand) *IPTables
 
 	// SecureRNG is a cryptographically secure random number generator.
 	SecureRNG io.Reader
@@ -353,12 +353,11 @@ func New(opts Options) *Stack {
 	}
 	randomGenerator := rand.New(randSrc)
 
-	seed := randomGenerator.Uint32()
 	if opts.IPTables == nil {
 		if opts.DefaultIPTables == nil {
 			opts.DefaultIPTables = DefaultTables
 		}
-		opts.IPTables = opts.DefaultIPTables(seed)
+		opts.IPTables = opts.DefaultIPTables(clock, randomGenerator)
 	}
 
 	opts.NUDConfigs.resetInvalidFields()
@@ -376,7 +375,7 @@ func New(opts Options) *Stack {
 		handleLocal:                  opts.HandleLocal,
 		tables:                       opts.IPTables,
 		icmpRateLimiter:              NewICMPRateLimiter(clock),
-		seed:                         seed,
+		seed:                         randomGenerator.Uint32(),
 		nudConfigs:                   opts.NUDConfigs,
 		uniqueIDGenerator:            opts.UniqueID,
 		nudDisp:                      opts.NUDDisp,
@@ -417,11 +416,6 @@ func New(opts Options) *Stack {
 	s.demux = newTransportDemuxer(s)
 
 	return s
-}
-
-// newJob returns a tcpip.Job using the Stack clock.
-func (s *Stack) newJob(l sync.Locker, f func()) *tcpip.Job {
-	return tcpip.NewJob(s.clock, l, f)
 }
 
 // UniqueID returns a unique identifier.
@@ -676,6 +670,9 @@ type NICOptions struct {
 	// should be tracked alongside a NIC, to avoid having to keep a
 	// map[tcpip.NICID]metadata mirroring stack.Stack's nic map.
 	Context NICContext
+
+	// QDisc is the queue discipline to use for this NIC.
+	QDisc QueueingDiscipline
 }
 
 // CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
@@ -701,7 +698,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		}
 	}
 
-	n := newNIC(s, id, opts.Name, ep, opts.Context)
+	n := newNIC(s, id, ep, opts)
 	for proto := range s.defaultForwardingEnabled {
 		if err := n.setForwarding(proto, true); err != nil {
 			panic(fmt.Sprintf("newNIC(%d, ...).setForwarding(%d, true): %s", id, proto, err))
@@ -727,7 +724,11 @@ func (s *Stack) GetLinkEndpointByName(name string) LinkEndpoint {
 	defer s.mu.RUnlock()
 	for _, nic := range s.nics {
 		if nic.Name() == name {
-			return nic.LinkEndpoint
+			linkEP, ok := nic.NetworkLinkEndpoint.(LinkEndpoint)
+			if !ok {
+				panic(fmt.Sprintf("unexpected NetworkLinkEndpoint(%#v) is not a LinkEndpoint", nic.NetworkLinkEndpoint))
+			}
+			return linkEP
 		}
 	}
 	return nil
@@ -872,14 +873,14 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 
 		info := NICInfo{
 			Name:              nic.name,
-			LinkAddress:       nic.LinkEndpoint.LinkAddress(),
+			LinkAddress:       nic.NetworkLinkEndpoint.LinkAddress(),
 			ProtocolAddresses: nic.primaryAddresses(),
 			Flags:             flags,
-			MTU:               nic.LinkEndpoint.MTU(),
+			MTU:               nic.NetworkLinkEndpoint.MTU(),
 			Stats:             nic.stats.local,
 			NetworkStats:      netStats,
 			Context:           nic.context,
-			ARPHardwareType:   nic.LinkEndpoint.ARPHardwareType(),
+			ARPHardwareType:   nic.NetworkLinkEndpoint.ARPHardwareType(),
 			Forwarding:        make(map[tcpip.NetworkProtocolNumber]bool),
 		}
 
@@ -1533,7 +1534,7 @@ func (s *Stack) Wait() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, n := range s.nics {
-		n.LinkEndpoint.Wait()
+		n.NetworkLinkEndpoint.Wait()
 	}
 }
 
@@ -1622,6 +1623,7 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 		ReserveHeaderBytes: int(nic.MaxHeaderLength()),
 		Data:               payload,
 	})
+	defer pkt.DecRef()
 	pkt.NetworkProtocolNumber = netProto
 	return nic.WritePacketToRemote(remote, netProto, pkt)
 }
@@ -1639,6 +1641,7 @@ func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNum
 	pkt := NewPacketBuffer(PacketBufferOptions{
 		Data: payload,
 	})
+	defer pkt.DecRef()
 	pkt.NetworkProtocolNumber = proto
 	return nic.WriteRawPacket(pkt)
 }
@@ -1842,11 +1845,6 @@ func (s *Stack) FindNICNameFromID(id tcpip.NICID) string {
 	return nic.Name()
 }
 
-// NewJob returns a new tcpip.Job using the stack's clock.
-func (s *Stack) NewJob(l sync.Locker, f func()) *tcpip.Job {
-	return tcpip.NewJob(s.clock, l, f)
-}
-
 // ParseResult indicates the result of a parsing attempt.
 type ParseResult int
 
@@ -1865,12 +1863,6 @@ const (
 // ParsePacketBufferTransport parses the provided packet buffer's transport
 // header.
 func (s *Stack) ParsePacketBufferTransport(protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) ParseResult {
-	// ICMP packets don't have their TransportHeader fields set yet, parse it
-	// here. See icmp/protocol.go:protocol.Parse for a full explanation.
-	if protocol == header.ICMPv4ProtocolNumber || protocol == header.ICMPv6ProtocolNumber {
-		return ParsedOK
-	}
-
 	pkt.TransportProtocolNumber = protocol
 	// Parse the transport header if present.
 	state, ok := s.transportProtocols[protocol]

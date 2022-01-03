@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,29 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package stack
+//go:build amd64 && go1.8 && !go1.19 && !goexperiment.staticlockranking
+// +build amd64,go1.8,!go1.19,!goexperiment.staticlockranking
 
-import (
-	"time"
-)
+#include "textflag.h"
 
-// +stateify savable
-type unixTime struct {
-	second int64
-	nano   int64
-}
-
-// saveLastUsed is invoked by stateify.
-func (cn *conn) saveLastUsed() unixTime {
-	return unixTime{cn.lastUsed.Unix(), cn.lastUsed.UnixNano()}
-}
-
-// loadLastUsed is invoked by stateify.
-func (cn *conn) loadLastUsed(unix unixTime) {
-	cn.lastUsed = time.Unix(unix.second, unix.nano)
-}
-
-// beforeSave is invoked by stateify.
-func (ct *ConnTrack) beforeSave() {
-	ct.mu.Lock()
-}
+TEXT ·addrOfSpinning(SB),NOSPLIT,$0-8
+	// The offset specified here is the nmspinning value in sched.
+	LEAQ runtime·sched(SB), AX
+	ADDQ $92, AX
+	MOVQ AX, ret+0(FP)
+	RET

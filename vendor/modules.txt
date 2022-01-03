@@ -108,7 +108,7 @@ github.com/u-root/uio/uio
 ## explicit
 github.com/vishvananda/netlink
 github.com/vishvananda/netlink/nl
-# github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f
+# github.com/vishvananda/netns v0.0.0-20211101163701-50045581ed74
 github.com/vishvananda/netns
 # golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 ## explicit
@@ -138,8 +138,7 @@ golang.org/x/net/ipv6
 # golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 ## explicit
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e
-## explicit
+# golang.org/x/sys v0.0.0-20211007075335-d3039528d8ac
 golang.org/x/sys/cpu
 golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader
@@ -183,6 +182,8 @@ golang.org/x/tools/internal/typesinternal
 # golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 golang.org/x/xerrors
 golang.org/x/xerrors/internal
+# gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15
+## explicit
 # gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7
 gopkg.in/tomb.v1
 # gopkg.in/yaml.v2 v2.4.0
@@ -190,15 +191,18 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 ## explicit
 gopkg.in/yaml.v3
-# gvisor.dev/gvisor v0.0.0-20210924063838-a1b00da7bd8d
+# gvisor.dev/gvisor v0.0.0-20220101053744-1d5a116c5b1d
 ## explicit
 gvisor.dev/gvisor/pkg/atomicbitops
 gvisor.dev/gvisor/pkg/buffer
+gvisor.dev/gvisor/pkg/context
 gvisor.dev/gvisor/pkg/gohacks
 gvisor.dev/gvisor/pkg/goid
 gvisor.dev/gvisor/pkg/linewriter
 gvisor.dev/gvisor/pkg/log
 gvisor.dev/gvisor/pkg/rand
+gvisor.dev/gvisor/pkg/refs
+gvisor.dev/gvisor/pkg/refsvfs2
 gvisor.dev/gvisor/pkg/sleep
 gvisor.dev/gvisor/pkg/state
 gvisor.dev/gvisor/pkg/state/wire
@@ -223,6 +227,7 @@ gvisor.dev/gvisor/pkg/tcpip/stack
 gvisor.dev/gvisor/pkg/tcpip/transport
 gvisor.dev/gvisor/pkg/tcpip/transport/icmp
 gvisor.dev/gvisor/pkg/tcpip/transport/internal/network
+gvisor.dev/gvisor/pkg/tcpip/transport/internal/noop
 gvisor.dev/gvisor/pkg/tcpip/transport/packet
 gvisor.dev/gvisor/pkg/tcpip/transport/raw
 gvisor.dev/gvisor/pkg/tcpip/transport/tcp

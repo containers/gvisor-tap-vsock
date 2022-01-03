@@ -15,7 +15,6 @@
 package tcp
 
 import (
-	"container/list"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -205,6 +204,8 @@ type SACKInfo struct {
 }
 
 // ReceiveErrors collect segment receive errors within transport layer.
+//
+// +stateify savable
 type ReceiveErrors struct {
 	tcpip.ReceiveErrors
 
@@ -234,6 +235,8 @@ type ReceiveErrors struct {
 }
 
 // SendErrors collect segment send errors within the transport layer.
+//
+// +stateify savable
 type SendErrors struct {
 	tcpip.SendErrors
 
@@ -257,6 +260,8 @@ type SendErrors struct {
 }
 
 // Stats holds statistics about the endpoint.
+//
+// +stateify savable
 type Stats struct {
 	// SegmentsReceived is the number of TCP segments received that
 	// the transport layer successfully parsed.
@@ -311,18 +316,6 @@ type rcvQueueInfo struct {
 	rcvQueue segmentList `state:"wait"`
 }
 
-// +stateify savable
-type accepted struct {
-	// NB: this could be an endpointList, but ilist only permits endpoints to
-	// belong to one list at a time, and endpoints are already stored in the
-	// dispatcher's list.
-	endpoints list.List `state:".([]*endpoint)"`
-
-	// cap is the maximum number of endpoints that can be in the accepted endpoint
-	// list.
-	cap int
-}
-
 // endpoint represents a TCP endpoint. This struct serves as the interface
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
@@ -338,7 +331,7 @@ type accepted struct {
 // The following three mutexes can be acquired independent of e.mu but if
 // acquired with e.mu then e.mu must be acquired first.
 //
-// e.acceptMu -> Protects e.accepted.
+// e.acceptMu -> Protects e.acceptQueue.
 // e.rcvQueueMu -> Protects e.rcvQueue and associated fields.
 // e.sndQueueMu -> Protects the e.sndQueue and associated fields.
 // e.lastErrorMu -> Protects the lastError field.
@@ -443,7 +436,8 @@ type endpoint struct {
 	isRegistered      bool `state:"manual"`
 	boundNICID        tcpip.NICID
 	route             *stack.Route `state:"manual"`
-	ttl               uint8
+	ipv4TTL           uint8
+	ipv6HopLimit      int16
 	isConnectNotified bool
 
 	// h stores a reference to the current handshake state if the endpoint is in
@@ -501,10 +495,6 @@ type endpoint struct {
 	// goroutine. Segments are queued as long as the queue is not full,
 	// and dropped when it is.
 	segmentQueue segmentQueue `state:"wait"`
-
-	// synRcvdCount is the number of connections for this endpoint that are
-	// in SYN-RCVD state; this is only accessed atomically.
-	synRcvdCount int32
 
 	// userMSS if non-zero is the MSS value explicitly set by the user
 	// for this endpoint using the TCP_MAXSEG setsockopt.
@@ -579,7 +569,7 @@ type endpoint struct {
 	// send newly accepted connections to the endpoint so that they can be
 	// read by Accept() calls.
 	// +checklocks:acceptMu
-	accepted accepted
+	acceptQueue acceptQueue
 
 	// The following are only used from the protocol goroutine, and
 	// therefore don't need locks to protect them.
@@ -612,8 +602,7 @@ type endpoint struct {
 
 	gso stack.GSO
 
-	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
-	stats Stats `state:"nosave"`
+	stats Stats
 
 	// tcpLingerTimeout is the maximum amount of a time a socket
 	// a socket stays in TIME_WAIT state before being marked
@@ -795,6 +784,25 @@ func (e *endpoint) recentTimestamp() uint32 {
 	return e.RecentTS
 }
 
+// TODO(gvisor.dev/issue/6974): Remove once tcp endpoints are composed with a
+// network.Endpoint, which also defines this function.
+func calculateTTL(route *stack.Route, ipv4TTL uint8, ipv6HopLimit int16) uint8 {
+	switch netProto := route.NetProto(); netProto {
+	case header.IPv4ProtocolNumber:
+		if ipv4TTL == tcpip.UseDefaultIPv4TTL {
+			return route.DefaultTTL()
+		}
+		return ipv4TTL
+	case header.IPv6ProtocolNumber:
+		if ipv6HopLimit == tcpip.UseDefaultIPv6HopLimit {
+			return route.DefaultTTL()
+		}
+		return uint8(ipv6HopLimit)
+	default:
+		panic(fmt.Sprintf("invalid protocol number = %d", netProto))
+	}
+}
+
 // keepalive is a synchronization wrapper used to appease stateify. See the
 // comment in endpoint, where it is used.
 //
@@ -825,12 +833,13 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 		waiterQueue: waiterQueue,
 		state:       uint32(StateInitial),
 		keepalive: keepalive{
-			// Linux defaults.
-			idle:     2 * time.Hour,
-			interval: 75 * time.Second,
-			count:    9,
+			idle:     DefaultKeepaliveIdle,
+			interval: DefaultKeepaliveInterval,
+			count:    DefaultKeepaliveCount,
 		},
 		uniqueID:      s.UniqueID(),
+		ipv4TTL:       tcpip.UseDefaultIPv4TTL,
+		ipv6HopLimit:  tcpip.UseDefaultIPv6HopLimit,
 		txHash:        s.Rand().Uint32(),
 		windowClamp:   DefaultReceiveBufferSize,
 		maxSynRetries: DefaultSynRetries,
@@ -910,7 +919,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 		// Check if there's anything in the accepted queue.
 		if (mask & waiter.ReadableEvents) != 0 {
 			e.acceptMu.Lock()
-			if e.accepted.endpoints.Len() != 0 {
+			if e.acceptQueue.endpoints.Len() != 0 {
 				result |= waiter.ReadableEvents
 			}
 			e.acceptMu.Unlock()
@@ -1093,20 +1102,20 @@ func (e *endpoint) closeNoShutdownLocked() {
 // handshake but not yet been delivered to the application.
 func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 	e.acceptMu.Lock()
-	acceptedCopy := e.accepted
-	e.accepted = accepted{}
-	e.acceptMu.Unlock()
-
-	if acceptedCopy == (accepted{}) {
-		return
+	// Close any endpoints in SYN-RCVD state.
+	for n := range e.acceptQueue.pendingEndpoints {
+		n.notifyProtocolGoroutine(notifyClose)
 	}
+	e.acceptQueue.pendingEndpoints = nil
+	// Reset all connections that are waiting to be accepted.
+	for n := e.acceptQueue.endpoints.Front(); n != nil; n = n.Next() {
+		n.Value.(*endpoint).notifyProtocolGoroutine(notifyReset)
+	}
+	e.acceptQueue.endpoints.Init()
+	e.acceptMu.Unlock()
 
 	e.acceptCond.Broadcast()
 
-	// Reset all connections that are waiting to be accepted.
-	for n := acceptedCopy.endpoints.Front(); n != nil; n = n.Next() {
-		n.Value.(*endpoint).notifyProtocolGoroutine(notifyReset)
-	}
 	// Wait for reset of all endpoints that are still waiting to be delivered to
 	// the now closed accepted.
 	e.pendingAccepted.Wait()
@@ -1788,9 +1797,14 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 			return &tcpip.ErrNotSupported{}
 		}
 
-	case tcpip.TTLOption:
+	case tcpip.IPv4TTLOption:
 		e.LockUser()
-		e.ttl = uint8(v)
+		e.ipv4TTL = uint8(v)
+		e.UnlockUser()
+
+	case tcpip.IPv6HopLimitOption:
+		e.LockUser()
+		e.ipv6HopLimit = int16(v)
 		e.UnlockUser()
 
 	case tcpip.TCPSynCountOption:
@@ -1973,9 +1987,15 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	case tcpip.ReceiveQueueSizeOption:
 		return e.readyReceiveSize()
 
-	case tcpip.TTLOption:
+	case tcpip.IPv4TTLOption:
 		e.LockUser()
-		v := int(e.ttl)
+		v := int(e.ipv4TTL)
+		e.UnlockUser()
+		return v, nil
+
+	case tcpip.IPv6HopLimitOption:
+		e.LockUser()
+		v := int(e.ipv6HopLimit)
 		e.UnlockUser()
 		return v, nil
 
@@ -2498,21 +2518,22 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 	if e.EndpointState() == StateListen && !e.closed {
 		e.acceptMu.Lock()
 		defer e.acceptMu.Unlock()
-		if e.accepted == (accepted{}) {
-			// listen is called after shutdown.
-			e.accepted.cap = backlog
-			e.shutdownFlags = 0
-			e.rcvQueueInfo.rcvQueueMu.Lock()
-			e.rcvQueueInfo.RcvClosed = false
-			e.rcvQueueInfo.rcvQueueMu.Unlock()
-		} else {
-			// Adjust the size of the backlog iff we can fit
-			// existing pending connections into the new one.
-			if e.accepted.endpoints.Len() > backlog {
-				return &tcpip.ErrInvalidEndpointState{}
-			}
-			e.accepted.cap = backlog
+
+		// Adjust the size of the backlog iff we can fit
+		// existing pending connections into the new one.
+		if e.acceptQueue.endpoints.Len() > backlog {
+			return &tcpip.ErrInvalidEndpointState{}
 		}
+		e.acceptQueue.capacity = backlog
+
+		if e.acceptQueue.pendingEndpoints == nil {
+			e.acceptQueue.pendingEndpoints = make(map[*endpoint]struct{})
+		}
+
+		e.shutdownFlags = 0
+		e.rcvQueueInfo.rcvQueueMu.Lock()
+		e.rcvQueueInfo.RcvClosed = false
+		e.rcvQueueInfo.rcvQueueMu.Unlock()
 
 		// Notify any blocked goroutines that they can attempt to
 		// deliver endpoints again.
@@ -2548,8 +2569,11 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 	// may be pre-populated with some previously accepted (but not Accepted)
 	// endpoints.
 	e.acceptMu.Lock()
-	if e.accepted == (accepted{}) {
-		e.accepted.cap = backlog
+	if e.acceptQueue.pendingEndpoints == nil {
+		e.acceptQueue.pendingEndpoints = make(map[*endpoint]struct{})
+	}
+	if e.acceptQueue.capacity == 0 {
+		e.acceptQueue.capacity = backlog
 	}
 	e.acceptMu.Unlock()
 
@@ -2589,8 +2613,8 @@ func (e *endpoint) Accept(peerAddr *tcpip.FullAddress) (tcpip.Endpoint, *waiter.
 	// Get the new accepted endpoint.
 	var n *endpoint
 	e.acceptMu.Lock()
-	if element := e.accepted.endpoints.Front(); element != nil {
-		n = e.accepted.endpoints.Remove(element).(*endpoint)
+	if element := e.acceptQueue.endpoints.Front(); element != nil {
+		n = e.acceptQueue.endpoints.Remove(element).(*endpoint)
 	}
 	e.acceptMu.Unlock()
 	if n == nil {
@@ -3007,6 +3031,8 @@ func (e *endpoint) completeStateLocked() stack.TCPEndpointState {
 	}
 
 	s.Sender.RACKState = e.snd.rc.TCPRACKState
+	s.Sender.RetransmitTS = e.snd.retransmitTS
+	s.Sender.SpuriousRecovery = e.snd.spuriousRecovery
 	return s
 }
 
@@ -3060,8 +3086,8 @@ func (e *endpoint) Stats() tcpip.EndpointStats {
 
 // Wait implements stack.TransportEndpoint.Wait.
 func (e *endpoint) Wait() {
-	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	e.waiterQueue.EventRegister(&waitEntry, waiter.EventHUp)
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.EventHUp)
+	e.waiterQueue.EventRegister(&waitEntry)
 	defer e.waiterQueue.EventUnregister(&waitEntry)
 	for {
 		e.LockUser()

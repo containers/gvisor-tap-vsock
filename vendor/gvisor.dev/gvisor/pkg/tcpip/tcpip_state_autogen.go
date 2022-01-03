@@ -1152,8 +1152,10 @@ func (c *ControlMessages) beforeSave() {}
 // +checklocksignore
 func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
+	var TimestampValue int64
+	TimestampValue = c.saveTimestamp()
+	stateSinkObject.SaveValue(1, TimestampValue)
 	stateSinkObject.Save(0, &c.HasTimestamp)
-	stateSinkObject.Save(1, &c.Timestamp)
 	stateSinkObject.Save(2, &c.HasInq)
 	stateSinkObject.Save(3, &c.Inq)
 	stateSinkObject.Save(4, &c.HasTOS)
@@ -1174,7 +1176,6 @@ func (c *ControlMessages) afterLoad() {}
 // +checklocksignore
 func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.HasTimestamp)
-	stateSourceObject.Load(1, &c.Timestamp)
 	stateSourceObject.Load(2, &c.HasInq)
 	stateSourceObject.Load(3, &c.Inq)
 	stateSourceObject.Load(4, &c.HasTOS)
@@ -1188,6 +1189,7 @@ func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &c.HasOriginalDstAddress)
 	stateSourceObject.Load(13, &c.OriginalDstAddress)
 	stateSourceObject.Load(14, &c.SockErr)
+	stateSourceObject.LoadValue(1, new(int64), func(y interface{}) { c.loadTimestamp(y.(int64)) })
 }
 
 func (l *LinkPacketInfo) StateTypeName() string {
@@ -1216,6 +1218,31 @@ func (l *LinkPacketInfo) afterLoad() {}
 func (l *LinkPacketInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Protocol)
 	stateSourceObject.Load(1, &l.PktType)
+}
+
+func (f *ICMPv6Filter) StateTypeName() string {
+	return "pkg/tcpip.ICMPv6Filter"
+}
+
+func (f *ICMPv6Filter) StateFields() []string {
+	return []string{
+		"DenyType",
+	}
+}
+
+func (f *ICMPv6Filter) beforeSave() {}
+
+// +checklocksignore
+func (f *ICMPv6Filter) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.DenyType)
+}
+
+func (f *ICMPv6Filter) afterLoad() {}
+
+// +checklocksignore
+func (f *ICMPv6Filter) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.DenyType)
 }
 
 func (l *LingerOption) StateTypeName() string {
@@ -1544,6 +1571,7 @@ func init() {
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))
+	state.Register((*ICMPv6Filter)(nil))
 	state.Register((*LingerOption)(nil))
 	state.Register((*IPPacketInfo)(nil))
 	state.Register((*IPv6PacketInfo)(nil))
