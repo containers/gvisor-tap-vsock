@@ -38,7 +38,7 @@ github.com/linuxkit/virtsock/pkg/hvsock
 # github.com/mdlayher/vsock v0.0.0-20210303205602-10d591861736
 ## explicit
 github.com/mdlayher/vsock
-# github.com/miekg/dns v1.1.43
+# github.com/miekg/dns v1.1.45
 ## explicit
 github.com/miekg/dns
 # github.com/nxadm/tail v1.4.8
@@ -123,6 +123,8 @@ golang.org/x/crypto/poly1305
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 golang.org/x/crypto/ssh/knownhosts
+# golang.org/x/mod v0.4.2
+golang.org/x/mod/semver
 # golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d
 ## explicit
 golang.org/x/net/bpf
@@ -139,6 +141,7 @@ golang.org/x/sync/errgroup
 # golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e
 ## explicit
 golang.org/x/sys/cpu
+golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
@@ -165,6 +168,21 @@ golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 ## explicit
 golang.org/x/time/rate
+# golang.org/x/tools v0.1.6-0.20210726203631-07bc1bf47fb2
+golang.org/x/tools/go/gcexportdata
+golang.org/x/tools/go/internal/gcimporter
+golang.org/x/tools/go/internal/packagesdriver
+golang.org/x/tools/go/packages
+golang.org/x/tools/internal/event
+golang.org/x/tools/internal/event/core
+golang.org/x/tools/internal/event/keys
+golang.org/x/tools/internal/event/label
+golang.org/x/tools/internal/gocommand
+golang.org/x/tools/internal/packagesinternal
+golang.org/x/tools/internal/typesinternal
+# golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
+golang.org/x/xerrors
+golang.org/x/xerrors/internal
 # gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7
 gopkg.in/tomb.v1
 # gopkg.in/yaml.v2 v2.4.0
