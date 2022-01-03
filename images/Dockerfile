@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi8/go-toolset:1.15.14 AS build
+FROM registry.access.redhat.com/ubi8/go-toolset:1.16.12 AS build
 WORKDIR $APP_ROOT/src
 COPY . .
 RUN make
