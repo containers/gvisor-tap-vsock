@@ -423,9 +423,9 @@ type ControlMessages struct {
 	// HasTimestamp indicates whether Timestamp is valid/set.
 	HasTimestamp bool
 
-	// Timestamp is the time (in ns) that the last packet used to create
-	// the read data was received.
-	Timestamp int64
+	// Timestamp is the time that the last packet used to create the read data
+	// was received.
+	Timestamp time.Time `state:".(int64)"`
 
 	// HasInq indicates whether Inq is valid/set.
 	HasInq bool
@@ -471,10 +471,10 @@ type ControlMessages struct {
 
 // PacketOwner is used to get UID and GID of the packet.
 type PacketOwner interface {
-	// UID returns KUID of the packet.
+	// KUID returns KUID of the packet.
 	KUID() uint32
 
-	// GID returns KGID of the packet.
+	// KGID returns KGID of the packet.
 	KGID() uint32
 }
 
@@ -731,12 +731,19 @@ const (
 	// number of unread bytes in the output buffer should be returned.
 	SendQueueSizeOption
 
-	// TTLOption is used by SetSockOptInt/GetSockOptInt to control the
-	// default TTL/hop limit value for unicast messages. The default is
-	// protocol specific.
+	// IPv4TTLOption is used by SetSockOptInt/GetSockOptInt to control the default
+	// TTL value for unicast messages.
 	//
-	// A zero value indicates the default.
-	TTLOption
+	// The default is configured by DefaultTTLOption. A UseDefaultIPv4TTL value
+	// configures the endpoint to use the default.
+	IPv4TTLOption
+
+	// IPv6HopLimitOption is used by SetSockOptInt/GetSockOptInt to control the
+	// default hop limit value for unicast messages.
+	//
+	// The default is configured by DefaultTTLOption. A UseDefaultIPv6HopLimit
+	// value configures the endpoint to use the default.
+	IPv6HopLimitOption
 
 	// TCPSynCountOption is used by SetSockOptInt/GetSockOptInt to specify
 	// the number of SYN retransmits that TCP should send before aborting
@@ -750,6 +757,22 @@ const (
 	//
 	// NOTE: This option is currently only stubed out and is a no-op
 	TCPWindowClampOption
+
+	// IPv6Checksum is used to request the stack to populate and validate the IPv6
+	// checksum for transport level headers.
+	IPv6Checksum
+)
+
+const (
+	// UseDefaultIPv4TTL is the IPv4TTLOption value that configures an endpoint to
+	// use the default ttl currently configured by the IPv4 protocol (see
+	// DefaultTTLOption).
+	UseDefaultIPv4TTL = 0
+
+	// UseDefaultIPv6HopLimit is the IPv6HopLimitOption value that configures an
+	// endpoint to use the default hop limit currently configured by the IPv6
+	// protocol (see DefaultTTLOption).
+	UseDefaultIPv6HopLimit = -1
 )
 
 const (
@@ -896,6 +919,29 @@ type GettableSocketOption interface {
 type SettableSocketOption interface {
 	isSettableSocketOption()
 }
+
+// ICMPv6Filter specifes a filter for ICMPv6 types.
+//
+// +stateify savable
+type ICMPv6Filter struct {
+	// DenyType indicates if an ICMP type should be blocked.
+	//
+	// The ICMPv6 type field is 8 bits so there are up to 256 different ICMPv6
+	// types.
+	DenyType [8]uint32
+}
+
+// ShouldDeny returns true iff the ICMPv6 Type should be denied.
+func (f *ICMPv6Filter) ShouldDeny(icmpType uint8) bool {
+	const bitsInUint32 = 32
+	i := icmpType / bitsInUint32
+	b := icmpType % bitsInUint32
+	return f.DenyType[i]&(1<<b) != 0
+}
+
+func (*ICMPv6Filter) isGettableSocketOption() {}
+
+func (*ICMPv6Filter) isSettableSocketOption() {}
 
 // EndpointState represents the state of an endpoint.
 type EndpointState uint8
@@ -1245,11 +1291,11 @@ type Route struct {
 // String implements the fmt.Stringer interface.
 func (r Route) String() string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "%s", r.Destination)
+	_, _ = fmt.Fprintf(&out, "%s", r.Destination)
 	if len(r.Gateway) > 0 {
-		fmt.Fprintf(&out, " via %s", r.Gateway)
+		_, _ = fmt.Fprintf(&out, " via %s", r.Gateway)
 	}
-	fmt.Fprintf(&out, " nic %d", r.NIC)
+	_, _ = fmt.Fprintf(&out, " nic %d", r.NIC)
 	return out.String()
 }
 
@@ -1286,7 +1332,7 @@ func (s *StatCounter) Decrement() {
 }
 
 // Value returns the current value of the counter.
-func (s *StatCounter) Value(name ...string) uint64 {
+func (s *StatCounter) Value(...string) uint64 {
 	return s.count.Load()
 }
 
@@ -1301,7 +1347,8 @@ func (s *StatCounter) String() string {
 
 // A MultiCounterStat keeps track of two counters at once.
 type MultiCounterStat struct {
-	a, b *StatCounter
+	a *StatCounter
+	b *StatCounter
 }
 
 // Init sets both internal counters to point to a and b.
@@ -1865,6 +1912,13 @@ type TCPStats struct {
 	// SegmentsAckedWithDSACK is the number of segments acknowledged with
 	// DSACK.
 	SegmentsAckedWithDSACK *StatCounter
+
+	// SpuriousRecovery is the number of times the connection entered loss
+	// recovery spuriously.
+	SpuriousRecovery *StatCounter
+
+	// SpuriousRTORecovery is the number of spurious RTOs.
+	SpuriousRTORecovery *StatCounter
 }
 
 // UDPStats collects UDP-specific stats.
@@ -1919,17 +1973,89 @@ type NICPacketStats struct {
 	// LINT.ThenChange(stack/nic_stats.go:multiCounterNICPacketStats)
 }
 
+// IntegralStatCounterMap holds a map associating integral keys with
+// StatCounters.
+type IntegralStatCounterMap struct {
+	mu sync.RWMutex
+	// +checklocks:mu
+	counterMap map[uint64]*StatCounter
+}
+
+// Keys returns all keys present in the map.
+func (m *IntegralStatCounterMap) Keys() []uint64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var keys []uint64
+	for k := range m.counterMap {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Get returns the counter mapped by the provided key.
+func (m *IntegralStatCounterMap) Get(key uint64) (*StatCounter, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	counter, ok := m.counterMap[key]
+	return counter, ok
+}
+
+// Init initializes the map.
+func (m *IntegralStatCounterMap) Init() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.counterMap = make(map[uint64]*StatCounter)
+}
+
+// Increment increments the counter associated with the provided key.
+func (m *IntegralStatCounterMap) Increment(key uint64) {
+	m.mu.RLock()
+	counter, ok := m.counterMap[key]
+	m.mu.RUnlock()
+
+	if !ok {
+		m.mu.Lock()
+		counter, ok = m.counterMap[key]
+		if !ok {
+			counter = new(StatCounter)
+			m.counterMap[key] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Increment()
+}
+
+// A MultiIntegralStatCounterMap keeps track of two integral counter maps at
+// once.
+type MultiIntegralStatCounterMap struct {
+	a *IntegralStatCounterMap
+	b *IntegralStatCounterMap
+}
+
+// Init sets the internal integral counter maps to point to a and b.
+func (m *MultiIntegralStatCounterMap) Init(a, b *IntegralStatCounterMap) {
+	m.a = a
+	m.b = b
+}
+
+// Increment increments the counter in each map corresponding to the
+// provided key.
+func (m *MultiIntegralStatCounterMap) Increment(key uint64) {
+	m.a.Increment(key)
+	m.b.Increment(key)
+}
+
 // NICStats holds NIC statistics.
 type NICStats struct {
 	// LINT.IfChange(NICStats)
 
-	// UnknownL3ProtocolRcvdPackets is the number of packets received that were
-	// for an unknown or unsupported network protocol.
-	UnknownL3ProtocolRcvdPackets *StatCounter
+	// UnknownL3ProtocolRcvdPacketCounts records the number of packets recieved
+	// for each unknown or unsupported netowrk protocol number.
+	UnknownL3ProtocolRcvdPacketCounts *IntegralStatCounterMap
 
-	// UnknownL4ProtocolRcvdPackets is the number of packets received that were
-	// for an unknown or unsupported transport protocol.
-	UnknownL4ProtocolRcvdPackets *StatCounter
+	// UnknownL4ProtocolRcvdPacketCounts records the number of packets recieved
+	// for each unknown or unsupported transport protocol number.
+	UnknownL4ProtocolRcvdPacketCounts *IntegralStatCounterMap
 
 	// MalformedL4RcvdPackets is the number of packets received by a NIC that
 	// could not be delivered to a transport endpoint because the L4 header could
@@ -2098,6 +2224,11 @@ func InitStatCounters(v reflect.Value) {
 		if s, ok := v.Addr().Interface().(**StatCounter); ok {
 			if *s == nil {
 				*s = new(StatCounter)
+			}
+		} else if s, ok := v.Addr().Interface().(**IntegralStatCounterMap); ok {
+			if *s == nil {
+				*s = new(IntegralStatCounterMap)
+				(*s).Init()
 			}
 		} else {
 			InitStatCounters(v)

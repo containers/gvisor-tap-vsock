@@ -37,8 +37,8 @@ type udpPacket struct {
 	senderAddress      tcpip.FullAddress
 	destinationAddress tcpip.FullAddress
 	packetInfo         tcpip.IPPacketInfo
-	data               buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	receivedAt         time.Time             `state:".(int64)"`
+	pkt                *stack.PacketBuffer
+	receivedAt         time.Time `state:".(int64)"`
 	// tos stores either the receiveTOS or receiveTClass value.
 	tos uint8
 }
@@ -191,6 +191,7 @@ func (e *endpoint) Close() {
 	for !e.rcvList.Empty() {
 		p := e.rcvList.Front()
 		e.rcvList.Remove(p)
+		p.pkt.DecRef()
 	}
 	e.rcvMu.Unlock()
 
@@ -226,14 +227,15 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	p := e.rcvList.Front()
 	if !opts.Peek {
 		e.rcvList.Remove(p)
-		e.rcvBufSize -= p.data.Size()
+		defer p.pkt.DecRef()
+		e.rcvBufSize -= p.pkt.Data().Size()
 	}
 	e.rcvMu.Unlock()
 
 	// Control Messages
 	cm := tcpip.ControlMessages{
 		HasTimestamp: true,
-		Timestamp:    p.receivedAt.UnixNano(),
+		Timestamp:    p.receivedAt,
 	}
 
 	switch p.netProto {
@@ -272,14 +274,14 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 
 	// Read Result
 	res := tcpip.ReadResult{
-		Total:           p.data.Size(),
+		Total:           p.pkt.Data().Size(),
 		ControlMessages: cm,
 	}
 	if opts.NeedRemoteAddr {
 		res.RemoteAddr = p.senderAddress
 	}
 
-	n, err := p.data.ReadTo(dst, opts.Peek)
+	n, err := p.pkt.Data().ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
 		return res, &tcpip.ErrBadBuffer{}
 	}
@@ -292,7 +294,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 // reacquire the mutex in exclusive mode.
 //
 // Returns true for retry if preparation should be retried.
-// +checklocks:e.mu
+// +checklocksread:e.mu
 func (e *endpoint) prepareForWriteInner(to *tcpip.FullAddress) (retry bool, err tcpip.Error) {
 	switch e.net.State() {
 	case transport.DatagramEndpointStateInitial:
@@ -440,6 +442,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		ReserveHeaderBytes: header.UDPMinimumSize + int(pktInfo.MaxHeaderLength),
 		Data:               udpInfo.data.ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 
 	// Initialize the UDP header.
 	udp := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
@@ -512,7 +515,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		e.rcvMu.Lock()
 		if !e.rcvList.Empty() {
 			p := e.rcvList.Front()
-			v = p.data.Size()
+			v = p.pkt.Data().Size()
 		}
 		e.rcvMu.Unlock()
 		return v, nil
@@ -916,10 +919,11 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 			Addr: id.LocalAddress,
 			Port: hdr.DestinationPort(),
 		},
-		data: pkt.Data().ExtractVV(),
+		pkt: pkt,
 	}
+	pkt.IncRef()
 	e.rcvList.PushBack(packet)
-	e.rcvBufSize += packet.data.Size()
+	e.rcvBufSize += pkt.Data().Size()
 
 	// Save any useful information from the network header to the packet.
 	switch pkt.NetworkProtocolNumber {

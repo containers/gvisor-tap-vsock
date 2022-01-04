@@ -139,7 +139,7 @@ func (b ICMPv4) Checksum() uint16 {
 
 // SetChecksum sets the ICMP checksum field.
 func (b ICMPv4) SetChecksum(checksum uint16) {
-	binary.BigEndian.PutUint16(b[icmpv4ChecksumOffset:], checksum)
+	PutChecksum(b[icmpv4ChecksumOffset:], checksum)
 }
 
 // SourcePort implements Transport.SourcePort.
@@ -183,6 +183,13 @@ func (b ICMPv4) Ident() uint16 {
 // SetIdent sets the Ident field from an ICMPv4 message.
 func (b ICMPv4) SetIdent(ident uint16) {
 	binary.BigEndian.PutUint16(b[icmpv4IdentOffset:], ident)
+}
+
+// SetIdentWithChecksumUpdate sets the Ident field and updates the checksum.
+func (b ICMPv4) SetIdentWithChecksumUpdate(new uint16) {
+	old := b.Ident()
+	b.SetIdent(new)
+	b.SetChecksum(^checksumUpdate2ByteAlignedUint16(^b.Checksum(), old, new))
 }
 
 // Sequence retrieves the Sequence field from an ICMPv4 message.

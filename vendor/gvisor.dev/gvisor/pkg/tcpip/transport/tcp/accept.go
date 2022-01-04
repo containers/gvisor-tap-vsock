@@ -15,12 +15,12 @@
 package tcp
 
 import (
+	"container/list"
 	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
 	"hash"
 	"io"
-	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
@@ -100,18 +100,6 @@ type listenContext struct {
 	// netProto indicates the network protocol(IPv4/v6) for the listening
 	// endpoint.
 	netProto tcpip.NetworkProtocolNumber
-
-	// pendingMu protects pendingEndpoints. This should only be accessed
-	// by the listening endpoint's worker goroutine.
-	//
-	// Lock Ordering: listenEP.workerMu -> pendingMu
-	pendingMu sync.Mutex
-	// pending is used to wait for all pendingEndpoints to finish when
-	// a socket is closed.
-	pending sync.WaitGroup
-	// pendingEndpoints is a map of all endpoints for which a handshake is
-	// in progress.
-	pendingEndpoints map[stack.TransportEndpointID]*endpoint
 }
 
 // timeStamp returns an 8-bit timestamp with a granularity of 64 seconds.
@@ -122,14 +110,13 @@ func timeStamp(clock tcpip.Clock) uint32 {
 // newListenContext creates a new listen context.
 func newListenContext(stk *stack.Stack, protocol *protocol, listenEP *endpoint, rcvWnd seqnum.Size, v6Only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
 	l := &listenContext{
-		stack:            stk,
-		protocol:         protocol,
-		rcvWnd:           rcvWnd,
-		hasher:           sha1.New(),
-		v6Only:           v6Only,
-		netProto:         netProto,
-		listenEP:         listenEP,
-		pendingEndpoints: make(map[stack.TransportEndpointID]*endpoint),
+		stack:    stk,
+		protocol: protocol,
+		rcvWnd:   rcvWnd,
+		hasher:   sha1.New(),
+		v6Only:   v6Only,
+		netProto: netProto,
+		listenEP: listenEP,
 	}
 
 	for i := range l.nonce {
@@ -265,7 +252,6 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 
 			return nil, &tcpip.ErrConnectionAborted{}
 		}
-		l.addPendingEndpoint(ep)
 
 		// Propagate any inheritable options from the listening endpoint
 		// to the newly created endpoint.
@@ -274,8 +260,6 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 		if !ep.reserveTupleLocked() {
 			ep.mu.Unlock()
 			ep.Close()
-
-			l.removePendingEndpoint(ep)
 
 			return nil, &tcpip.ErrConnectionAborted{}
 		}
@@ -294,10 +278,6 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 	); err != nil {
 		ep.mu.Unlock()
 		ep.Close()
-
-		if l.listenEP != nil {
-			l.removePendingEndpoint(ep)
-		}
 
 		ep.drainClosingSegmentQueue()
 
@@ -336,38 +316,12 @@ func (l *listenContext) performHandshake(s *segment, opts header.TCPSynOptions, 
 	return ep, nil
 }
 
-func (l *listenContext) addPendingEndpoint(n *endpoint) {
-	l.pendingMu.Lock()
-	l.pendingEndpoints[n.TransportEndpointInfo.ID] = n
-	l.pending.Add(1)
-	l.pendingMu.Unlock()
-}
-
-func (l *listenContext) removePendingEndpoint(n *endpoint) {
-	l.pendingMu.Lock()
-	delete(l.pendingEndpoints, n.TransportEndpointInfo.ID)
-	l.pending.Done()
-	l.pendingMu.Unlock()
-}
-
-func (l *listenContext) closeAllPendingEndpoints() {
-	l.pendingMu.Lock()
-	for _, n := range l.pendingEndpoints {
-		n.notifyProtocolGoroutine(notifyClose)
-	}
-	l.pendingMu.Unlock()
-	l.pending.Wait()
-}
-
 // +checklocks:h.ep.mu
 func (l *listenContext) cleanupFailedHandshake(h *handshake) {
 	e := h.ep
 	e.mu.Unlock()
 	e.Close()
 	e.notifyAborted()
-	if l.listenEP != nil {
-		l.removePendingEndpoint(e)
-	}
 	e.drainClosingSegmentQueue()
 	e.h = nil
 }
@@ -378,9 +332,6 @@ func (l *listenContext) cleanupFailedHandshake(h *handshake) {
 // +checklocks:h.ep.mu
 func (l *listenContext) cleanupCompletedHandshake(h *handshake) {
 	e := h.ep
-	if l.listenEP != nil {
-		l.removePendingEndpoint(e)
-	}
 	e.isConnectNotified = true
 
 	// Update the receive window scaling. We can't do it before the
@@ -444,101 +395,30 @@ func (e *endpoint) notifyAborted() {
 	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 }
 
-// handleSynSegment is called in its own goroutine once the listening endpoint
-// receives a SYN segment. It is responsible for completing the handshake and
-// queueing the new endpoint for acceptance.
-//
-// A limited number of these goroutines are allowed before TCP starts using SYN
-// cookies to accept connections.
-//
-// +checklocks:e.mu
-func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts header.TCPSynOptions) tcpip.Error {
-	defer s.decRef()
-
-	h, err := ctx.startHandshake(s, opts, &waiter.Queue{}, e.owner)
-	if err != nil {
-		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
-		e.stats.FailedConnectionAttempts.Increment()
-		atomic.AddInt32(&e.synRcvdCount, -1)
-		return err
-	}
-
-	go func() {
-		// Note that startHandshake returns a locked endpoint. The
-		// force call here just makes it so.
-		if err := h.complete(); err != nil { // +checklocksforce
-			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
-			e.stats.FailedConnectionAttempts.Increment()
-			ctx.cleanupFailedHandshake(h)
-			atomic.AddInt32(&e.synRcvdCount, -1)
-			return
-		}
-		ctx.cleanupCompletedHandshake(h)
-		h.ep.startAcceptedLoop()
-		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
-
-		// Deliver the endpoint to the accept queue.
-		e.mu.Lock()
-		e.pendingAccepted.Add(1)
-		e.mu.Unlock()
-		defer e.pendingAccepted.Done()
-
-		// Drop the lock before notifying to avoid deadlock in user-specified
-		// callbacks.
-		delivered := func() bool {
-			e.acceptMu.Lock()
-			defer e.acceptMu.Unlock()
-			for {
-				if e.accepted == (accepted{}) {
-					// If the listener has transitioned out of the listen state (accepted
-					// is the zero value), the new endpoint is reset instead.
-					return false
-				}
-				if e.accepted.acceptQueueIsFullLocked() {
-					e.acceptCond.Wait()
-					continue
-				}
-
-				e.accepted.endpoints.PushBack(h.ep)
-				atomic.AddInt32(&e.synRcvdCount, -1)
-				return true
-			}
-		}()
-
-		if delivered {
-			e.waiterQueue.Notify(waiter.ReadableEvents)
-		} else {
-			h.ep.notifyProtocolGoroutine(notifyReset)
-		}
-	}()
-
-	return nil
-}
-
-func (e *endpoint) synRcvdBacklogFull() bool {
-	e.acceptMu.Lock()
-	acceptedCap := e.accepted.cap
-	e.acceptMu.Unlock()
-	// The capacity of the accepted queue would always be one greater than the
-	// listen backlog. But, the SYNRCVD connections count is always checked
-	// against the listen backlog value for Linux parity reason.
-	// https://github.com/torvalds/linux/blob/7acac4b3196/include/net/inet_connection_sock.h#L280
-	//
-	// We maintain an equality check here as the synRcvdCount is incremented
-	// and compared only from a single listener context and the capacity of
-	// the accepted queue can only increase by a new listen call.
-	return int(atomic.LoadInt32(&e.synRcvdCount)) == acceptedCap-1
-}
-
 func (e *endpoint) acceptQueueIsFull() bool {
 	e.acceptMu.Lock()
-	full := e.accepted.acceptQueueIsFullLocked()
+	full := e.acceptQueue.isFull()
 	e.acceptMu.Unlock()
 	return full
 }
 
-func (a *accepted) acceptQueueIsFullLocked() bool {
-	return a.endpoints.Len() == a.cap
+// +stateify savable
+type acceptQueue struct {
+	// NB: this could be an endpointList, but ilist only permits endpoints to
+	// belong to one list at a time, and endpoints are already stored in the
+	// dispatcher's list.
+	endpoints list.List `state:".([]*endpoint)"`
+
+	// pendingEndpoints is a set of all endpoints for which a handshake is
+	// in progress.
+	pendingEndpoints map[*endpoint]struct{}
+
+	// capacity is the maximum number of endpoints that can be in endpoints.
+	capacity int
+}
+
+func (a *acceptQueue) isFull() bool {
+	return a.endpoints.Len() == a.capacity
 }
 
 // handleListenSegment is called when a listening endpoint receives a segment
@@ -555,7 +435,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		// RFC 793 section 3.4 page 35 (figure 12) outlines that a RST
 		// must be sent in response to a SYN-ACK while in the listen
 		// state to prevent completing a handshake from an old SYN.
-		return replyWithReset(e.stack, s, e.sendTOS, e.ttl)
+		return replyWithReset(e.stack, s, e.sendTOS, e.ipv4TTL, e.ipv6HopLimit)
 	}
 
 	switch {
@@ -571,20 +451,96 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			return nil
 		}
 
-		alwaysUseSynCookies := func() bool {
+		opts := parseSynSegmentOptions(s)
+
+		useSynCookies, err := func() (bool, tcpip.Error) {
 			var alwaysUseSynCookies tcpip.TCPAlwaysUseSynCookies
 			if err := e.stack.TransportProtocolOption(header.TCPProtocolNumber, &alwaysUseSynCookies); err != nil {
 				panic(fmt.Sprintf("TransportProtocolOption(%d, %T) = %s", header.TCPProtocolNumber, alwaysUseSynCookies, err))
 			}
-			return bool(alwaysUseSynCookies)
-		}()
+			if alwaysUseSynCookies {
+				return true, nil
+			}
+			e.acceptMu.Lock()
+			defer e.acceptMu.Unlock()
 
-		opts := parseSynSegmentOptions(s)
-		if !alwaysUseSynCookies && !e.synRcvdBacklogFull() {
-			s.incRef()
-			atomic.AddInt32(&e.synRcvdCount, 1)
-			return e.handleSynSegment(ctx, s, opts)
+			// The capacity of the accepted queue would always be one greater than the
+			// listen backlog. But, the SYNRCVD connections count is always checked
+			// against the listen backlog value for Linux parity reason.
+			// https://github.com/torvalds/linux/blob/7acac4b3196/include/net/inet_connection_sock.h#L280
+			if len(e.acceptQueue.pendingEndpoints) == e.acceptQueue.capacity-1 {
+				return true, nil
+			}
+
+			h, err := ctx.startHandshake(s, opts, &waiter.Queue{}, e.owner)
+			if err != nil {
+				e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+				e.stats.FailedConnectionAttempts.Increment()
+				return false, err
+			}
+
+			e.acceptQueue.pendingEndpoints[h.ep] = struct{}{}
+			e.pendingAccepted.Add(1)
+
+			go func() {
+				defer func() {
+					e.pendingAccepted.Done()
+
+					e.acceptMu.Lock()
+					defer e.acceptMu.Unlock()
+					delete(e.acceptQueue.pendingEndpoints, h.ep)
+				}()
+
+				// Note that startHandshake returns a locked endpoint. The force call
+				// here just makes it so.
+				if err := h.complete(); err != nil { // +checklocksforce
+					e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+					e.stats.FailedConnectionAttempts.Increment()
+					ctx.cleanupFailedHandshake(h)
+					return
+				}
+				ctx.cleanupCompletedHandshake(h)
+				h.ep.startAcceptedLoop()
+				e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
+
+				// Deliver the endpoint to the accept queue.
+				//
+				// Drop the lock before notifying to avoid deadlock in user-specified
+				// callbacks.
+				delivered := func() bool {
+					e.acceptMu.Lock()
+					defer e.acceptMu.Unlock()
+					for {
+						// The listener is transitioning out of the Listen state; bail.
+						if e.acceptQueue.capacity == 0 {
+							return false
+						}
+						if e.acceptQueue.isFull() {
+							e.acceptCond.Wait()
+							continue
+						}
+
+						e.acceptQueue.endpoints.PushBack(h.ep)
+						return true
+					}
+				}()
+
+				if delivered {
+					e.waiterQueue.Notify(waiter.ReadableEvents)
+				} else {
+					h.ep.notifyProtocolGoroutine(notifyReset)
+				}
+			}()
+
+			return false, nil
+		}()
+		if err != nil {
+			return err
 		}
+		if !useSynCookies {
+			return nil
+		}
+
 		route, err := e.stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
 		if err != nil {
 			return err
@@ -613,7 +569,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 		fields := tcpFields{
 			id:     s.id,
-			ttl:    e.ttl,
+			ttl:    calculateTTL(route, e.ipv4TTL, e.ipv6HopLimit),
 			tos:    e.sendTOS,
 			flags:  header.TCPFlagSyn | header.TCPFlagAck,
 			seq:    cookie,
@@ -627,23 +583,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		return nil
 
 	case s.flags.Contains(header.TCPFlagAck):
-		// Keep hold of acceptMu until the new endpoint is in the accept queue (or
-		// if there is an error), to guarantee that we will keep our spot in the
-		// queue even if another handshake from the syn queue completes.
-		e.acceptMu.Lock()
-		if e.accepted.acceptQueueIsFullLocked() {
-			// Silently drop the ack as the application can't accept
-			// the connection at this point. The ack will be
-			// retransmitted by the sender anyway and we can
-			// complete the connection at the time of retransmit if
-			// the backlog has space.
-			e.acceptMu.Unlock()
-			e.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
-			e.stats.ReceiveErrors.ListenOverflowAckDrop.Increment()
-			e.stack.Stats().DroppedPackets.Increment()
-			return nil
-		}
-
 		iss := s.ackNumber - 1
 		irs := s.sequenceNumber - 1
 
@@ -659,7 +598,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		// Validate the cookie.
 		data, ok := ctx.isCookieValid(s.id, iss, irs)
 		if !ok || int(data) >= len(mssTable) {
-			e.acceptMu.Unlock()
 			e.stack.Stats().TCP.ListenOverflowInvalidSynCookieRcvd.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 
@@ -678,8 +616,26 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			// The only time we should reach here when a connection
 			// was opened and closed really quickly and a delayed
 			// ACK was received from the sender.
-			return replyWithReset(e.stack, s, e.sendTOS, e.ttl)
+			return replyWithReset(e.stack, s, e.sendTOS, e.ipv4TTL, e.ipv6HopLimit)
 		}
+
+		// Keep hold of acceptMu until the new endpoint is in the accept queue (or
+		// if there is an error), to guarantee that we will keep our spot in the
+		// queue even if another handshake from the syn queue completes.
+		e.acceptMu.Lock()
+		if e.acceptQueue.isFull() {
+			// Silently drop the ack as the application can't accept
+			// the connection at this point. The ack will be
+			// retransmitted by the sender anyway and we can
+			// complete the connection at the time of retransmit if
+			// the backlog has space.
+			e.acceptMu.Unlock()
+			e.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
+			e.stats.ReceiveErrors.ListenOverflowAckDrop.Increment()
+			e.stack.Stats().DroppedPackets.Increment()
+			return nil
+		}
+
 		e.stack.Stats().TCP.ListenOverflowSynCookieRcvd.Increment()
 		// Create newly accepted endpoint and deliver it.
 		rcvdSynOptions := header.TCPSynOptions{
@@ -769,7 +725,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
 		// Deliver the endpoint to the accept queue.
-		e.accepted.endpoints.PushBack(n)
+		e.acceptQueue.endpoints.PushBack(n)
 		e.acceptMu.Unlock()
 
 		e.waiterQueue.Notify(waiter.ReadableEvents)
@@ -789,13 +745,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 	ctx := newListenContext(e.stack, e.protocol, e, rcvWnd, v6Only, e.NetProto)
 
 	defer func() {
-		// Mark endpoint as closed. This will prevent goroutines running
-		// handleSynSegment() from attempting to queue new connections
-		// to the endpoint.
 		e.setEndpointState(StateClose)
-
-		// Close any endpoints in SYN-RCVD state.
-		ctx.closeAllPendingEndpoints()
 
 		// Do cleanup if needed.
 		e.completeWorkerLocked()
@@ -812,14 +762,15 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 	}()
 
 	var s sleep.Sleeper
-	s.AddWaker(&e.notificationWaker, wakerForNotification)
-	s.AddWaker(&e.newSegmentWaker, wakerForNewSegment)
+	s.AddWaker(&e.notificationWaker)
+	s.AddWaker(&e.newSegmentWaker)
+	defer s.Done()
 	for {
 		e.mu.Unlock()
-		index, _ := s.Fetch(true)
+		w := s.Fetch(true)
 		e.mu.Lock()
-		switch index {
-		case wakerForNotification:
+		switch w {
+		case &e.notificationWaker:
 			n := e.fetchNotifications()
 			if n&notifyClose != 0 {
 				return
@@ -838,7 +789,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 				e.mu.Lock()
 			}
 
-		case wakerForNewSegment:
+		case &e.newSegmentWaker:
 			// Process at most maxSegmentsPerWake segments.
 			mayRequeue := true
 			for i := 0; i < maxSegmentsPerWake; i++ {

@@ -17,6 +17,7 @@ func (p *rawPacket) StateFields() []string {
 		"data",
 		"receivedAt",
 		"senderAddr",
+		"packetInfo",
 	}
 }
 
@@ -33,6 +34,7 @@ func (p *rawPacket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(2, receivedAtValue)
 	stateSinkObject.Save(0, &p.rawPacketEntry)
 	stateSinkObject.Save(3, &p.senderAddr)
+	stateSinkObject.Save(4, &p.packetInfo)
 }
 
 func (p *rawPacket) afterLoad() {}
@@ -41,6 +43,7 @@ func (p *rawPacket) afterLoad() {}
 func (p *rawPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.rawPacketEntry)
 	stateSourceObject.Load(3, &p.senderAddr)
+	stateSourceObject.Load(4, &p.packetInfo)
 	stateSourceObject.LoadValue(1, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
 	stateSourceObject.LoadValue(2, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
 }
@@ -61,7 +64,9 @@ func (e *endpoint) StateFields() []string {
 		"rcvList",
 		"rcvBufSize",
 		"rcvClosed",
-		"frozen",
+		"rcvDisabled",
+		"ipv6ChecksumOffset",
+		"icmpv6Filter",
 	}
 }
 
@@ -78,7 +83,9 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &e.rcvList)
 	stateSinkObject.Save(8, &e.rcvBufSize)
 	stateSinkObject.Save(9, &e.rcvClosed)
-	stateSinkObject.Save(10, &e.frozen)
+	stateSinkObject.Save(10, &e.rcvDisabled)
+	stateSinkObject.Save(11, &e.ipv6ChecksumOffset)
+	stateSinkObject.Save(12, &e.icmpv6Filter)
 }
 
 // +checklocksignore
@@ -93,7 +100,9 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &e.rcvList)
 	stateSourceObject.Load(8, &e.rcvBufSize)
 	stateSourceObject.Load(9, &e.rcvClosed)
-	stateSourceObject.Load(10, &e.frozen)
+	stateSourceObject.Load(10, &e.rcvDisabled)
+	stateSourceObject.Load(11, &e.ipv6ChecksumOffset)
+	stateSourceObject.Load(12, &e.icmpv6Filter)
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 

@@ -19,6 +19,7 @@ import (
 	"io"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -180,7 +181,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		Total: p.data.Size(),
 		ControlMessages: tcpip.ControlMessages{
 			HasTimestamp: true,
-			Timestamp:    p.receivedAt.UnixNano(),
+			Timestamp:    p.receivedAt,
 		},
 	}
 	if opts.NeedRemoteAddr {
@@ -200,7 +201,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 // reacquire the mutex in exclusive mode.
 //
 // Returns true for retry if preparation should be retried.
-// +checklocks:e.mu
+// +checklocksread:e.mu
 func (e *endpoint) prepareForWriteInner(to *tcpip.FullAddress) (retry bool, err tcpip.Error) {
 	switch e.net.State() {
 	case transport.DatagramEndpointStateInitial:
@@ -348,12 +349,14 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 
 func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.View, maxHeaderLength uint16) tcpip.Error {
 	if len(data) < header.ICMPv4MinimumSize {
+		log.Infof("len(data) is smaller than min size")
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: header.ICMPv4MinimumSize + int(maxHeaderLength),
 	})
+	defer pkt.DecRef()
 
 	icmpv4 := header.ICMPv4(pkt.TransportHeader().Push(header.ICMPv4MinimumSize))
 	pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
@@ -394,6 +397,7 @@ func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data buffer.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: header.ICMPv6MinimumSize + int(maxHeaderLength),
 	})
+	defer pkt.DecRef()
 
 	icmpv6 := header.ICMPv6(pkt.TransportHeader().Push(header.ICMPv6MinimumSize))
 	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber

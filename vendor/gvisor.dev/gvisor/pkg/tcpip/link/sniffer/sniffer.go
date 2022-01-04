@@ -161,14 +161,6 @@ func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumbe
 	}
 }
 
-// WritePacket implements the stack.LinkEndpoint interface. It is called by
-// higher-level protocols to write packets; it just logs the packet and
-// forwards the request to the lower endpoint.
-func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	e.dumpPacket(directionSend, protocol, pkt)
-	return e.Endpoint.WritePacket(r, protocol, pkt)
-}
-
 // WritePackets implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
@@ -207,8 +199,10 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 	// We trim the link headers from the cloned buffer as the sniffer doesn't
 	// handle link headers.
 	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+	vv.TrimFront(len(pkt.VirtioNetHeader().View()))
 	vv.TrimFront(len(pkt.LinkHeader().View()))
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
+	defer pkt.DecRef()
 	switch protocol {
 	case header.IPv4ProtocolNumber:
 		if ok := parse.IPv4(pkt); !ok {

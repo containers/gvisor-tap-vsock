@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -42,7 +43,7 @@ const reaperDelay = 5 * time.Second
 
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
-func DefaultTables(seed uint32) *IPTables {
+func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 	return &IPTables{
 		v4Tables: [NumTables]Table{
 			NATID: {
@@ -174,17 +175,11 @@ func DefaultTables(seed uint32) *IPTables {
 				},
 			},
 		},
-		priorities: [NumHooks][]TableID{
-			Prerouting:  {MangleID, NATID},
-			Input:       {NATID, FilterID},
-			Forward:     {FilterID},
-			Output:      {MangleID, NATID, FilterID},
-			Postrouting: {MangleID, NATID},
-		},
 		connections: ConnTrack{
-			seed: seed,
+			seed:  rand.Uint32(),
+			clock: clock,
+			rand:  rand,
 		},
-		reaperDone: make(chan struct{}, 1),
 	}
 }
 
@@ -223,6 +218,11 @@ func EmptyNATTable() Table {
 func (it *IPTables) GetTable(id TableID, ipv6 bool) Table {
 	it.mu.RLock()
 	defer it.mu.RUnlock()
+	return it.getTableRLocked(id, ipv6)
+}
+
+// +checklocksread:it.mu
+func (it *IPTables) getTableRLocked(id TableID, ipv6 bool) Table {
 	if ipv6 {
 		return it.v6Tables[id]
 	}
@@ -256,13 +256,47 @@ const (
 	// chainAccept indicates the packet should continue through netstack.
 	chainAccept chainVerdict = iota
 
-	// chainAccept indicates the packet should be dropped.
+	// chainDrop indicates the packet should be dropped.
 	chainDrop
 
 	// chainReturn indicates the packet should return to the calling chain
 	// or the underflow rule of a builtin chain.
 	chainReturn
 )
+
+type checkTable struct {
+	fn      checkTableFn
+	tableID TableID
+	table   Table
+}
+
+// shouldSkipOrPopulateTables returns true iff IPTables should be skipped.
+//
+// If IPTables should not be skipped, tables will be updated with the
+// specified table.
+func (it *IPTables) shouldSkipOrPopulateTables(tables []checkTable, pkt *PacketBuffer) bool {
+	switch pkt.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber, header.IPv6ProtocolNumber:
+	default:
+		// IPTables only supports IPv4/IPv6.
+		return true
+	}
+
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+
+	if !it.modified {
+		// Many users never configure iptables. Spare them the cost of rule
+		// traversal if rules have never been set.
+		return true
+	}
+
+	for i := range tables {
+		table := &tables[i]
+		table.table = it.getTableRLocked(table.tableID, pkt.NetworkProtocolNumber == header.IPv6ProtocolNumber)
+	}
+	return false
+}
 
 // CheckPrerouting performs the prerouting hook on the packet.
 //
@@ -271,7 +305,30 @@ const (
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndpoint, inNicName string) bool {
-	return it.check(Prerouting, pkt, nil /* route */, addressEP, inNicName, "" /* outNicName */)
+	tables := [...]checkTable{
+		{
+			fn:      it.check,
+			tableID: MangleID,
+		},
+		{
+			fn:      it.checkNAT,
+			tableID: NATID,
+		},
+	}
+
+	if it.shouldSkipOrPopulateTables(tables[:], pkt) {
+		return true
+	}
+
+	pkt.tuple = it.connections.getConnAndUpdate(pkt)
+
+	for _, table := range tables {
+		if !table.fn(table.table, Prerouting, pkt, nil /* route */, addressEP, inNicName, "" /* outNicName */) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // CheckInput performs the input hook on the packet.
@@ -281,7 +338,32 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
-	return it.check(Input, pkt, nil /* route */, nil /* addressEP */, inNicName, "" /* outNicName */)
+	tables := [...]checkTable{
+		{
+			fn:      it.checkNAT,
+			tableID: NATID,
+		},
+		{
+			fn:      it.check,
+			tableID: FilterID,
+		},
+	}
+
+	if it.shouldSkipOrPopulateTables(tables[:], pkt) {
+		return true
+	}
+
+	for _, table := range tables {
+		if !table.fn(table.table, Input, pkt, nil /* route */, nil /* addressEP */, inNicName, "" /* outNicName */) {
+			return false
+		}
+	}
+
+	if t := pkt.tuple; t != nil {
+		pkt.tuple = nil
+		return t.conn.finalize()
+	}
+	return true
 }
 
 // CheckForward performs the forward hook on the packet.
@@ -291,7 +373,24 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string) bool {
-	return it.check(Forward, pkt, nil /* route */, nil /* addressEP */, inNicName, outNicName)
+	tables := [...]checkTable{
+		{
+			fn:      it.check,
+			tableID: FilterID,
+		},
+	}
+
+	if it.shouldSkipOrPopulateTables(tables[:], pkt) {
+		return true
+	}
+
+	for _, table := range tables {
+		if !table.fn(table.table, Forward, pkt, nil /* route */, nil /* addressEP */, inNicName, outNicName) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // CheckOutput performs the output hook on the packet.
@@ -301,7 +400,34 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 //
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) bool {
-	return it.check(Output, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName)
+	tables := [...]checkTable{
+		{
+			fn:      it.check,
+			tableID: MangleID,
+		},
+		{
+			fn:      it.checkNAT,
+			tableID: NATID,
+		},
+		{
+			fn:      it.check,
+			tableID: FilterID,
+		},
+	}
+
+	if it.shouldSkipOrPopulateTables(tables[:], pkt) {
+		return true
+	}
+
+	pkt.tuple = it.connections.getConnAndUpdate(pkt)
+
+	for _, table := range tables {
+		if !table.fn(table.table, Output, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // CheckPostrouting performs the postrouting hook on the packet.
@@ -310,95 +436,115 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 // must be dropped if false is returned.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, outNicName string) bool {
-	return it.check(Postrouting, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName)
+func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, outNicName string) bool {
+	tables := [...]checkTable{
+		{
+			fn:      it.check,
+			tableID: MangleID,
+		},
+		{
+			fn:      it.checkNAT,
+			tableID: NATID,
+		},
+	}
+
+	if it.shouldSkipOrPopulateTables(tables[:], pkt) {
+		return true
+	}
+
+	for _, table := range tables {
+		if !table.fn(table.table, Postrouting, pkt, r, addressEP, "" /* inNicName */, outNicName) {
+			return false
+		}
+	}
+
+	if t := pkt.tuple; t != nil {
+		pkt.tuple = nil
+		return t.conn.finalize()
+	}
+	return true
 }
 
-// check runs pkt through the rules for hook. It returns true when the packet
-// should continue traversing the network stack and false when it should be
-// dropped.
+type checkTableFn func(table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool
+
+// checkNAT runs the packet through the NAT table.
+//
+// See check.
+func (it *IPTables) checkNAT(table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
+	t := pkt.tuple
+	if t != nil && t.conn.handlePacket(pkt, hook, r) {
+		return true
+	}
+
+	if !it.check(table, hook, pkt, r, addressEP, inNicName, outNicName) {
+		return false
+	}
+
+	if t == nil {
+		return true
+	}
+
+	dnat, natDone := func() (bool, bool) {
+		switch hook {
+		case Prerouting, Output:
+			return true, pkt.dnatDone
+		case Input, Postrouting:
+			return false, pkt.snatDone
+		case Forward:
+			panic("should not attempt NAT in forwarding")
+		default:
+			panic(fmt.Sprintf("unhandled hook = %d", hook))
+		}
+	}()
+
+	// Make sure the connection is NATed.
+	//
+	// If the packet was already NATed, the connection must be NATed.
+	if !natDone {
+		t.conn.maybePerformNoopNAT(dnat)
+		_ = t.conn.handlePacket(pkt, hook, r)
+	}
+
+	return true
+}
+
+// check runs the packet through the rules in the specified table for the
+// hook. It returns true if the packet should continue to traverse through the
+// network stack or tables, or false when it must be dropped.
 //
 // Precondition: The packet's network and transport header must be set.
-func (it *IPTables) check(hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
-	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber && pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+func (it *IPTables) check(table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
+	ruleIdx := table.BuiltinChains[hook]
+	switch verdict := it.checkChain(hook, pkt, table, ruleIdx, r, addressEP, inNicName, outNicName); verdict {
+	// If the table returns Accept, move on to the next table.
+	case chainAccept:
 		return true
-	}
-	// Many users never configure iptables. Spare them the cost of rule
-	// traversal if rules have never been set.
-	it.mu.RLock()
-	defer it.mu.RUnlock()
-	if !it.modified {
-		return true
-	}
-
-	// Packets are manipulated only if connection and matching
-	// NAT rule exists.
-	shouldTrack := it.connections.handlePacket(pkt, hook, r)
-
-	// Go through each table containing the hook.
-	priorities := it.priorities[hook]
-	for _, tableID := range priorities {
-		// If handlePacket already NATed the packet, we don't need to
-		// check the NAT table.
-		if tableID == NATID && pkt.NatDone {
-			continue
-		}
-		var table Table
-		if pkt.NetworkProtocolNumber == header.IPv6ProtocolNumber {
-			table = it.v6Tables[tableID]
-		} else {
-			table = it.v4Tables[tableID]
-		}
-		ruleIdx := table.BuiltinChains[hook]
-		switch verdict := it.checkChain(hook, pkt, table, ruleIdx, r, addressEP, inNicName, outNicName); verdict {
-		// If the table returns Accept, move on to the next table.
-		case chainAccept:
-			continue
-		// The Drop verdict is final.
-		case chainDrop:
+	// The Drop verdict is final.
+	case chainDrop:
+		return false
+	case chainReturn:
+		// Any Return from a built-in chain means we have to
+		// call the underflow.
+		underflow := table.Rules[table.Underflows[hook]]
+		switch v, _ := underflow.Target.Action(pkt, hook, r, addressEP); v {
+		case RuleAccept:
+			return true
+		case RuleDrop:
 			return false
-		case chainReturn:
-			// Any Return from a built-in chain means we have to
-			// call the underflow.
-			underflow := table.Rules[table.Underflows[hook]]
-			switch v, _ := underflow.Target.Action(pkt, &it.connections, hook, r, addressEP); v {
-			case RuleAccept:
-				continue
-			case RuleDrop:
-				return false
-			case RuleJump, RuleReturn:
-				panic("Underflows should only return RuleAccept or RuleDrop.")
-			default:
-				panic(fmt.Sprintf("Unknown verdict: %d", v))
-			}
-
+		case RuleJump, RuleReturn:
+			panic("Underflows should only return RuleAccept or RuleDrop.")
 		default:
-			panic(fmt.Sprintf("Unknown verdict %v.", verdict))
+			panic(fmt.Sprintf("Unknown verdict: %d", v))
 		}
+	default:
+		panic(fmt.Sprintf("Unknown verdict %v.", verdict))
 	}
-
-	// If this connection should be tracked, try to add an entry for it. If
-	// traversing the nat table didn't end in adding an entry,
-	// maybeInsertNoop will add a no-op entry for the connection. This is
-	// needeed when establishing connections so that the SYN/ACK reply to an
-	// outgoing SYN is delivered to the correct endpoint rather than being
-	// redirected by a prerouting rule.
-	//
-	// From the iptables documentation: "If there is no rule, a `null'
-	// binding is created: this usually does not map the packet, but exists
-	// to ensure we don't map another stream over an existing one."
-	if shouldTrack {
-		it.connections.maybeInsertNoop(pkt, hook)
-	}
-
-	// Every table returned Accept.
-	return true
 }
 
 // beforeSave is invoked by stateify.
 func (it *IPTables) beforeSave() {
 	// Ensure the reaper exits cleanly.
-	it.reaperDone <- struct{}{}
+	it.reaper.Stop()
 	// Prevent others from modifying the connection table.
 	it.connections.mu.Lock()
 }
@@ -408,66 +554,13 @@ func (it *IPTables) afterLoad() {
 	it.startReaper(reaperDelay)
 }
 
-// startReaper starts a goroutine that wakes up periodically to reap timed out
-// connections.
+// startReaper periodically reaps timed out connections.
 func (it *IPTables) startReaper(interval time.Duration) {
-	go func() { // S/R-SAFE: reaperDone is signalled when iptables is saved.
-		bucket := 0
-		for {
-			select {
-			case <-it.reaperDone:
-				return
-				// TODO(gvisor.dev/issue/5939): do not use the ambient clock.
-			case <-time.After(interval):
-				bucket, interval = it.connections.reapUnused(bucket, interval)
-			}
-		}
-	}()
-}
-
-// CheckOutputPackets performs the output hook on the packets.
-//
-// Returns a map of packets that must be dropped.
-//
-// Precondition:  The packets' network and transport header must be set.
-func (it *IPTables) CheckOutputPackets(pkts PacketBufferList, r *Route, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	return it.checkPackets(Output, pkts, r, outNicName)
-}
-
-// CheckPostroutingPackets performs the postrouting hook on the packets.
-//
-// Returns a map of packets that must be dropped.
-//
-// Precondition:  The packets' network and transport header must be set.
-func (it *IPTables) CheckPostroutingPackets(pkts PacketBufferList, r *Route, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	return it.checkPackets(Postrouting, pkts, r, outNicName)
-}
-
-// checkPackets runs pkts through the rules for hook and returns a map of
-// packets that should not go forward.
-//
-// NOTE: unlike the Check API the returned map contains packets that should be
-// dropped.
-//
-// Precondition:  The packets' network and transport header must be set.
-func (it *IPTables) checkPackets(hook Hook, pkts PacketBufferList, r *Route, outNicName string) (drop map[*PacketBuffer]struct{}, natPkts map[*PacketBuffer]struct{}) {
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		if !pkt.NatDone {
-			if ok := it.check(hook, pkt, r, nil /* addressEP */, "" /* inNicName */, outNicName); !ok {
-				if drop == nil {
-					drop = make(map[*PacketBuffer]struct{})
-				}
-				drop[pkt] = struct{}{}
-			}
-			if pkt.NatDone {
-				if natPkts == nil {
-					natPkts = make(map[*PacketBuffer]struct{})
-				}
-				natPkts[pkt] = struct{}{}
-			}
-		}
-	}
-	return drop, natPkts
+	bucket := 0
+	it.reaper = it.connections.clock.AfterFunc(interval, func() {
+		bucket, interval = it.connections.reapUnused(bucket, interval)
+		it.reaper.Reset(interval)
+	})
 }
 
 // Preconditions:
@@ -543,7 +636,7 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 	}
 
 	// All the matchers matched, so run the target.
-	return rule.Target.Action(pkt, &it.connections, hook, r, addressEP)
+	return rule.Target.Action(pkt, hook, r, addressEP)
 }
 
 // OriginalDst returns the original destination of redirected connections. It

@@ -208,6 +208,15 @@ var IPv4EmptySubnet = func() tcpip.Subnet {
 	return subnet
 }()
 
+// IPv4LoopbackSubnet is the loopback subnet for IPv4.
+var IPv4LoopbackSubnet = func() tcpip.Subnet {
+	subnet, err := tcpip.NewSubnet(tcpip.Address("\x7f\x00\x00\x00"), tcpip.AddressMask("\xff\x00\x00\x00"))
+	if err != nil {
+		panic(err)
+	}
+	return subnet
+}()
+
 // IPVersion returns the version of IP used in the given packet. It returns -1
 // if the packet is not large enough to contain the version field.
 func IPVersion(b []byte) int {
@@ -371,7 +380,7 @@ func (b IPv4) SetTotalLength(totalLength uint16) {
 
 // SetChecksum sets the checksum field of the IPv4 header.
 func (b IPv4) SetChecksum(v uint16) {
-	binary.BigEndian.PutUint16(b[checksum:], v)
+	PutChecksum(b[checksum:], v)
 }
 
 // SetFlagsFragmentOffset sets the "flags" and "fragment offset" fields of the
