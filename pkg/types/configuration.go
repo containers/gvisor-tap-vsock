@@ -22,6 +22,9 @@ type Configuration struct {
 	// IP address of the virtual gateway
 	GatewayIP string
 
+	// IPv6 address of the virtual gateway. Prefix will be 64.
+	GatewayIPv6 string
+
 	// MAC address of the virtual gateway
 	GatewayMacAddress string
 

@@ -13,6 +13,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -99,6 +100,7 @@ func (n *VirtualNetwork) BytesReceived() uint64 {
 func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint) (*stack.Stack, error) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
+			ipv6.NewProtocol,
 			ipv4.NewProtocol,
 			arp.NewProtocol,
 		},
@@ -106,6 +108,7 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 			tcp.NewProtocol,
 			udp.NewProtocol,
 			icmp.NewProtocol4,
+			icmp.NewProtocol6,
 		},
 	})
 
@@ -116,6 +119,15 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 	if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.Address(net.ParseIP(configuration.GatewayIP).To4()).WithPrefix(),
+	}, stack.AddressProperties{}); err != nil {
+		return nil, errors.New(err.String())
+	}
+	if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{
+		Protocol: ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP(configuration.GatewayIPv6)),
+			PrefixLen: 64,
+		},
 	}, stack.AddressProperties{}); err != nil {
 		return nil, errors.New(err.String())
 	}

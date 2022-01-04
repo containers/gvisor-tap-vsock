@@ -58,4 +58,24 @@ var _ = Describe("dns", func() {
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.254"))
 	})
+
+	It("should resolve ipv6", func() {
+		out, err := sshExec("nslookup ipv6.google.com")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("Address: 2a00:1450:4007:810::200e"))
+	})
+})
+
+var _ = Describe("ipv6", func() {
+	It("tcp should work", func() {
+		out, err := sshExec("curl ipv6.google.com")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("<!doctype html>"))
+	})
+
+	It("udp should work", func() {
+		out, err := sshExec("dig ipv6.google.com @2001:4860:4860::8888")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("opcode: QUERY, status: NOERROR"))
+	})
 })
