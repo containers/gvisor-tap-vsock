@@ -108,6 +108,7 @@ outer:
 		template := `%s -m 2048 -nographic -serial file:%s -snapshot -drive if=virtio,file=%s -fw_cfg name=opt/com.coreos/config,file=%s -netdev socket,id=vlan,connect=127.0.0.1:%d -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee`
 		// #nosec
 		client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), qconLog, qemuImage, ignFile, qemuPort), " ")...)
+		client.Stderr = os.Stderr
 		Expect(client.Start()).Should(Succeed())
 		go func() {
 			if err := client.Wait(); err != nil {
@@ -144,14 +145,14 @@ func qemuExecutable() string {
 	if runtime.GOOS == "darwin" {
 		return "qemu-system-x86_64"
 	}
-	return "qemu-kvm"
+	return "/usr/bin/qemu-x86_64-static"
 }
 
 func qemuArgs() string {
 	if runtime.GOOS == "darwin" {
 		return "-machine q35,accel=hvf:tcg -smp 4"
 	}
-	return "-cpu host"
+	return ""
 }
 
 func createSSHKeys() (string, error) {

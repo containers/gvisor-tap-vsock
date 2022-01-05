@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"time"
 
 	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
@@ -136,6 +137,7 @@ address=/foobar/1.2.3.4
 					return conn, transport.Tunnel(conn, "192.168.127.2", 8080)
 				},
 			},
+			Timeout: 30 * time.Second,
 		}
 
 		Eventually(func(g Gomega) {
@@ -206,6 +208,7 @@ address=/foobar/1.2.3.4
 					return net.Dial("unix", forwardRootSock)
 				},
 			},
+			Timeout: 30 * time.Second,
 		}
 
 		Eventually(func(g Gomega) {
