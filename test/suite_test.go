@@ -109,6 +109,7 @@ outer:
 		// #nosec
 		client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), qconLog, qemuImage, ignFile, qemuPort), " ")...)
 		client.Stderr = os.Stderr
+		client.Stdout = os.Stdout
 		Expect(client.Start()).Should(Succeed())
 		go func() {
 			if err := client.Wait(); err != nil {
