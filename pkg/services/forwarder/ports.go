@@ -58,22 +58,22 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 	switch protocol {
 	case types.UNIX:
 		// parse URI for remote
-		remoteUri, err := url.Parse(remote)
+		remoteURI, err := url.Parse(remote)
 		if err != nil {
 			return fmt.Errorf("failed to parse remote uri :%s : %w", remote, err)
 		}
 
-		// build the address from remoteUri
-		remoteAddr := fmt.Sprintf("%s:%s", remoteUri.Hostname(), remoteUri.Port())
+		// build the address from remoteURI
+		remoteAddr := fmt.Sprintf("%s:%s", remoteURI.Hostname(), remoteURI.Port())
 
 		// dialFn opens remote connection for the proxy
 		var dialFn func(ctx context.Context, network, addr string) (conn net.Conn, e error)
 
-		// dialFn is set based on the protocol provided by remoteUri.Scheme
-		switch remoteUri.Scheme {
+		// dialFn is set based on the protocol provided by remoteURI.Scheme
+		switch remoteURI.Scheme {
 		case "ssh-tunnel": // unix-to-unix proxy (over SSH)
-			// query string to map for the remoteUri contains ssh config info
-			remoteQuery := remoteUri.Query()
+			// query string to map for the remoteURI contains ssh config info
+			remoteQuery := remoteURI.Query()
 
 			// username
 			sshuser := firstValueOrEmpty(remoteQuery["user"])
@@ -109,8 +109,8 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 			}
 
 			// default ssh port if not set
-			if remoteUri.Port() == "" {
-				remoteAddr = fmt.Sprintf("%s:%s", remoteUri.Hostname(), "22")
+			if remoteURI.Port() == "" {
+				remoteAddr = fmt.Sprintf("%s:%s", remoteURI.Hostname(), "22")
 			}
 
 			// build address
@@ -119,8 +119,8 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 				return err
 			}
 
-			// check the remoteUri path provided for nonsense
-			if remoteUri.Path == "" || remoteUri.Path == "/" {
+			// check the remoteURI path provided for nonsense
+			if remoteURI.Path == "" || remoteURI.Path == "/" {
 				return fmt.Errorf("remote uri must contain a path to a socket file")
 			}
 
@@ -167,7 +167,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 				}
 
 				// connection using sshclient's dialer
-				return sshClient.Dial("unix", remoteUri.Path)
+				return sshClient.Dial("unix", remoteURI.Path)
 			}
 
 		case "tcp": // unix-to-tcp proxy
@@ -182,7 +182,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 			}
 
 		default:
-			return fmt.Errorf("remote protocol for unix forwarder is not implemented: %s", remoteUri.Scheme)
+			return fmt.Errorf("remote protocol for unix forwarder is not implemented: %s", remoteURI.Scheme)
 		}
 
 		// build the tcp proxy
@@ -387,7 +387,7 @@ func firstValueOrEmpty(x []string) string {
 }
 
 // helper function to build tcpip address
-func tcpipAddress(nicId tcpip.NICID, remote string) (address tcpip.FullAddress, err error) {
+func tcpipAddress(nicID tcpip.NICID, remote string) (address tcpip.FullAddress, err error) {
 
 	// build the address manual way
 	split := strings.Split(remote, ":")
@@ -402,7 +402,7 @@ func tcpipAddress(nicId tcpip.NICID, remote string) (address tcpip.FullAddress, 
 	}
 
 	address = tcpip.FullAddress{
-		NIC:  nicId,
+		NIC:  nicID,
 		Addr: tcpip.Address(net.ParseIP(split[0]).To4()),
 		Port: uint16(port),
 	}
