@@ -125,14 +125,22 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 			}
 
 			// captured and used by dialFn
+			var tcpConn *gonet.TCPConn
 			var sshClient *ssh.Client
 
 			// the dialFn for unix-to-unix over SSH
 			dialFn = func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
-				// create new sshClient not already done
-				if sshClient == nil {
+				// check underlying tcpConn to see if it's closed
+				if tcpConn != nil {
+					if _, err := tcpConn.Read(make([]byte, 0)); err == io.EOF {
+						tcpConn = nil
+					}
+				}
+
+				// connect or reconnect to ssh
+				if tcpConn == nil || sshClient == nil {
 					// underlying connection to endpoint for the ssh client
-					conn, err := gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
+					tcpConn, err := gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
 					if err != nil {
 						return nil, err
 					}
@@ -157,7 +165,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 					}
 
 					// get an sshConn using the underlying gonet.TCPConn
-					sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+					sshConn, chans, reqs, err := ssh.NewClientConn(tcpConn, addr, config)
 					if err != nil {
 						return nil, err
 					}
