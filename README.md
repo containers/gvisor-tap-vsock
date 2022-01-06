@@ -6,6 +6,8 @@ It is based on the network stack of [gVisor](https://github.com/google/gvisor/tr
 
 Compared to libslirp, gvisor-tap-vsock brings a configurable DNS server and dynamic port forwarding.
 
+It can be used with Qemu, Hyperkit, Hyper-V and User Mode Linux.
+
 ## Build
 
 ```
@@ -31,10 +33,6 @@ With gvproxy and the VM discussing on a unix socket:
 (terminal 2) $ bin/qemu-wrapper /tmp/qemu.sock qemu-system-x86_64 (all your qemu options) -netdev socket,id=vlan,fd=3 -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee
 ```
 
-## Run with vsock
-
-Made for Windows but also works for Linux and macOS with [HyperKit](https://github.com/moby/hyperkit).
-
 ## Run with User Mode Linux
 
 ```
@@ -46,6 +44,10 @@ Made for Windows but also works for Linux and macOS with [HyperKit](https://gith
 ```
 
 More docs about the User Mode Linux with BESS socket transport: https://www.kernel.org/doc/html/latest/virt/uml/user_mode_linux_howto_v2.html#bess-socket-transport
+
+## Run with vsock
+
+Made for Windows but also works for Linux and macOS with [HyperKit](https://github.com/moby/hyperkit).
 
 ### Host
 
@@ -89,9 +91,9 @@ With the executable:
 (vm) # ./vm -debug
 ```
 
-### Services
+## Services
 
-#### API
+### API
 
 The executable running on the host, `gvproxy`, exposes a HTTP API. It can be used with curl.
 
@@ -105,11 +107,12 @@ $ curl  --unix-socket /tmp/network.sock http:/unix/stats
 ...
 ```
 
-#### Gateway
+### Gateway
 
 The executable running on the host runs a virtual gateway that can be used by the VM.
+It runs a DHCP server. It allows VMs to configure the network automatically (IP, MTU, DNS, search domain, etc.).
 
-#### DNS
+### DNS
 
 The gateway also runs a DNS server. It can be configured to serve static zones.
 
@@ -118,7 +121,7 @@ Activate it by changing the `/etc/resolv.conf` file inside the VM with:
 nameserver 192.168.127.1
 ```
 
-#### Port forwarding
+### Port forwarding
 
 Dynamic port forwarding is supported.
 
@@ -134,7 +137,7 @@ $ curl  --unix-socket /tmp/network.sock http:/unix/services/forwarder/unexpose -
 
 List exposed ports:
 ```
-$ curl  --unix-socket /tmp/network.sock http:/foo/services/forwarder/all | jq .
+$ curl  --unix-socket /tmp/network.sock http:/unix/services/forwarder/all | jq .
 [
   {
     "local": ":2222",
@@ -148,7 +151,7 @@ $ curl  --unix-socket /tmp/network.sock http:/foo/services/forwarder/all | jq .
 
 ```
 
-#### Tunneling
+### Tunneling
 
 The HTTP API exposed on the host can be used to connect to a specific IP and port inside the virtual network.
 A working example for SSH can be found [here](https://github.com/containers/gvisor-tap-vsock/blob/master/cmd/ssh-over-vsock).
@@ -159,7 +162,7 @@ A working example for SSH can be found [here](https://github.com/containers/gvis
 
 ## Performance
 
-Using iperf3, running the server on the host and the client in the VM, it can achieve 600Mbits/s.
+Using iperf3, it can achieve between 1.6 and 2.3Gbits/s depending on which side the test is performed (tested with a mtu of 4000 with Qemu on macOS).
 
 ## How it works with vsock
 
