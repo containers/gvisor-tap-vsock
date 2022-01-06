@@ -127,13 +127,19 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 			// captured and used by dialFn
 			var tcpConn *gonet.TCPConn
 			var sshClient *ssh.Client
+			var connLock sync.Mutex
 
-			// the dialFn for unix-to-unix over SSH
-			dialFn = func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
+			// handles getting underlying ssh connection, having this outside of
+			// dialFn limits connLock to only the parts it's needed for in a way
+			// that doesn't get racy.
+			sshConnFn := func(ctx context.Context, network, addr string) (client *ssh.Client, err error) {
+				connLock.Lock()
+				defer connLock.Unlock()
+
 				// check underlying tcpConn to see if it's closed
 				if tcpConn != nil {
 					if _, err := tcpConn.Read(make([]byte, 0)); err == io.EOF {
-						tcpConn = nil
+						tcpConn = nil // set back to nil to force reconnect
 					}
 				}
 
@@ -142,7 +148,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 					// underlying connection to endpoint for the ssh client
 					tcpConn, err := gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
 					if err != nil {
-						return nil, err
+						return sshClient, err
 					}
 
 					// ssh client config that uses key authentication
@@ -167,11 +173,22 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 					// get an sshConn using the underlying gonet.TCPConn
 					sshConn, chans, reqs, err := ssh.NewClientConn(tcpConn, addr, config)
 					if err != nil {
-						return nil, err
+						return sshClient, err
 					}
 
 					// build an ssh client using sshConn
 					sshClient = ssh.NewClient(sshConn, chans, reqs)
+				}
+
+				return sshClient, err
+			}
+
+			// the dialFn for unix-to-unix over SSH
+			dialFn = func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
+				// check or create new ssh connection
+				sshClient, err = sshConnFn(ctx, network, addr)
+				if err != nil {
+					return nil, err
 				}
 
 				// connection using sshclient's dialer

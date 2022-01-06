@@ -217,44 +217,42 @@ var _ = Describe("port forwarding", func() {
 		}).Should(Succeed())
 	})
 
-	// unsure of if AF_UNIX socket support in windows just works this way; but windows seems to support AF_UNIX sockets
-	if runtime.GOOS != "windows" {
+	It("should expose and reach rootless podman API using unix to unix forwarding over ssh", func() {
+		if runtime.GOOS == "windows" {
+			Skip("AF_UNIX not supported on Windows")
+		}
 
-		It("should expose and reach rootless podman API using unix to unix forwarding over ssh", func() {
-			unix2unixfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
+		unix2unixfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
 
-			remoteuri := fmt.Sprintf(`ssh-tunnel://%s:%d%s?user=root&key=%s`, "192.168.127.2", 22, podmanSock, privateKeyFile)
-			_, err := sshExec(`curl http://192.168.127.1/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2unixfwdsock + `","remote":"` + remoteuri + `"}'`)
-			Expect(err).ShouldNot(HaveOccurred())
+		remoteuri := fmt.Sprintf(`ssh-tunnel://%s:%d%s?user=root&key=%s`, "192.168.127.2", 22, podmanSock, privateKeyFile)
+		_, err := sshExec(`curl http://192.168.127.1/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2unixfwdsock + `","remote":"` + remoteuri + `"}'`)
+		Expect(err).ShouldNot(HaveOccurred())
 
-			Eventually(func(g Gomega) {
-				sockfile, err := os.Stat(unix2unixfwdsock)
-				g.Expect(err).ShouldNot(HaveOccurred())
-				g.Expect(sockfile.Mode().Type().String()).To(Equal(os.ModeSocket.String()))
-			}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			sockfile, err := os.Stat(unix2unixfwdsock)
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(sockfile.Mode().Type().String()).To(Equal(os.ModeSocket.String()))
+		}).Should(Succeed())
 
-			httpClient := &http.Client{
-				Transport: &http.Transport{
-					DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-						return net.Dial("unix", unix2unixfwdsock)
-					},
+		httpClient := &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return net.Dial("unix", unix2unixfwdsock)
 				},
-			}
+			},
+		}
 
-			Eventually(func(g Gomega) {
-				resp, err := httpClient.Get("http://host/_ping")
-				g.Expect(err).ShouldNot(HaveOccurred())
-				g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
-				g.Expect(resp.ContentLength).To(Equal(int64(2)))
+		Eventually(func(g Gomega) {
+			resp, err := httpClient.Get("http://host/_ping")
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			g.Expect(resp.ContentLength).To(Equal(int64(2)))
 
-				reply := make([]byte, resp.ContentLength)
-				_, err = io.ReadAtLeast(resp.Body, reply, len(reply))
+			reply := make([]byte, resp.ContentLength)
+			_, err = io.ReadAtLeast(resp.Body, reply, len(reply))
 
-				g.Expect(err).ShouldNot(HaveOccurred())
-				g.Expect(string(reply)).To(Equal("OK"))
-			}).Should(Succeed())
-		})
-
-	}
-
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(string(reply)).To(Equal("OK"))
+		}).Should(Succeed())
+	})
 })
