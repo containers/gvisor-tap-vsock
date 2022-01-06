@@ -5,7 +5,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 
 	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
@@ -178,6 +181,38 @@ var _ = Describe("port forwarding", func() {
 
 			g.Expect(err).ShouldNot(HaveOccurred())
 			g.Expect(string(reply)).To(Equal("OK"))
+		}).Should(Succeed())
+	})
+
+	It("should expose and reach an http service using unix to tcp forwarding", func() {
+		if runtime.GOOS == "windows" {
+			Skip("AF_UNIX not supported on Windows")
+		}
+
+		unix2tcpfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
+
+		out, err := sshExec(`curl http://gateway.containers.internal/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2tcpfwdsock + `","remote":"192.168.127.2:8080"}'`)
+		Expect(string(out)).Should(Equal(""))
+		Expect(err).ShouldNot(HaveOccurred())
+
+		Eventually(func(g Gomega) {
+			sockfile, err := os.Stat(unix2tcpfwdsock)
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(sockfile.Mode().Type().String()).To(Equal(os.ModeSocket.String()))
+		}).Should(Succeed())
+
+		httpClient := &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return net.Dial("unix", unix2tcpfwdsock)
+				},
+			},
+		}
+
+		Eventually(func(g Gomega) {
+			resp, err := httpClient.Get("http://placeholder/")
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		}).Should(Succeed())
 	})
 })
