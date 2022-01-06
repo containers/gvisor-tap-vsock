@@ -35,6 +35,18 @@ With gvproxy and the VM discussing on a unix socket:
 
 Made for Windows but also works for Linux and macOS with [HyperKit](https://github.com/moby/hyperkit).
 
+## Run with User Mode Linux
+
+```
+(terminal 1) $ bin/gvproxy -debug -listen unix:///tmp/network.sock -listen-bess unixpacket:///tmp/bess.sock
+(terminal 2) $ linux.uml vec0:transport=bess,dst=/tmp/bess.sock,depth=128,gro=1,mac=5a:94:ef:e4:0c:ee root=/dev/root rootfstype=hostfs init=/bin/bash mem=2G
+(terminal 2: UML)$ ip addr add 192.168.127.2/24 dev vec0
+(terminal 2: UML)$ ip link set vec0 up
+(terminal 2: UML)$ ip route add default via 192.168.127.254
+```
+
+More docs about the User Mode Linux with BESS socket transport: https://www.kernel.org/doc/html/latest/virt/uml/user_mode_linux_howto_v2.html#bess-socket-transport
+
 ### Host
 
 #### Windows prerequisites

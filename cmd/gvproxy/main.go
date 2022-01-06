@@ -32,6 +32,7 @@ var (
 	endpoints       arrayFlags
 	vpnkitSocket    string
 	qemuSocket      string
+	bessSocket      string
 	forwardSocket   arrayFlags
 	forwardDest     arrayFlags
 	forwardUser     arrayFlags
@@ -53,6 +54,7 @@ func main() {
 	flag.IntVar(&sshPort, "ssh-port", 2222, "Port to access the guest virtual machine. Must be between 1024 and 65535")
 	flag.StringVar(&vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
 	flag.StringVar(&qemuSocket, "listen-qemu", "", "Socket to be used by Qemu")
+	flag.StringVar(&bessSocket, "listen-bess", "", "unixpacket socket to be used by Bess-compatible applications")
 	flag.Var(&forwardSocket, "forward-sock", "Forwards a unix socket to the guest virtual machine over SSH")
 	flag.Var(&forwardDest, "forward-dest", "Forwards a unix socket to the guest virtual machine over SSH")
 	flag.Var(&forwardUser, "forward-user", "SSH user to use for unix socket forward")
@@ -82,9 +84,29 @@ func main() {
 			exitWithError(errors.Errorf("%q already exists", uri.Path))
 		}
 	}
+	if len(bessSocket) > 0 {
+		uri, err := url.Parse(bessSocket)
+		if err != nil || uri == nil {
+			exitWithError(errors.Wrapf(err, "invalid value for listen-bess"))
+		}
+		if uri.Scheme != "unixpacket" {
+			exitWithError(errors.New("listen-bess must be unixpacket:// address"))
+		}
+		if _, err := os.Stat(uri.Path); err == nil {
+			exitWithError(errors.Errorf("%q already exists", uri.Path))
+		}
+	}
+
 	if vpnkitSocket != "" && qemuSocket != "" {
 		exitWithError(errors.New("cannot use qemu and vpnkit protocol at the same time"))
 	}
+	if vpnkitSocket != "" && bessSocket != "" {
+		exitWithError(errors.New("cannot use bess and vpnkit protocol at the same time"))
+	}
+	if qemuSocket != "" && bessSocket != "" {
+		exitWithError(errors.New("cannot use qemu and bess protocol at the same time"))
+	}
+
 	// If the given port is not between the privileged ports
 	// and the oft considered maximum port, return an error.
 	if sshPort < 1024 || sshPort > 65535 {
@@ -93,6 +115,9 @@ func main() {
 	protocol := types.HyperKitProtocol
 	if qemuSocket != "" {
 		protocol = types.QemuProtocol
+	}
+	if bessSocket != "" {
+		protocol = types.BessProtocol
 	}
 
 	if c := len(forwardSocket); c != len(forwardDest) || c != len(forwardUser) || c != len(forwardIdentify) {
@@ -306,6 +331,30 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 
 			}
 			return vn.AcceptQemu(ctx, conn)
+		})
+	}
+
+	if bessSocket != "" {
+		bessListener, err := transport.Listen(bessSocket)
+		if err != nil {
+			return err
+		}
+
+		g.Go(func() error {
+			<-ctx.Done()
+			if err := bessListener.Close(); err != nil {
+				log.Errorf("error closing %s: %q", bessSocket, err)
+			}
+			return os.Remove(bessSocket)
+		})
+
+		g.Go(func() error {
+			conn, err := bessListener.Accept()
+			if err != nil {
+				return errors.Wrap(err, "bess accept error")
+
+			}
+			return vn.AcceptBess(ctx, conn)
 		})
 	}
 
