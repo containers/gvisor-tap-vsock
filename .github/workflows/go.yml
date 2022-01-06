@@ -46,3 +46,9 @@ jobs:
 
     - name: Test
       run: make test
+
+    - uses: actions/upload-artifact@v2
+      if: always()
+      with:
+        name: qcon
+        path: test/qcon.log
