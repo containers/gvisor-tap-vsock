@@ -124,40 +124,46 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 				return fmt.Errorf("remote uri must contain a path to a socket file")
 			}
 
+			// captured and used by dialFn
+			var sshClient *ssh.Client
+
 			// the dialFn for unix-to-unix over SSH
 			dialFn = func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
-				// underlying connection to endpoint for the ssh client
-				conn, err := gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
-				if err != nil {
-					return nil, err
-				}
+				// create new sshClient not already done
+				if sshClient == nil {
+					// underlying connection to endpoint for the ssh client
+					conn, err := gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
+					if err != nil {
+						return nil, err
+					}
 
-				// ssh client config that uses key authentication
-				config := &ssh.ClientConfig{
-					User: sshuser,
-					Auth: []ssh.AuthMethod{
-						ssh.PublicKeys(sshsigner),
-					},
-					HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-					HostKeyAlgorithms: []string{
-						ssh.KeyAlgoRSA,
-						ssh.KeyAlgoDSA,
-						ssh.KeyAlgoECDSA256,
-						ssh.KeyAlgoECDSA384,
-						ssh.KeyAlgoECDSA521,
-						ssh.KeyAlgoED25519,
-					},
-					Timeout: 5 * time.Second,
-				}
+					// ssh client config that uses key authentication
+					config := &ssh.ClientConfig{
+						User: sshuser,
+						Auth: []ssh.AuthMethod{
+							ssh.PublicKeys(sshsigner),
+						},
+						HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+						HostKeyAlgorithms: []string{
+							ssh.KeyAlgoRSA,
+							ssh.KeyAlgoDSA,
+							ssh.KeyAlgoECDSA256,
+							ssh.KeyAlgoECDSA384,
+							ssh.KeyAlgoECDSA521,
+							ssh.KeyAlgoED25519,
+						},
+						Timeout: 5 * time.Second,
+					}
 
-				// get an sshConn using the underlying gonet.TCPConn
-				sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
-				if err != nil {
-					return nil, err
-				}
+					// get an sshConn using the underlying gonet.TCPConn
+					sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+					if err != nil {
+						return nil, err
+					}
 
-				// build an ssh client using sshConn
-				sshClient := ssh.NewClient(sshConn, chans, reqs)
+					// build an ssh client using sshConn
+					sshClient = ssh.NewClient(sshConn, chans, reqs)
+				}
 
 				// connection using sshclient's dialer
 				return sshClient.Dial("unix", remoteUri.Path)
