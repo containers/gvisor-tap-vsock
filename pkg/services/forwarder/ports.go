@@ -143,6 +143,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 						Auth: []ssh.AuthMethod{
 							ssh.PublicKeys(sshsigner),
 						},
+						// #nosec G106
 						HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 						HostKeyAlgorithms: []string{
 							ssh.KeyAlgoRSA,
