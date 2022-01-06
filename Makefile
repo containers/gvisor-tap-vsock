@@ -41,6 +41,10 @@ cross:
 	GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin ./cmd/gvproxy
 	GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux ./cmd/gvproxy
 
+.PHONY: test-companion
+test-companion:
+	GOOS=linux go build $(LDFLAGS) -o bin/test-companion ./cmd/test-companion
+
 .PHONY: test
-test: gvproxy
+test: gvproxy test-companion
 	go test -v ./test

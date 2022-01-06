@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +18,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 )
 
 func TestSuite(t *testing.T) {
@@ -108,6 +108,8 @@ outer:
 		template := `%s -m 2048 -nographic -serial file:%s -snapshot -drive if=virtio,file=%s -fw_cfg name=opt/com.coreos/config,file=%s -netdev socket,id=vlan,connect=127.0.0.1:%d -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee`
 		// #nosec
 		client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), qconLog, qemuImage, ignFile, qemuPort), " ")...)
+		client.Stderr = os.Stderr
+		client.Stdout = os.Stdout
 		Expect(client.Start()).Should(Succeed())
 		go func() {
 			if err := client.Wait(); err != nil {
@@ -138,6 +140,14 @@ outer:
 			time.Sleep(time.Second)
 		}
 	}
+
+	err = scp(filepath.Join(binDir, "test-companion"), "/tmp/test-companion")
+	Expect(err).ShouldNot(HaveOccurred())
+
+	// start an embedded DNS and http server in the VM. Wait a bit for the server to start.
+	cmd := sshCommand("sudo /tmp/test-companion")
+	Expect(cmd.Start()).ShouldNot(HaveOccurred())
+	time.Sleep(5 * time.Second)
 })
 
 func qemuExecutable() string {
@@ -174,45 +184,31 @@ func readPublicKey() (string, error) {
 	return strings.TrimSpace(string(publicKey)), nil
 }
 
-func parsePrivateKey(path string) (ssh.Signer, error) {
-	key, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		return nil, err
-	}
-	return signer, nil
+func scp(src, dst string) error {
+	sshCmd := exec.Command("scp",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=no",
+		"-i", privateKeyFile,
+		"-P", strconv.Itoa(sshPort),
+		src,
+		fmt.Sprintf("%s@127.0.0.1:%s", ignitionUser, dst)) // #nosec G204
+	sshCmd.Stderr = os.Stderr
+	sshCmd.Stdout = os.Stdout
+	return sshCmd.Run()
 }
 
 func sshExec(cmd ...string) ([]byte, error) {
-	key, err := parsePrivateKey(privateKeyFile)
-	if err != nil {
-		return nil, err
-	}
+	return sshCommand(cmd...).Output()
+}
 
-	client, err := ssh.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", sshPort), &ssh.ClientConfig{
-		User: ignitionUser,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(key),
-		},
-		// #nosec
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         5 * time.Second,
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer client.Close()
-
-	sess, err := client.NewSession()
-	if err != nil {
-		return nil, err
-	}
-	defer sess.Close()
-
-	return sess.CombinedOutput(strings.Join(cmd, " "))
+func sshCommand(cmd ...string) *exec.Cmd {
+	sshCmd := exec.Command("ssh",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=no",
+		"-i", privateKeyFile,
+		"-p", strconv.Itoa(sshPort),
+		fmt.Sprintf("%s@127.0.0.1", ignitionUser), "--", strings.Join(cmd, " ")) // #nosec G204
+	return sshCmd
 }
 
 func panicCheck(con string) (bool, error) {

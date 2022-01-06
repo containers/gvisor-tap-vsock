@@ -2,8 +2,6 @@ package e2e
 
 import (
 	"context"
-	"encoding/base64"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -47,14 +45,7 @@ var _ = Describe("port forwarding", func() {
 	})
 
 	It("should reach a http server in the VM using dynamic port forwarding", func() {
-		_, err := sshExec("sudo podman run --rm --name http-test -d -p 8080:80 -t docker.io/library/nginx:alpine")
-		Expect(err).ShouldNot(HaveOccurred())
-		defer func() {
-			_, err := sshExec("sudo podman stop http-test")
-			Expect(err).ShouldNot(HaveOccurred())
-		}()
-
-		_, err = net.Dial("tcp", "127.0.0.1:9090")
+		_, err := net.Dial("tcp", "127.0.0.1:9090")
 		Expect(err).Should(HaveOccurred())
 		Expect(err.Error()).To(HaveSuffix("connection refused"))
 
@@ -81,24 +72,6 @@ var _ = Describe("port forwarding", func() {
 	})
 
 	It("should reach a dns server in the VM using dynamic port forwarding", func() {
-		const dnsmasqConfiguration = `user=root
-port=53
-bind-interfaces
-address=/foobar/1.2.3.4
-`
-		base64Data := base64.StdEncoding.EncodeToString([]byte(dnsmasqConfiguration))
-		_, err := sshExec(fmt.Sprintf("sudo install -m 0%o /dev/null %s && cat <<EOF | base64 --decode | sudo tee %s\n%s\nEOF", 0644, "/tmp/cfg", "/tmp/cfg", base64Data))
-		Expect(err).ShouldNot(HaveOccurred())
-
-		_, _ = sshExec("sudo podman pull quay.io/crcont/dnsmasq")
-
-		_, err = sshExec("sudo podman run --rm --name dns-test -v /tmp/cfg:/etc/dnsmasq.conf:z -d -p 53:53/udp -t quay.io/crcont/dnsmasq")
-		Expect(err).ShouldNot(HaveOccurred())
-		defer func() {
-			_, err := sshExec("sudo podman stop dns-test")
-			Expect(err).ShouldNot(HaveOccurred())
-		}()
-
 		Expect(client.Expose(&types.ExposeRequest{
 			Local:    ":1053",
 			Remote:   "192.168.127.2:53",
@@ -119,13 +92,6 @@ address=/foobar/1.2.3.4
 	})
 
 	It("should reach a http server in the VM using the tunneling of the daemon", func() {
-		_, err := sshExec("sudo podman run --rm --name http-test -d -p 8080:80 -t docker.io/library/nginx:alpine")
-		Expect(err).ShouldNot(HaveOccurred())
-		defer func() {
-			_, err := sshExec("sudo podman stop http-test")
-			Expect(err).ShouldNot(HaveOccurred())
-		}()
-
 		httpClient := &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -146,14 +112,7 @@ address=/foobar/1.2.3.4
 	})
 
 	It("should reach a http server in the VM using dynamic port forwarding configured within the VM", func() {
-		_, err := sshExec("sudo podman run --rm --name http-test -d -p 8080:80 -t docker.io/library/nginx:alpine")
-		Expect(err).ShouldNot(HaveOccurred())
-		defer func() {
-			_, err := sshExec("sudo podman stop http-test")
-			Expect(err).ShouldNot(HaveOccurred())
-		}()
-
-		_, err = net.Dial("tcp", "127.0.0.1:9090")
+		_, err := net.Dial("tcp", "127.0.0.1:9090")
 		Expect(err).Should(HaveOccurred())
 		Expect(err.Error()).To(HaveSuffix("connection refused"))
 
