@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
@@ -359,7 +360,23 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 	}
 
 	for i := 0; i < len(forwardSocket); i++ {
-		dest := url.URL{
+		var (
+			src *url.URL
+			err error
+		)
+		if strings.Contains(forwardSocket[i], "://") {
+			src, err = url.Parse(forwardSocket[i])
+			if err != nil {
+				return err
+			}
+		} else {
+			src = &url.URL{
+				Scheme: "unix",
+				Path:   forwardSocket[i],
+			}
+		}
+
+		dest := &url.URL{
 			Scheme: "ssh",
 			User:   url.User(forwardUser[i]),
 			Host:   sshHostPort,
@@ -368,7 +385,7 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 		j := i
 		g.Go(func() error {
 			defer os.Remove(forwardSocket[j])
-			forward, err := CreateSSHForward(ctx, forwardSocket[j], dest, forwardIdentify[j], vn)
+			forward, err := sshclient.CreateSSHForward(ctx, src, dest, forwardIdentify[j], vn)
 			if err != nil {
 				return err
 			}

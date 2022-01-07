@@ -18,6 +18,11 @@ qemu-wrapper:
 vm:
 	GOOS=linux CGO_ENABLED=0 go build $(LDFLAGS) -o bin/vm ./cmd/vm
 
+# win-sshproxy is compiled as a windows GUI to support backgrounding
+.PHONY: win-sshproxy
+win-sshproxy:
+	GOOS=windows go build -ldflags -H=windowsgui -o bin/win-sshproxy.exe ./cmd/win-sshproxy
+
 .PHONY: clean
 clean:
 	rm -rf ./bin
