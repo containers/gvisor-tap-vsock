@@ -65,6 +65,32 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 	}
 
 	switch protocol {
+	case types.UNIX:
+		var p tcpproxy.Proxy
+		p.ListenFunc = func(_, socketPath string) (net.Listener, error) {
+			return net.Listen("unix", socketPath) // override tcp to use unix socket
+		}
+		p.AddRoute(local, &tcpproxy.DialProxy{
+			Addr: remote,
+			DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
+				return gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
+			},
+		})
+		if err := p.Start(); err != nil {
+			return err
+		}
+		go func() {
+			if err := p.Wait(); err != nil {
+				log.Error(err)
+			}
+		}()
+
+		f.proxies[key(protocol, local)] = proxy{
+			Protocol:   "unix",
+			Local:      local,
+			Remote:     remote,
+			underlying: &p,
+		}
 	case types.UDP:
 		addr, err := net.ResolveUDPAddr("udp", local)
 		if err != nil {
