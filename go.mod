@@ -3,6 +3,7 @@ module github.com/containers/gvisor-tap-vsock
 go 1.16
 
 require (
+	github.com/Microsoft/go-winio v0.5.1
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/coreos/stream-metadata-go v0.1.6
 	github.com/dustin/go-humanize v1.0.0
@@ -24,6 +25,7 @@ require (
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	golang.org/x/sys v0.0.0-20220111092808-5a964db01320
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect

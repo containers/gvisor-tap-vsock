@@ -1,4 +1,4 @@
-package main
+package sshclient
 
 import (
 	"context"
@@ -6,11 +6,11 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/fs"
-	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
-	vnet "github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
@@ -24,21 +24,30 @@ type CloseWriteStream interface {
 
 type SSHForward struct {
 	listener net.Listener
-	bastion  *sshclient.Bastion
+	bastion  *Bastion
 	sock     *url.URL
 }
 
-func CreateSSHForward(ctx context.Context, socket string, dest url.URL, identity string, vn *vnet.VirtualNetwork) (*SSHForward, error) {
-	if err := os.Remove(socket); err != nil && !os.IsNotExist(err) {
-		return &SSHForward{}, err
+type SSHDialer interface {
+	DialContextTCP(ctx context.Context, addr string) (net.Conn, error)
+}
+
+type genericTCPDialer struct {
+}
+
+var defaultTCPDialer genericTCPDialer
+
+func (dialer *genericTCPDialer) DialContextTCP(ctx context.Context, addr string) (net.Conn, error) {
+	var d net.Dialer
+	return d.DialContext(ctx, "tcp", addr)
+}
+
+func CreateSSHForward(ctx context.Context, src *url.URL, dest *url.URL, identity string, dialer SSHDialer) (*SSHForward, error) {
+	if dialer == nil {
+		dialer = &defaultTCPDialer
 	}
 
-	src := url.URL{
-		Scheme: "unix",
-		Path:   socket,
-	}
-
-	return setupProxy(ctx, &src, &dest, identity, vn)
+	return setupProxy(ctx, src, dest, identity, dialer)
 }
 
 func (forward *SSHForward) AcceptAndTunnel(ctx context.Context) error {
@@ -54,7 +63,7 @@ func (forward *SSHForward) Close() {
 	}
 }
 
-func connectForward(ctx context.Context, bastion *sshclient.Bastion) (CloseWriteStream, error) {
+func connectForward(ctx context.Context, bastion *Bastion) (CloseWriteStream, error) {
 	for retries := 1; ; retries++ {
 		forward, err := bastion.Client.Dial("unix", bastion.Path)
 		if err == nil {
@@ -84,9 +93,18 @@ func connectForward(ctx context.Context, bastion *sshclient.Bastion) (CloseWrite
 }
 
 func listenUnix(socketURI *url.URL) (net.Listener, error) {
+	path := socketURI.Path
+	if runtime.GOOS == "windows" {
+		path = strings.TrimPrefix(path, "/")
+	}
+
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
 	oldmask := fs.Umask(0177)
 	defer fs.Umask(oldmask)
-	listener, err := net.Listen("unix", socketURI.Path)
+	listener, err := net.Listen("unix", path)
 	if err != nil {
 		return listener, errors.Wrapf(err, "Error listening on socket: %s", socketURI.Path)
 	}
@@ -94,19 +112,33 @@ func listenUnix(socketURI *url.URL) (net.Listener, error) {
 	return listener, nil
 }
 
-func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity string, vn *vnet.VirtualNetwork) (*SSHForward, error) {
-	listener, err := listenUnix(socketURI)
-	if err != nil {
-		return &SSHForward{}, err
+func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity string, dialer SSHDialer) (*SSHForward, error) {
+	var (
+		listener net.Listener
+		err      error
+	)
+	switch socketURI.Scheme {
+	case "unix":
+		listener, err = listenUnix(socketURI)
+		if err != nil {
+			return &SSHForward{}, err
+		}
+	case "npipe":
+		listener, err = listenNpipe(socketURI)
+		if err != nil {
+			return &SSHForward{}, err
+		}
+	default:
+		return &SSHForward{}, errors.Errorf("URI scheme not supported: %s", socketURI.Scheme)
 	}
 
-	connectFunc := func(bastion *sshclient.Bastion) (net.Conn, error) {
+	connectFunc := func(bastion *Bastion) (net.Conn, error) {
 		timeout := 5 * time.Second
 		if bastion != nil {
 			timeout = bastion.Config.Timeout
 		}
 		ctx, cancel := context.WithTimeout(ctx, timeout)
-		conn, err := vn.DialContextTCP(ctx, dest.Host)
+		conn, err := dialer.DialContextTCP(ctx, dest.Host)
 		if cancel != nil {
 			cancel()
 		}
@@ -119,7 +151,7 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 		return &SSHForward{}, err
 	}
 
-	bastion, err := sshclient.CreateBastion(dest, "", identity, conn, connectFunc)
+	bastion, err := CreateBastion(dest, "", identity, conn, connectFunc)
 	if err != nil {
 		return &SSHForward{}, err
 	}
@@ -129,7 +161,7 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 	return &SSHForward{listener, &bastion, socketURI}, nil
 }
 
-func initialConnection(ctx context.Context, connectFunc sshclient.ConnectCallback) (net.Conn, error) {
+func initialConnection(ctx context.Context, connectFunc ConnectCallback) (net.Conn, error) {
 	var (
 		conn net.Conn
 		err  error
@@ -157,7 +189,7 @@ loop:
 	return conn, err
 }
 
-func acceptConnection(ctx context.Context, listener net.Listener, bastion *sshclient.Bastion, socketURI *url.URL) error {
+func acceptConnection(ctx context.Context, listener net.Listener, bastion *Bastion, socketURI *url.URL) error {
 	con, err := listener.Accept()
 	if err != nil {
 		return errors.Wrapf(err, "Error accepting on socket: %s", socketURI.Path)
