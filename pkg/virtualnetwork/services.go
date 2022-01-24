@@ -80,9 +80,7 @@ func dhcpServer(configuration *types.Configuration, s *stack.Stack, ipPool *tap.
 		return nil, err
 	}
 	go func() {
-		if err := server.Serve(); err != nil {
-			log.Error(err)
-		}
+		log.Error(server.Serve())
 	}()
 	return server.Mux(), nil
 }
