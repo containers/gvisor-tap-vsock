@@ -83,10 +83,10 @@ func (e *LinkEndpoint) MTU() uint32 {
 func (e *LinkEndpoint) Wait() {
 }
 
-func (e *LinkEndpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *LinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	n := 0
 	for p := pkts.Front(); p != nil; p = p.Next() {
-		if err := e.writePacket(r, protocol, p); err != nil {
+		if err := e.writePacket(p.EgressRoute, p.NetworkProtocolNumber, p); err != nil {
 			return n, err
 		}
 		n++

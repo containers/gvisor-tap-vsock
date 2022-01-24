@@ -284,10 +284,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 			return
 		}
 
-		// TODO(gvisor.dev/issue/3810:) When adding protocol numbers into the
-		// header information, we may have to change this code to handle the
-		// ICMP header no longer being in the data buffer.
-
 		// Because IP and ICMP are so closely intertwined, we need to handcraft our
 		// IP header to be able to follow RFC 792. The wording on page 13 is as
 		// follows:
@@ -409,6 +405,24 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 type icmpReason interface {
 	isICMPReason()
 }
+
+// icmpReasonNetworkProhibited is an error where the destination network is
+// prohibited.
+type icmpReasonNetworkProhibited struct{}
+
+func (*icmpReasonNetworkProhibited) isICMPReason() {}
+
+// icmpReasonHostProhibited is an error where the destination host is
+// prohibited.
+type icmpReasonHostProhibited struct{}
+
+func (*icmpReasonHostProhibited) isICMPReason() {}
+
+// icmpReasonAdministrativelyProhibited is an error where the destination is
+// administratively prohibited.
+type icmpReasonAdministrativelyProhibited struct{}
+
+func (*icmpReasonAdministrativelyProhibited) isICMPReason() {}
 
 // icmpReasonPortUnreachable is an error where the transport protocol has no
 // listener and no alternative means to inform the sender.
@@ -560,6 +574,12 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	sent := netEP.stats.icmp.packetsSent
 	icmpType, icmpCode, counter, pointer := func() (header.ICMPv4Type, header.ICMPv4Code, tcpip.MultiCounterStat, byte) {
 		switch reason := reason.(type) {
+		case *icmpReasonNetworkProhibited:
+			return header.ICMPv4DstUnreachable, header.ICMPv4NetProhibited, sent.dstUnreachable, 0
+		case *icmpReasonHostProhibited:
+			return header.ICMPv4DstUnreachable, header.ICMPv4HostProhibited, sent.dstUnreachable, 0
+		case *icmpReasonAdministrativelyProhibited:
+			return header.ICMPv4DstUnreachable, header.ICMPv4AdminProhibited, sent.dstUnreachable, 0
 		case *icmpReasonPortUnreachable:
 			return header.ICMPv4DstUnreachable, header.ICMPv4PortUnreachable, sent.dstUnreachable, 0
 		case *icmpReasonProtoUnreachable:
