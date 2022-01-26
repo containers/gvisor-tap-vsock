@@ -5,7 +5,7 @@ github.com/Microsoft/go-winio/pkg/guid
 # github.com/apparentlymart/go-cidr v1.1.0
 ## explicit
 github.com/apparentlymart/go-cidr/cidr
-# github.com/coreos/stream-metadata-go v0.1.6
+# github.com/coreos/stream-metadata-go v0.1.7
 ## explicit
 github.com/coreos/stream-metadata-go/fedoracoreos
 github.com/coreos/stream-metadata-go/fedoracoreos/internals
@@ -24,8 +24,6 @@ github.com/google/btree
 ## explicit
 github.com/google/gopacket
 github.com/google/gopacket/layers
-# github.com/google/renameio v1.0.0
-github.com/google/renameio
 # github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252
 ## explicit
 github.com/google/tcpproxy

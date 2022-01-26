@@ -98,8 +98,8 @@ github.com/coreos/go-systemd v0.0.0-20190321100706-95778dfbb74e/go.mod h1:F5haX7
 github.com/coreos/go-systemd/v22 v22.0.0/go.mod h1:xO0FLkIi5MaZafQlIrOotqXZ90ih+1atmu1JpKERPPk=
 github.com/coreos/go-systemd/v22 v22.1.0/go.mod h1:xO0FLkIi5MaZafQlIrOotqXZ90ih+1atmu1JpKERPPk=
 github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f/go.mod h1:E3G3o1h8I7cfcXa63jLwjI0eiQQMgzzUDFVpN/nH/eA=
-github.com/coreos/stream-metadata-go v0.1.6 h1:UWoPNtMbs6q3aFaHksuqB6QtaRAic5feUioeclBM+vg=
-github.com/coreos/stream-metadata-go v0.1.6/go.mod h1:zxVoWUDB0H8+tZRhTs0LeLeR/QdmBsuo7FN1oOBrWTE=
+github.com/coreos/stream-metadata-go v0.1.7 h1:WlD8p2mcGZ/OtROJo0o4eJKK179p697wlVzipTv2Wjc=
+github.com/coreos/stream-metadata-go v0.1.7/go.mod h1:RTjQyHgO/G37oJ3qnqYK6Z4TPZ5EsaabOtfMjVXmgko=
 github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d/go.mod h1:maD7wRr/U5Z6m/iR4s+kqSMx2CaBsrgA7czyZG/E6dU=
 github.com/cpuguy83/go-md2man/v2 v2.0.0/go.mod h1:maD7wRr/U5Z6m/iR4s+kqSMx2CaBsrgA7czyZG/E6dU=
 github.com/davecgh/go-spew v0.0.0-20151105211317-5215b55f46b2/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -213,8 +213,6 @@ github.com/google/pprof v0.0.0-20200430221834-fc25d7d30c6d/go.mod h1:ZgVRPoUq/hf
 github.com/google/pprof v0.0.0-20200708004538-1a94d8640e99/go.mod h1:ZgVRPoUq/hfqzAqh7sHMqb3I9Rq5C59dIz2SbBwJ4eM=
 github.com/google/pprof v0.0.0-20210407192527-94a9f03dee38/go.mod h1:kpwsk12EmLew5upagYY7GY0pfYCcupk39gWOCRROcvE=
 github.com/google/renameio v0.1.0/go.mod h1:KWCgfxg9yswjAJkECMjeO8J8rahYeXnNhOm40UhjYkI=
-github.com/google/renameio v1.0.0 h1:xhp2CnJmgQmpJU4RY8chagahUq5mbPPAbiSQstKpVMA=
-github.com/google/renameio v1.0.0/go.mod h1:t/HQoYBZSsWSNK35C6CO/TpPLDVWvxOHboWUAweKUpk=
 github.com/google/subcommands v1.0.2-0.20190508160503-636abe8753b8/go.mod h1:ZjhPrFU+Olkh9WazFPsl27BQ4UPiG37m3yTrtFlrHVk=
 github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252 h1:tAkooHvRrtO8kFB6YOPTpLQok3Hfv1DNDXdNqgi29Ao=
 github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252/go.mod h1:DavVbd41y+b7ukKDmlnPR4nGYmkWXR6vHUkjQNiHPBs=
@@ -775,8 +773,6 @@ gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C
 gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b h1:h8qDotaEPuJATrMmW04NCwg7v22aHH28wwpauUhK9Oo=
 gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 gotest.tools v2.2.0+incompatible/go.mod h1:DsYFclhRJ6vuDpmuTbkuFWG+y2sxOXAzmJt81HFBacw=
-gvisor.dev/gvisor v0.0.0-20220101053744-1d5a116c5b1d h1:1O1NmUTpramdSsGqcAW0V2+k6oIuU9FYyHzF/qiWL9o=
-gvisor.dev/gvisor v0.0.0-20220101053744-1d5a116c5b1d/go.mod h1:vmN0Pug/s8TJmpnt30DvrEfZ5vDl52psGLU04tFuK2U=
 gvisor.dev/gvisor v0.0.0-20220121190119-4f2d380c8b55 h1:KXWt1l6GMxSQ2YUvclCaqoAtb69Nw+FlU8F4rMaSqFs=
 gvisor.dev/gvisor v0.0.0-20220121190119-4f2d380c8b55/go.mod h1:vmN0Pug/s8TJmpnt30DvrEfZ5vDl52psGLU04tFuK2U=
 honnef.co/go/tools v0.0.0-20190102054323-c2f93a96b099/go.mod h1:rf3lG4BRIbNafJWhAfAdb/ePZxsR/4RtNHQocxwk9r4=
