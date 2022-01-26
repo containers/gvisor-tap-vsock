@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/Microsoft/go-winio v0.5.1
 	github.com/apparentlymart/go-cidr v1.1.0
-	github.com/coreos/stream-metadata-go v0.1.6
+	github.com/coreos/stream-metadata-go v0.1.7
 	github.com/dustin/go-humanize v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252
