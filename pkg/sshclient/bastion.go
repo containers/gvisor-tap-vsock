@@ -168,7 +168,7 @@ func (bastion *Bastion) reconnect(conn net.Conn) error {
 		conn, err = bastion.connect(bastion)
 	}
 	if err != nil {
-		return errors.Wrapf(err, "Connection to bastion host (%s) failed.", bastion.Host)
+		return errors.Wrapf(err, "Connection to bastion host (%s) failed", bastion.Host)
 	}
 	addr := net.JoinHostPort(bastion.Host, bastion.Port)
 	c, chans, reqs, err := ssh.NewClientConn(conn, addr, bastion.Config)
