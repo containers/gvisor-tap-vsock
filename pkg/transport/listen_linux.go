@@ -22,7 +22,7 @@ func Listen(endpoint string) (net.Listener, error) {
 		if err != nil {
 			return nil, err
 		}
-		return mdlayhervsock.Listen(uint32(port))
+		return mdlayhervsock.Listen(uint32(port), nil)
 	case "unix", "unixpacket":
 		return net.Listen(parsed.Scheme, parsed.Path)
 	case "tcp":
