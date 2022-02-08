@@ -42,7 +42,7 @@ github.com/mdlayher/socket
 # github.com/mdlayher/vsock v1.0.0
 ## explicit
 github.com/mdlayher/vsock
-# github.com/miekg/dns v1.1.45
+# github.com/miekg/dns v1.1.46
 ## explicit
 github.com/miekg/dns
 # github.com/nxadm/tail v1.4.8
