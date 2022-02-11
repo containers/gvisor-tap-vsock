@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -191,7 +192,7 @@ var _ = Describe("port forwarding", func() {
 
 		unix2tcpfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
 
-		out, err := sshExec(`curl http://gateway.containers.internal/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2tcpfwdsock + `","remote":"192.168.127.2:8080"}'`)
+		out, err := sshExec(`curl http://gateway.containers.internal/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2tcpfwdsock + `","remote":"tcp://192.168.127.2:8080"}'`)
 		Expect(string(out)).Should(Equal(""))
 		Expect(err).ShouldNot(HaveOccurred())
 
@@ -213,6 +214,45 @@ var _ = Describe("port forwarding", func() {
 			resp, err := httpClient.Get("http://placeholder/")
 			g.Expect(err).ShouldNot(HaveOccurred())
 			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		}).Should(Succeed())
+	})
+
+	It("should expose and reach rootless podman API using unix to unix forwarding over ssh", func() {
+		if runtime.GOOS == "windows" {
+			Skip("AF_UNIX not supported on Windows")
+		}
+
+		unix2unixfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
+
+		remoteuri := fmt.Sprintf(`ssh-tunnel://%s:%d%s?user=root&key=%s`, "192.168.127.2", 22, podmanSock, privateKeyFile)
+		_, err := sshExec(`curl http://192.168.127.1/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2unixfwdsock + `","remote":"` + remoteuri + `"}'`)
+		Expect(err).ShouldNot(HaveOccurred())
+
+		Eventually(func(g Gomega) {
+			sockfile, err := os.Stat(unix2unixfwdsock)
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(sockfile.Mode().Type().String()).To(Equal(os.ModeSocket.String()))
+		}).Should(Succeed())
+
+		httpClient := &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return net.Dial("unix", unix2unixfwdsock)
+				},
+			},
+		}
+
+		Eventually(func(g Gomega) {
+			resp, err := httpClient.Get("http://host/_ping")
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			g.Expect(resp.ContentLength).To(Equal(int64(2)))
+
+			reply := make([]byte, resp.ContentLength)
+			_, err = io.ReadAtLeast(resp.Body, reply, len(reply))
+
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(string(reply)).To(Equal("OK"))
 		}).Should(Succeed())
 	})
 })
