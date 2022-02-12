@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v1.1.0
+
+- [New API] [commit](https://github.com/mdlayher/vsock/commit/44cd82dc5f7de644436f22236b111ab97fa9a14f):
+  `vsock.FileListener` can be used to create a `vsock.Listener` from an existing
+  `os.File`, which may be provided by systemd socket activation or another
+  external mechanism.
+
+## v1.0.1
+
+- [Bug Fix] [commit](https://github.com/mdlayher/vsock/commit/99a6dccdebad21d1fa5f757d228d677ccb1412dc):
+  upgrade `github.com/mdlayher/socket` to handle non-blocking `connect(2)`
+  errors (called in `vsock.Dial`) properly by checking the `SO_ERROR` socket
+  option. Lock in this behavior with a new test.
+- [Improvement] [commit](https://github.com/mdlayher/vsock/commit/375f3bbcc363500daf367ec511638a4655471719):
+  downgrade the version of `golang.org/x/net` in use to support Go 1.12. We
+  don't need the latest version for this package.
+
 ## v1.0.0
 
 **This is the first release of package vsock that only supports Go 1.12+.

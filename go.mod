@@ -11,7 +11,7 @@ require (
 	github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252
 	github.com/insomniacslk/dhcp v0.0.0-20210812084645-decc701b3665
 	github.com/linuxkit/virtsock v0.0.0-20201010232012-f8cee7dfc7a3
-	github.com/mdlayher/vsock v1.0.0
+	github.com/mdlayher/vsock v1.1.0
 	github.com/miekg/dns v1.1.46
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.18.1
@@ -23,6 +23,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
+	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/sys v0.0.0-20220204135822-1c1b9b1eba6a
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
