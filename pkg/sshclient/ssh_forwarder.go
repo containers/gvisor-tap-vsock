@@ -13,13 +13,17 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/fs"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 )
 
 type CloseWriteStream interface {
 	io.Reader
 	io.WriteCloser
 	CloseWrite() error
+}
+
+type CloseWriteConn interface {
+	net.Conn
+	CloseWriteStream
 }
 
 type SSHForward struct {
@@ -47,11 +51,23 @@ func CreateSSHForward(ctx context.Context, src *url.URL, dest *url.URL, identity
 		dialer = &defaultTCPDialer
 	}
 
-	return setupProxy(ctx, src, dest, identity, dialer)
+	return setupProxy(ctx, src, dest, identity, "", dialer)
+}
+
+func CreateSSHForwardPassphrase(ctx context.Context, src *url.URL, dest *url.URL, identity string, passphrase string, dialer SSHDialer) (*SSHForward, error) {
+	if dialer == nil {
+		dialer = &defaultTCPDialer
+	}
+
+	return setupProxy(ctx, src, dest, identity, passphrase, dialer)
 }
 
 func (forward *SSHForward) AcceptAndTunnel(ctx context.Context) error {
 	return acceptConnection(ctx, forward.listener, forward.bastion, forward.sock)
+}
+
+func (forward *SSHForward) Tunnel(ctx context.Context) (CloseWriteConn, error) {
+	return connectForward(ctx, forward.bastion)
 }
 
 func (forward *SSHForward) Close() {
@@ -63,20 +79,20 @@ func (forward *SSHForward) Close() {
 	}
 }
 
-func connectForward(ctx context.Context, bastion *Bastion) (CloseWriteStream, error) {
+func connectForward(ctx context.Context, bastion *Bastion) (CloseWriteConn, error) {
 	for retries := 1; ; retries++ {
 		forward, err := bastion.Client.Dial("unix", bastion.Path)
 		if err == nil {
-			return forward.(ssh.Channel), nil
+			return forward.(CloseWriteConn), nil
 		}
 		if retries > 2 {
-			return nil, errors.Wrapf(err, "Couldn't restablish ssh tunnel on path: %s", bastion.Path)
+			return nil, errors.Wrapf(err, "Couldn't reestablish ssh tunnel on path: %s", bastion.Path)
 		}
 		// Check if ssh connection is still alive
 		_, _, err = bastion.Client.Conn.SendRequest("alive@gvproxy", true, nil)
 		if err != nil {
 			for bastionRetries := 1; ; bastionRetries++ {
-				err = bastion.Reconnect()
+				err = bastion.Reconnect(ctx)
 				if err == nil {
 					break
 				}
@@ -112,7 +128,7 @@ func listenUnix(socketURI *url.URL) (net.Listener, error) {
 	return listener, nil
 }
 
-func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity string, dialer SSHDialer) (*SSHForward, error) {
+func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity string, passphrase string, dialer SSHDialer) (*SSHForward, error) {
 	var (
 		listener net.Listener
 		err      error
@@ -128,11 +144,13 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 		if err != nil {
 			return &SSHForward{}, err
 		}
+	case "":
+		// empty URL = Tunnel Only, no Accept
 	default:
 		return &SSHForward{}, errors.Errorf("URI scheme not supported: %s", socketURI.Scheme)
 	}
 
-	connectFunc := func(bastion *Bastion) (net.Conn, error) {
+	connectFunc := func(ctx context.Context, bastion *Bastion) (net.Conn, error) {
 		timeout := 5 * time.Second
 		if bastion != nil {
 			timeout = bastion.Config.Timeout
@@ -151,12 +169,12 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 		return &SSHForward{}, err
 	}
 
-	bastion, err := CreateBastion(dest, "", identity, conn, connectFunc)
+	bastion, err := CreateBastion(dest, passphrase, identity, conn, connectFunc)
 	if err != nil {
 		return &SSHForward{}, err
 	}
 
-	logrus.Infof("Socket forward established: %s to %s\n", socketURI.Path, dest.Path)
+	logrus.Debugf("Socket forward established: %s -> %s\n", socketURI.Path, dest.Path)
 
 	return &SSHForward{listener, &bastion, socketURI}, nil
 }
@@ -178,7 +196,7 @@ loop:
 			// proceed
 		}
 
-		conn, err = connectFunc(nil)
+		conn, err = connectFunc(ctx, nil)
 		if err == nil {
 			break
 		}

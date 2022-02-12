@@ -224,7 +224,7 @@ var _ = Describe("port forwarding", func() {
 
 		unix2unixfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
 
-		remoteuri := fmt.Sprintf(`ssh-tunnel://%s:%d%s?user=root&key=%s`, "192.168.127.2", 22, podmanSock, privateKeyFile)
+		remoteuri := fmt.Sprintf(`ssh-tunnel://root@%s:%d%s?key=%s`, "192.168.127.2", 22, podmanSock, privateKeyFile)
 		_, err := sshExec(`curl http://192.168.127.1/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2unixfwdsock + `","remote":"` + remoteuri + `"}'`)
 		Expect(err).ShouldNot(HaveOccurred())
 

@@ -84,6 +84,6 @@ var _ = Describe("connectivity", func() {
 		Expect(err).ShouldNot(HaveOccurred())
 		cmd.Wait()
 		Expect(strings.Contains(string(output), `[info ] test: Listening on: \\.\pipe\fake_docker_engine`)).Should(BeTrue())
-		Expect(strings.Contains(string(output),`[info ] test: Socket forward established`)).Should(BeTrue())
+		Expect(strings.Contains(string(output),`[debug] test: Socket forward established`)).Should(BeTrue())
 	})
 })
