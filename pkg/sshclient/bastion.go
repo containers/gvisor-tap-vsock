@@ -2,6 +2,7 @@ package sshclient
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -35,7 +36,7 @@ type Bastion struct {
 	connect ConnectCallback
 }
 
-type ConnectCallback func(bastion *Bastion) (net.Conn, error)
+type ConnectCallback func(ctx context.Context, bastion *Bastion) (net.Conn, error)
 
 func PublicKey(path string, passphrase []byte) (ssh.Signer, error) {
 	key, err := ioutil.ReadFile(path)
@@ -138,7 +139,7 @@ func CreateBastion(_url *url.URL, passPhrase string, identity string, initial ne
 	}
 
 	if connect == nil {
-		connect = func(bastion *Bastion) (net.Conn, error) {
+		connect = func(ctx context.Context, bastion *Bastion) (net.Conn, error) {
 			conn, err := net.DialTimeout("tcp",
 				net.JoinHostPort(bastion.Host, bastion.Port),
 				bastion.Config.Timeout,
@@ -149,11 +150,11 @@ func CreateBastion(_url *url.URL, passPhrase string, identity string, initial ne
 	}
 
 	bastion := Bastion{nil, config, _url.Hostname(), port, _url.Path, connect}
-	return bastion, bastion.reconnect(initial)
+	return bastion, bastion.reconnect(context.Background(), initial)
 }
 
-func (bastion *Bastion) Reconnect() error {
-	return bastion.reconnect(nil)
+func (bastion *Bastion) Reconnect(ctx context.Context) error {
+	return bastion.reconnect(ctx, nil)
 }
 
 func (bastion *Bastion) Close() {
@@ -162,10 +163,10 @@ func (bastion *Bastion) Close() {
 	}
 }
 
-func (bastion *Bastion) reconnect(conn net.Conn) error {
+func (bastion *Bastion) reconnect(ctx context.Context, conn net.Conn) error {
 	var err error
 	if conn == nil {
-		conn, err = bastion.connect(bastion)
+		conn, err = bastion.connect(ctx, bastion)
 	}
 	if err != nil {
 		return errors.Wrapf(err, "Connection to bastion host (%s) failed", bastion.Host)

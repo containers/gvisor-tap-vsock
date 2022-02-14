@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,12 +14,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/google/tcpproxy"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -39,6 +37,25 @@ type proxy struct {
 	Remote     string `json:"remote"`
 	Protocol   string `json:"protocol"`
 	underlying io.Closer
+}
+
+type gonetDialer struct {
+	stack *stack.Stack
+}
+
+func (d *gonetDialer) DialContextTCP(ctx context.Context, addr string) (conn net.Conn, e error) {
+	address, err := tcpipAddress(1, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	return gonet.DialContextTCP(ctx, d.stack, address, ipv4.ProtocolNumber)
+}
+
+type CloseWrapper func() error
+
+func (w CloseWrapper) Close() error {
+	return w()
 }
 
 func NewPortsForwarder(s *stack.Stack) *PortsForwarder {
@@ -69,17 +86,13 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		// dialFn opens remote connection for the proxy
 		var dialFn func(ctx context.Context, network, addr string) (conn net.Conn, e error)
 
+		var cleanup func()
+
 		// dialFn is set based on the protocol provided by remoteURI.Scheme
 		switch remoteURI.Scheme {
 		case "ssh-tunnel": // unix-to-unix proxy (over SSH)
 			// query string to map for the remoteURI contains ssh config info
 			remoteQuery := remoteURI.Query()
-
-			// username
-			sshuser := firstValueOrEmpty(remoteQuery["user"])
-			if sshuser == "" {
-				return fmt.Errorf("user not provided for unix-ssh connection")
-			}
 
 			// key
 			sshkeypath := firstValueOrEmpty(remoteQuery["key"])
@@ -87,36 +100,12 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 				return fmt.Errorf("key not provided for unix-ssh connection")
 			}
 
-			sshkeyBytes, err := ioutil.ReadFile(sshkeypath)
-			if err != nil {
-				return fmt.Errorf("failed to read ssh key: %s: %w", sshkeypath, err)
-			}
-
 			// passphrase
 			passphrase := firstValueOrEmpty(remoteQuery["passphrase"])
 
-			var sshsigner ssh.Signer
-
-			if passphrase == "" {
-				sshsigner, err = ssh.ParsePrivateKey(sshkeyBytes)
-			} else {
-				sshsigner, err = ssh.ParsePrivateKeyWithPassphrase(sshkeyBytes, []byte(passphrase))
-			}
-
-			// parse private key error?
-			if err != nil {
-				return fmt.Errorf("failed to parse ssh key: %s: %w", sshkeypath, err)
-			}
-
 			// default ssh port if not set
 			if remoteURI.Port() == "" {
-				remoteAddr = fmt.Sprintf("%s:%s", remoteURI.Hostname(), "22")
-			}
-
-			// build address
-			address, err := tcpipAddress(1, remoteAddr)
-			if err != nil {
-				return err
+				remoteURI.Host = fmt.Sprintf("%s:%s", remoteURI.Hostname(), "22")
 			}
 
 			// check the remoteURI path provided for nonsense
@@ -125,74 +114,28 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 			}
 
 			// captured and used by dialFn
-			var tcpConn *gonet.TCPConn
-			var sshClient *ssh.Client
+			var sshForward *sshclient.SSHForward
 			var connLock sync.Mutex
 
-			// handles getting underlying ssh connection, having this outside of
-			// dialFn limits connLock to only the parts it's needed for in a way
-			// that doesn't get racy.
-			sshConnFn := func(ctx context.Context, network, addr string) (client *ssh.Client, err error) {
+			dialFn = func(ctx context.Context, network, addr string) (net.Conn, error) {
 				connLock.Lock()
 				defer connLock.Unlock()
 
-				// check underlying tcpConn to see if it's closed
-				if tcpConn != nil {
-					if _, err := tcpConn.Read(make([]byte, 0)); err == io.EOF {
-						tcpConn = nil // set back to nil to force reconnect
+				if sshForward == nil {
+					client, err := sshclient.CreateSSHForwardPassphrase(ctx, &url.URL{}, remoteURI, sshkeypath, passphrase, &gonetDialer{f.stack})
+					if err != nil {
+						return nil, err
 					}
+					sshForward = client
 				}
 
-				// connect or reconnect to ssh
-				if tcpConn == nil || sshClient == nil {
-					// underlying connection to endpoint for the ssh client
-					tcpConn, err := gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
-					if err != nil {
-						return sshClient, err
-					}
-
-					// ssh client config that uses key authentication
-					config := &ssh.ClientConfig{
-						User: sshuser,
-						Auth: []ssh.AuthMethod{
-							ssh.PublicKeys(sshsigner),
-						},
-						// #nosec G106
-						HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-						HostKeyAlgorithms: []string{
-							ssh.KeyAlgoRSA,
-							ssh.KeyAlgoDSA,
-							ssh.KeyAlgoECDSA256,
-							ssh.KeyAlgoECDSA384,
-							ssh.KeyAlgoECDSA521,
-							ssh.KeyAlgoED25519,
-						},
-						Timeout: 5 * time.Second,
-					}
-
-					// get an sshConn using the underlying gonet.TCPConn
-					sshConn, chans, reqs, err := ssh.NewClientConn(tcpConn, addr, config)
-					if err != nil {
-						return sshClient, err
-					}
-
-					// build an ssh client using sshConn
-					sshClient = ssh.NewClient(sshConn, chans, reqs)
-				}
-
-				return sshClient, err
+				return sshForward.Tunnel(ctx)
 			}
 
-			// the dialFn for unix-to-unix over SSH
-			dialFn = func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
-				// check or create new ssh connection
-				sshClient, err = sshConnFn(ctx, network, addr)
-				if err != nil {
-					return nil, err
+			cleanup = func() {
+				if sshForward != nil {
+					sshForward.Close()
 				}
-
-				// connection using sshclient's dialer
-				return sshClient.Dial("unix", remoteURI.Path)
 			}
 
 		case "tcp": // unix-to-tcp proxy
@@ -234,10 +177,15 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		}()
 
 		f.proxies[key(protocol, local)] = proxy{
-			Protocol:   "unix",
-			Local:      local,
-			Remote:     remote,
-			underlying: &p,
+			Protocol: "unix",
+			Local:    local,
+			Remote:   remote,
+			underlying: CloseWrapper(func() error {
+				if cleanup != nil {
+					cleanup()
+				}
+				return p.Close()
+			}),
 		}
 
 	case types.UDP:
