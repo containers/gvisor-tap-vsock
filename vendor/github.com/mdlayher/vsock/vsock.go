@@ -56,10 +56,10 @@ const (
 	opWrite       = "write"
 )
 
+// TODO(mdlayher): plumb through socket.Config.NetNS if it makes sense.
+
 // Config contains options for a Conn or Listener.
-type Config struct {
-	// TODO(mdlayher): plumb through socket.Config.NetNS if it makes sense.
-}
+type Config struct{}
 
 // Listen opens a connection-oriented net.Listener for incoming VM sockets
 // connections. The port parameter specifies the port for the Listener. Config
@@ -99,6 +99,23 @@ func ListenContextID(contextID, port uint32, cfg *Config) (*Listener, error) {
 			ContextID: contextID,
 			Port:      port,
 		}, nil)
+	}
+
+	return l, nil
+}
+
+// FileListener returns a copy of the network listener corresponding to an open
+// os.File. It is the caller's responsibility to close the Listener when
+// finished. Closing the Listener does not affect the os.File, and closing the
+// os.File does not affect the Listener.
+//
+// This function is intended for advanced use cases and most callers should use
+// Listen instead.
+func FileListener(f *os.File) (*Listener, error) {
+	l, err := fileListener(f)
+	if err != nil {
+		// No addresses available.
+		return nil, opError(opListen, err, nil, nil)
 	}
 
 	return l, nil

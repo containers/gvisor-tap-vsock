@@ -5,6 +5,7 @@ package vsock
 
 import (
 	"net"
+	"os"
 	"time"
 
 	"github.com/mdlayher/socket"
@@ -46,12 +47,15 @@ func (l *listener) Accept() (net.Conn, error) {
 	}, nil
 }
 
+// name is the socket name passed to package socket.
+const name = "vsock"
+
 // listen is the entry point for Listen on Linux.
 func listen(cid, port uint32, _ *Config) (*Listener, error) {
 	// TODO(mdlayher): Config default nil check and initialize. Pass options to
 	// socket.Config where necessary.
 
-	c, err := socket.Socket(unix.AF_VSOCK, unix.SOCK_STREAM, 0, "vsock", nil)
+	c, err := socket.Socket(unix.AF_VSOCK, unix.SOCK_STREAM, 0, name, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -73,13 +77,47 @@ func listen(cid, port uint32, _ *Config) (*Listener, error) {
 		return nil, err
 	}
 
-	lsa, err := c.Getsockname()
+	l, err := newListener(c)
 	if err != nil {
 		_ = c.Close()
 		return nil, err
 	}
 
-	lsavm := lsa.(*unix.SockaddrVM)
+	return l, nil
+}
+
+// fileListener is the entry point for FileListener on Linux.
+func fileListener(f *os.File) (*Listener, error) {
+	c, err := socket.FileConn(f, name)
+	if err != nil {
+		return nil, err
+	}
+
+	l, err := newListener(c)
+	if err != nil {
+		_ = c.Close()
+		return nil, err
+	}
+
+	return l, nil
+}
+
+// newListener creates a Listener from a raw socket.Conn.
+func newListener(c *socket.Conn) (*Listener, error) {
+	lsa, err := c.Getsockname()
+	if err != nil {
+		return nil, err
+	}
+
+	// Now that the library can also accept arbitrary os.Files, we have to
+	// verify the address family so we don't accidentally create a
+	// *vsock.Listener backed by TCP or some other socket type.
+	lsavm, ok := lsa.(*unix.SockaddrVM)
+	if !ok {
+		// All errors should wrapped with os.SyscallError.
+		return nil, os.NewSyscallError("listen", unix.EINVAL)
+	}
+
 	addr := &Addr{
 		ContextID: lsavm.CID,
 		Port:      lsavm.Port,

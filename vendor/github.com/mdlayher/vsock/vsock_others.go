@@ -6,6 +6,7 @@ package vsock
 import (
 	"fmt"
 	"net"
+	"os"
 	"runtime"
 	"time"
 )
@@ -15,6 +16,7 @@ import (
 var errUnimplemented = fmt.Errorf("vsock: not implemented on %s/%s",
 	runtime.GOOS, runtime.GOARCH)
 
+func fileListener(_ *os.File) (*Listener, error)       { return nil, errUnimplemented }
 func listen(_, _ uint32, _ *Config) (*Listener, error) { return nil, errUnimplemented }
 
 type listener struct{}

@@ -37,9 +37,9 @@ github.com/insomniacslk/dhcp/rfc1035label
 # github.com/linuxkit/virtsock v0.0.0-20201010232012-f8cee7dfc7a3
 ## explicit
 github.com/linuxkit/virtsock/pkg/hvsock
-# github.com/mdlayher/socket v0.1.1
+# github.com/mdlayher/socket v0.2.0
 github.com/mdlayher/socket
-# github.com/mdlayher/vsock v1.0.0
+# github.com/mdlayher/vsock v1.1.0
 ## explicit
 github.com/mdlayher/vsock
 # github.com/miekg/dns v1.1.46
@@ -131,6 +131,7 @@ golang.org/x/crypto/ssh/knownhosts
 # golang.org/x/mod v0.4.2
 golang.org/x/mod/semver
 # golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
+## explicit
 golang.org/x/net/bpf
 golang.org/x/net/html
 golang.org/x/net/html/atom
