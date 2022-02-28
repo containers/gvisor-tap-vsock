@@ -50,6 +50,12 @@ type rawPacket struct {
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
 	packetInfo tcpip.IPPacketInfo
+
+	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
+	// for IPv6.
+	tosOrTClass uint8
+	// ttlOrHopLimit stores either the TTL for IPv4 or the HopLimit for IPv6
+	ttlOrHopLimit uint8
 }
 
 // endpoint is the raw socket implementation of tcpip.Endpoint. It is legal to
@@ -156,6 +162,11 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 	return e, nil
 }
 
+// HasNIC implements tcpip.SocketOptionsHandler.
+func (e *endpoint) HasNIC(id int32) bool {
+	return e.stack.HasNIC(tcpip.NICID(id))
+}
+
 // Abort implements stack.TransportEndpoint.Abort.
 func (e *endpoint) Abort() {
 	e.Close()
@@ -222,32 +233,54 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 
 	e.rcvMu.Unlock()
 
-	res := tcpip.ReadResult{
-		Total: pkt.data.Size(),
-		ControlMessages: tcpip.ControlMessages{
-			HasTimestamp: true,
-			Timestamp:    pkt.receivedAt,
-		},
-	}
-	if opts.NeedRemoteAddr {
-		res.RemoteAddr = pkt.senderAddr
+	// Control Messages
+	// TODO(https://gvisor.dev/issue/7012): Share control message code with other
+	// network endpoints.
+	cm := tcpip.ReceivableControlMessages{
+		HasTimestamp: true,
+		Timestamp:    pkt.receivedAt,
 	}
 	switch netProto := e.net.NetProto(); netProto {
 	case header.IPv4ProtocolNumber:
+		if e.ops.GetReceiveTOS() {
+			cm.HasTOS = true
+			cm.TOS = pkt.tosOrTClass
+		}
+		if e.ops.GetReceiveTTL() {
+			cm.HasTTL = true
+			cm.TTL = pkt.ttlOrHopLimit
+		}
 		if e.ops.GetReceivePacketInfo() {
-			res.ControlMessages.HasIPPacketInfo = true
-			res.ControlMessages.PacketInfo = pkt.packetInfo
+			cm.HasIPPacketInfo = true
+			cm.PacketInfo = pkt.packetInfo
 		}
 	case header.IPv6ProtocolNumber:
+		if e.ops.GetReceiveTClass() {
+			cm.HasTClass = true
+			// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
+			cm.TClass = uint32(pkt.tosOrTClass)
+		}
+		if e.ops.GetReceiveHopLimit() {
+			cm.HasHopLimit = true
+			cm.HopLimit = pkt.ttlOrHopLimit
+		}
 		if e.ops.GetIPv6ReceivePacketInfo() {
-			res.ControlMessages.HasIPv6PacketInfo = true
-			res.ControlMessages.IPv6PacketInfo = tcpip.IPv6PacketInfo{
+			cm.HasIPv6PacketInfo = true
+			cm.IPv6PacketInfo = tcpip.IPv6PacketInfo{
 				NIC:  pkt.packetInfo.NIC,
 				Addr: pkt.packetInfo.DestinationAddr,
 			}
 		}
 	default:
 		panic(fmt.Sprintf("unrecognized network protocol = %d", netProto))
+	}
+
+	res := tcpip.ReadResult{
+		Total:           pkt.data.Size(),
+		ControlMessages: cm,
+	}
+	if opts.NeedRemoteAddr {
+		res.RemoteAddr = pkt.senderAddr
 	}
 
 	n, err := pkt.data.ReadTo(dst, opts.Peek)
@@ -602,6 +635,15 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 				DestinationAddr: dstAddr,
 				NIC:             pkt.NICID,
 			},
+		}
+
+		// Save any useful information from the network header to the packet.
+		packet.tosOrTClass, _ = pkt.Network().TOS()
+		switch pkt.NetworkProtocolNumber {
+		case header.IPv4ProtocolNumber:
+			packet.ttlOrHopLimit = header.IPv4(pkt.NetworkHeader().View()).TTL()
+		case header.IPv6ProtocolNumber:
+			packet.ttlOrHopLimit = header.IPv6(pkt.NetworkHeader().View()).HopLimit()
 		}
 
 		// Raw IPv4 endpoints return the IP header, but IPv6 endpoints do not.

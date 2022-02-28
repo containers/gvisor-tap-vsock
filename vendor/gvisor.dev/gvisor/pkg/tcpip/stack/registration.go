@@ -156,7 +156,7 @@ type PacketEndpoint interface {
 	// should construct its own ethernet header for applications.
 	//
 	// HandlePacket may modify pkt.
-	HandlePacket(nicID tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+	HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
 // UnknownDestinationPacketDisposition enumerates the possible return values from
@@ -358,11 +358,6 @@ const (
 	// AddressConfigSlaac is an address endpoint added by SLAAC, as per RFC 4862
 	// section 5.5.3.
 	AddressConfigSlaac
-
-	// AddressConfigSlaacTemp is a temporary address endpoint added by SLAAC as
-	// per RFC 4941. Temporary SLAAC addresses are short-lived and are not
-	// to be valid (or preferred) forever; hence the term temporary.
-	AddressConfigSlaacTemp
 )
 
 // AddressProperties contains additional properties that can be configured when
@@ -371,6 +366,11 @@ type AddressProperties struct {
 	PEB        PrimaryEndpointBehavior
 	ConfigType AddressConfigType
 	Deprecated bool
+	// Temporary is as defined in RFC 4941, but applies not only to addresses
+	// added via SLAAC, e.g. DHCPv6 can also add temporary addresses. Temporary
+	// addresses are short-lived and are not to be valid (or preferred)
+	// forever; hence the term temporary.
+	Temporary bool
 }
 
 // AssignableAddressEndpoint is a reference counted address endpoint that may be
@@ -415,6 +415,9 @@ type AddressEndpoint interface {
 
 	// SetDeprecated sets this endpoint's deprecated status.
 	SetDeprecated(bool)
+
+	// Temporary returns whether or not this endpoint is temporary.
+	Temporary() bool
 }
 
 // AddressKind is the kind of an address.
@@ -487,6 +490,12 @@ type AddressableEndpoint interface {
 	// Returns *tcpip.ErrBadLocalAddress if the endpoint does not have the passed
 	// permanent address.
 	RemovePermanentAddress(addr tcpip.Address) tcpip.Error
+
+	// SetDeprecated sets whether the address should be deprecated or not.
+	//
+	// Returns *tcpip.ErrBadLocalAddress if the endpoint does not have the passed
+	// address.
+	SetDeprecated(addr tcpip.Address, deprecated bool) tcpip.Error
 
 	// MainAddress returns the endpoint's primary permanent address.
 	MainAddress() tcpip.AddressWithPrefix
@@ -677,7 +686,9 @@ type ForwardingNetworkEndpoint interface {
 	Forwarding() bool
 
 	// SetForwarding sets the forwarding configuration.
-	SetForwarding(bool)
+	//
+	// Returns the previous forwarding configuration.
+	SetForwarding(bool) bool
 }
 
 // NetworkProtocol is the interface that needs to be implemented by network
@@ -730,12 +741,18 @@ type NetworkDispatcher interface {
 	// DeliverNetworkPacket finds the appropriate network protocol endpoint
 	// and hands the packet over for further processing.
 	//
-	// pkt.LinkHeader may or may not be set before calling
-	// DeliverNetworkPacket. Some packets do not have link headers (e.g.
-	// packets sent via loopback), and won't have the field set.
+	//
+	// If the link-layer has a header, the packet's link header must be populated.
 	//
 	// DeliverNetworkPacket may modify pkt.
-	DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+
+	// DeliverLinkPacket delivers a packet to any interested packet endpoints.
+	//
+	// This method should be called with both incoming and outgoing packets.
+	//
+	// If the link-layer has a header, the packet's link header must be populated.
+	DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer, incoming bool)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities
@@ -769,18 +786,6 @@ type LinkWriter interface {
 	// WritePackets may modify the packet buffers, and takes ownership of the PacketBufferList.
 	// it is not safe to use the PacketBufferList after a call to WritePackets.
 	WritePackets(PacketBufferList) (int, tcpip.Error)
-}
-
-// LinkRawWriter is an interface that must be implemented by all Link endpoints
-// to support emitting pre-formed packets which include the Link header.
-type LinkRawWriter interface {
-	// WriteRawPacket writes a packet directly to the link.
-	//
-	// If the link-layer has its own header, the payload must already include the
-	// header.
-	//
-	// WriteRawPacket may modify the packet.
-	WriteRawPacket(*PacketBuffer) tcpip.Error
 }
 
 // NetworkLinkEndpoint is a data-link layer that supports sending network
@@ -832,8 +837,8 @@ type NetworkLinkEndpoint interface {
 	// https://github.com/torvalds/linux/blob/aa0c9086b40c17a7ad94425b3b70dd1fdd7497bf/include/uapi/linux/if_arp.h#L30
 	ARPHardwareType() header.ARPHardwareType
 
-	// AddHeader adds a link layer header to pkt if required.
-	AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+	// AddHeader adds a link layer header to the packet if required.
+	AddHeader(*PacketBuffer)
 }
 
 // QueueingDiscipline provides a queueing strategy for outgoing packets (e.g
@@ -860,7 +865,6 @@ type QueueingDiscipline interface {
 type LinkEndpoint interface {
 	NetworkLinkEndpoint
 	LinkWriter
-	LinkRawWriter
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are

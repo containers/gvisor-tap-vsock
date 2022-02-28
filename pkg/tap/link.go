@@ -57,11 +57,11 @@ func (e *LinkEndpoint) IsAttached() bool {
 	return e.dispatcher != nil
 }
 
-func (e *LinkEndpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	e.dispatcher.DeliverNetworkPacket(remote, local, protocol, pkt)
+func (e *LinkEndpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	e.dispatcher.DeliverNetworkPacket(protocol, pkt)
 }
 
-func (e *LinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *LinkEndpoint) AddHeader(pkt *stack.PacketBuffer) {
 }
 
 func (e *LinkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
@@ -124,7 +124,7 @@ func (e *LinkEndpoint) writePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 		log.Info(packet.String())
 	}
 
-	e.networkSwitch.DeliverNetworkPacket(r.RemoteLinkAddress, srcAddr, protocol, pkt)
+	e.networkSwitch.DeliverNetworkPacket(protocol, pkt)
 	return nil
 }
 

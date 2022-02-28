@@ -66,6 +66,8 @@ func (u *uniqueIDGenerator) UniqueID() uint64 {
 
 // Stack is a networking stack, with all supported protocols, NICs, and route
 // table.
+//
+// LOCK ORDERING: mu > routeMu.
 type Stack struct {
 	transportProtocols map[tcpip.TransportProtocolNumber]*transportProtocolState
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
@@ -79,14 +81,11 @@ type Stack struct {
 
 	stats tcpip.Stats
 
-	// LOCK ORDERING: mu > route.mu.
-	route struct {
-		mu struct {
-			sync.RWMutex
+	// routeMu protects annotated fields below.
+	routeMu sync.RWMutex
 
-			table []tcpip.Route
-		}
-	}
+	// +checklocks:routeMu
+	routeTable []tcpip.Route
 
 	mu                       sync.RWMutex
 	nics                     map[tcpip.NICID]*nic
@@ -507,13 +506,15 @@ func (s *Stack) Stats() tcpip.Stats {
 
 // SetNICForwarding enables or disables packet forwarding on the specified NIC
 // for the passed protocol.
-func (s *Stack) SetNICForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) tcpip.Error {
+//
+// Returns the previous configuration on the NIC.
+func (s *Stack) SetNICForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) (bool, tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return false, &tcpip.ErrUnknownNICID{}
 	}
 
 	return nic.setForwarding(protocol, enable)
@@ -540,7 +541,7 @@ func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNum
 
 	doneOnce := false
 	for id, nic := range s.nics {
-		if err := nic.setForwarding(protocol, enable); err != nil {
+		if _, err := nic.setForwarding(protocol, enable); err != nil {
 			// Expect forwarding to be settable on all interfaces if it was set on
 			// one.
 			if doneOnce {
@@ -579,37 +580,37 @@ func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
 //
 // This method takes ownership of the table.
 func (s *Stack) SetRouteTable(table []tcpip.Route) {
-	s.route.mu.Lock()
-	defer s.route.mu.Unlock()
-	s.route.mu.table = table
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+	s.routeTable = table
 }
 
 // GetRouteTable returns the route table which is currently in use.
 func (s *Stack) GetRouteTable() []tcpip.Route {
-	s.route.mu.RLock()
-	defer s.route.mu.RUnlock()
-	return append([]tcpip.Route(nil), s.route.mu.table...)
+	s.routeMu.RLock()
+	defer s.routeMu.RUnlock()
+	return append([]tcpip.Route(nil), s.routeTable...)
 }
 
 // AddRoute appends a route to the route table.
 func (s *Stack) AddRoute(route tcpip.Route) {
-	s.route.mu.Lock()
-	defer s.route.mu.Unlock()
-	s.route.mu.table = append(s.route.mu.table, route)
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+	s.routeTable = append(s.routeTable, route)
 }
 
 // RemoveRoutes removes matching routes from the route table.
 func (s *Stack) RemoveRoutes(match func(tcpip.Route) bool) {
-	s.route.mu.Lock()
-	defer s.route.mu.Unlock()
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
 
 	var filteredRoutes []tcpip.Route
-	for _, route := range s.route.mu.table {
+	for _, route := range s.routeTable {
 		if !match(route) {
 			filteredRoutes = append(filteredRoutes, route)
 		}
 	}
-	s.route.mu.table = filteredRoutes
+	s.routeTable = filteredRoutes
 }
 
 // NewEndpoint creates a new transport layer endpoint of the given protocol.
@@ -700,7 +701,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 
 	n := newNIC(s, id, ep, opts)
 	for proto := range s.defaultForwardingEnabled {
-		if err := n.setForwarding(proto, true); err != nil {
+		if _, err := n.setForwarding(proto, true); err != nil {
 			panic(fmt.Sprintf("newNIC(%d, ...).setForwarding(%d, true): %s", id, proto, err))
 		}
 	}
@@ -797,18 +798,18 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	delete(s.nics, id)
 
 	// Remove routes in-place. n tracks the number of routes written.
-	s.route.mu.Lock()
+	s.routeMu.Lock()
 	n := 0
-	for i, r := range s.route.mu.table {
-		s.route.mu.table[i] = tcpip.Route{}
+	for i, r := range s.routeTable {
+		s.routeTable[i] = tcpip.Route{}
 		if r.NIC != id {
 			// Keep this route.
-			s.route.mu.table[n] = r
+			s.routeTable[n] = r
 			n++
 		}
 	}
-	s.route.mu.table = s.route.mu.table[:n]
-	s.route.mu.Unlock()
+	s.routeTable = s.routeTable[:n]
+	s.routeMu.Unlock()
 
 	return nic.remove()
 }
@@ -939,6 +940,18 @@ func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) tcpip.Error {
 
 	if nic, ok := s.nics[id]; ok {
 		return nic.removeAddress(addr)
+	}
+
+	return &tcpip.ErrUnknownNICID{}
+}
+
+// SetAddressDeprecated sets an address to be deprecated or preferred.
+func (s *Stack) SetAddressDeprecated(id tcpip.NICID, addr tcpip.Address, deprecated bool) tcpip.Error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if nic, ok := s.nics[id]; ok {
+		return nic.setAddressDeprecated(addr, deprecated)
 	}
 
 	return &tcpip.ErrUnknownNICID{}
@@ -1135,10 +1148,10 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	// Find a route to the remote with the route table.
 	var chosenRoute tcpip.Route
 	if r := func() *Route {
-		s.route.mu.RLock()
-		defer s.route.mu.RUnlock()
+		s.routeMu.RLock()
+		defer s.routeMu.RUnlock()
 
-		for _, route := range s.route.mu.table {
+		for _, route := range s.routeTable {
 			if len(remoteAddr) != 0 && !route.Destination.Contains(remoteAddr) {
 				continue
 			}
@@ -1531,9 +1544,13 @@ func (s *Stack) Wait() {
 		p.Wait()
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, n := range s.nics {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for id, n := range s.nics {
+		// Remove NIC to ensure that qDisc goroutines are correctly
+		// terminated on stack teardown.
+		s.removeNICLocked(id)
 		n.NetworkLinkEndpoint.Wait()
 	}
 }
@@ -1643,7 +1660,7 @@ func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNum
 	})
 	defer pkt.DecRef()
 	pkt.NetworkProtocolNumber = proto
-	return nic.WriteRawPacket(pkt)
+	return nic.writeRawPacket(pkt)
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the

@@ -29,5 +29,5 @@ require (
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
-	gvisor.dev/gvisor v0.0.0-20220121190119-4f2d380c8b55
+	gvisor.dev/gvisor v0.0.0-20220226055946-8c7800a25bbf
 )
