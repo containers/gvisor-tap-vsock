@@ -191,7 +191,7 @@ func main() {
 		},
 		DNSSearchDomains: searchDomains(),
 		Forwards: map[string]string{
-			fmt.Sprintf(":%d", sshPort): sshHostPort,
+			fmt.Sprintf("127.0.0.1:%d", sshPort): sshHostPort,
 		},
 		NAT: map[string]string{
 			"192.168.127.254": "127.0.0.1",
