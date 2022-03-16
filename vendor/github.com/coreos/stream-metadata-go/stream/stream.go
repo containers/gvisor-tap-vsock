@@ -50,13 +50,18 @@ type Artifact struct {
 	UncompressedSha256 string `json:"uncompressed-sha256,omitempty"`
 }
 
+type KubeVirtContainerDisk struct {
+	Image string `json:"image"`
+}
+
 // Images contains images available in cloud providers
 type Images struct {
-	Aliyun   *ReplicatedImage  `json:"aliyun,omitempty"`
-	Aws      *AwsImage         `json:"aws,omitempty"`
-	Gcp      *GcpImage         `json:"gcp,omitempty"`
-	Ibmcloud *ReplicatedObject `json:"ibmcloud,omitempty"`
-	PowerVS  *ReplicatedObject `json:"powervs,omitempty"`
+	Aliyun   *ReplicatedImage       `json:"aliyun,omitempty"`
+	Aws      *AwsImage              `json:"aws,omitempty"`
+	Gcp      *GcpImage              `json:"gcp,omitempty"`
+	Ibmcloud *ReplicatedObject      `json:"ibmcloud,omitempty"`
+	KubeVirt *KubeVirtContainerDisk `json:"kubevirt,omitempty"`
+	PowerVS  *ReplicatedObject      `json:"powervs,omitempty"`
 }
 
 // ReplicatedImage represents an image in all regions of an AWS-like cloud
