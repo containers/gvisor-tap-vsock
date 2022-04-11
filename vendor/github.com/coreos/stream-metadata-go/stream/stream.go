@@ -56,16 +56,18 @@ type Images struct {
 	Aws      *AwsImage         `json:"aws,omitempty"`
 	Gcp      *GcpImage         `json:"gcp,omitempty"`
 	Ibmcloud *ReplicatedObject `json:"ibmcloud,omitempty"`
+	KubeVirt *SingleImage      `json:"kubevirt,omitempty"`
 	PowerVS  *ReplicatedObject `json:"powervs,omitempty"`
 }
 
 // ReplicatedImage represents an image in all regions of an AWS-like cloud
 type ReplicatedImage struct {
-	Regions map[string]RegionImage `json:"regions,omitempty"`
+	Regions map[string]SingleImage `json:"regions,omitempty"`
 }
 
-// RegionImage represents an image in a single region of an AWS-like cloud
-type RegionImage struct {
+// SingleImage represents a globally-accessible image or an image in a
+// single region of an AWS-like cloud
+type SingleImage struct {
 	Release string `json:"release"`
 	Image   string `json:"image"`
 }
@@ -74,7 +76,10 @@ type RegionImage struct {
 type AwsImage = ReplicatedImage
 
 // AwsRegionImage is a typedef for backwards compatibility.
-type AwsRegionImage = RegionImage
+type AwsRegionImage = SingleImage
+
+// RegionImage is a typedef for backwards compatibility.
+type RegionImage = SingleImage
 
 // GcpImage represents a GCP cloud image
 type GcpImage struct {
@@ -84,15 +89,20 @@ type GcpImage struct {
 	Name    string `json:"name"`
 }
 
-// ReplicatedObject represents an object in all regions of an IBMCloud-like cloud
+// ReplicatedObject represents an object in all regions of an IBMCloud-like
+// cloud
 type ReplicatedObject struct {
-	Regions map[string]RegionObject `json:"regions,omitempty"`
+	Regions map[string]SingleObject `json:"regions,omitempty"`
 }
 
-// RegionObject represents an IBMCloud/PowerVS cloud image
-type RegionObject struct {
+// SingleObject represents a globally-accessible cloud storage object, or
+// an object in a single region of an IBMCloud-like cloud
+type SingleObject struct {
 	Release string `json:"release"`
 	Object  string `json:"object"`
 	Bucket  string `json:"bucket"`
 	Url     string `json:"url"`
 }
+
+// RegionObject is a typedef for backwards compatibility.
+type RegionObject = SingleObject
