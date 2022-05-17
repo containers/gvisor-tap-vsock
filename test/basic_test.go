@@ -44,7 +44,7 @@ var _ = Describe("dns", func() {
 	It("should resolve redhat.com", func() {
 		out, err := sshExec("nslookup redhat.com")
 		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Address: 209.132.183.105"))
+		Expect(string(out)).To(ContainSubstring("Address: 52.200.142.250"))
 	})
 
 	It("should resolve gateway.containers.internal", func() {
