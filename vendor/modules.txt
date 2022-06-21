@@ -102,7 +102,7 @@ github.com/songgao/packets/ethernet
 # github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 ## explicit
 github.com/songgao/water
-# github.com/stretchr/testify v1.7.1
+# github.com/stretchr/testify v1.7.4
 ## explicit
 github.com/stretchr/testify/assert
 # github.com/u-root/uio v0.0.0-20210528114334-82958018845c
@@ -193,8 +193,7 @@ golang.org/x/xerrors/internal
 gopkg.in/tomb.v1
 # gopkg.in/yaml.v2 v2.4.0
 gopkg.in/yaml.v2
-# gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
-## explicit
+# gopkg.in/yaml.v3 v3.0.1
 gopkg.in/yaml.v3
 # gvisor.dev/gvisor v0.0.0-20220121190119-4f2d380c8b55
 ## explicit
