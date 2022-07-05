@@ -40,11 +40,11 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 
 		var wq waiter.Queue
 		ep, tcpErr := r.CreateEndpoint(&wq)
+		r.Complete(false)
 		if tcpErr != nil {
 			log.Errorf("r.CreateEndpoint() = %v", tcpErr)
 			return
 		}
-		r.Complete(false)
 
 		remote := tcpproxy.DialProxy{
 			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
