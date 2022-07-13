@@ -159,7 +159,7 @@ func qemuExecutable() string {
 
 func qemuArgs() string {
 	if runtime.GOOS == "darwin" {
-		return "-machine q35,accel=hvf:tcg -smp 4"
+		return "-machine q35,accel=hvf:tcg -smp 4 -cpu host"
 	}
 	return "-cpu host"
 }
