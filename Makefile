@@ -42,9 +42,10 @@ image:
 
 .PHONY: cross
 cross:
-	GOOS=windows go build $(LDFLAGS) -o bin/gvproxy-windows.exe ./cmd/gvproxy
-	GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin ./cmd/gvproxy
-	GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux ./cmd/gvproxy
+	GOARCH=amd64 GOOS=windows go build $(LDFLAGS) -o bin/gvproxy-windows.exe ./cmd/gvproxy
+	GOARCH=amd64 GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin ./cmd/gvproxy
+	GOARCH=arm64 GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin-arm64 ./cmd/gvproxy
+	GOARCH=amd64 GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux ./cmd/gvproxy
 
 .PHONY: test-companion
 test-companion:
