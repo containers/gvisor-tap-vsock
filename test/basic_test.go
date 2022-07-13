@@ -18,7 +18,7 @@ var _ = Describe("connectivity", func() {
 	It("should configure the default route", func() {
 		out, err := sshExec("ip route show")
 		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(MatchRegexp(`default via 192\.168\.127\.1 dev (.*?) proto dhcp metric 100`))
+		Expect(string(out)).To(MatchRegexp(`default via 192\.168\.127\.1 dev (.*?) proto dhcp (src 192\.168\.127\.2 )?metric 100`))
 	})
 
 	It("should configure dns settings", func() {
