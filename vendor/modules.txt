@@ -93,7 +93,7 @@ github.com/opencontainers/go-digest
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/sirupsen/logrus v1.8.1
+# github.com/sirupsen/logrus v1.9.0
 ## explicit
 github.com/sirupsen/logrus
 # github.com/songgao/packets v0.0.0-20160404182456-549a10cd4091
@@ -142,7 +142,7 @@ golang.org/x/net/ipv6
 # golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 ## explicit
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.0.0-20220204135822-1c1b9b1eba6a
+# golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8
 ## explicit
 golang.org/x/sys/cpu
 golang.org/x/sys/execabs
