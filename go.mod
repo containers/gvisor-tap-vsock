@@ -8,9 +8,8 @@ require (
 	github.com/coreos/stream-metadata-go v0.3.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/google/gopacket v1.1.19
-	github.com/google/tcpproxy v0.0.0-20200125044825-b6bb9b5b8252
-	github.com/insomniacslk/dhcp v0.0.0-20210812084645-decc701b3665
-	github.com/linuxkit/virtsock v0.0.0-20201010232012-f8cee7dfc7a3
+	github.com/insomniacslk/dhcp v0.0.0-20220504074936-1ca156eafb9f
+	github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
 	github.com/mdlayher/vsock v1.1.1
 	github.com/miekg/dns v1.1.50
 	github.com/onsi/ginkgo v1.16.5
@@ -22,10 +21,9 @@ require (
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/stretchr/testify v1.8.0
 	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
-	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8
-	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
-	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
-	gvisor.dev/gvisor v0.0.0-20220121190119-4f2d380c8b55
+	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa
+	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
+	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f
+	gvisor.dev/gvisor v0.0.0-20220722234115-e3e6499abbba
+	inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0
 )
