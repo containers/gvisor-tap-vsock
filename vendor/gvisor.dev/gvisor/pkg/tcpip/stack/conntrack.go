@@ -20,9 +20,9 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -144,9 +144,7 @@ type conn struct {
 
 	finalizeOnce sync.Once
 	// Holds a finalizeResult.
-	//
-	// +checkatomics
-	finalizeResult uint32
+	finalizeResult atomicbitops.Uint32
 
 	mu sync.RWMutex `state:"nosave"`
 	// sourceManip indicates the source manipulation type.
@@ -197,7 +195,7 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 		return
 	}
 
-	tcpHeader := header.TCP(pkt.TransportHeader().View())
+	tcpHeader := header.TCP(pkt.TransportHeader().Slice())
 
 	// Update the state of tcb. tcb assumes it's always initialized on the
 	// client. However, we only need to know whether the connection is
@@ -219,11 +217,11 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 //
 // ConnTrack keeps all connections in a slice of buckets, each of which holds a
 // linked list of tuples. This gives us some desirable properties:
-// - Each bucket has its own lock, lessening lock contention.
-// - The slice is large enough that lists stay short (<10 elements on average).
-//   Thus traversal is fast.
-// - During linked list traversal we reap expired connections. This amortizes
-//   the cost of reaping them and makes reapUnused faster.
+//   - Each bucket has its own lock, lessening lock contention.
+//   - The slice is large enough that lists stay short (<10 elements on average).
+//     Thus traversal is fast.
+//   - During linked list traversal we reap expired connections. This amortizes
+//     the cost of reaping them and makes reapUnused faster.
 //
 // Locks are ordered by their location in the buckets slice. That is, a
 // goroutine that locks buckets[i] can only lock buckets[j] s.t. i < j.
@@ -297,17 +295,17 @@ func getEmbeddedNetAndTransHeaders(pkt *PacketBuffer, netHdrLength int, getNetAn
 func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Transport, isICMPError bool, ok bool) {
 	switch pkt.TransportProtocolNumber {
 	case header.TCPProtocolNumber:
-		if tcpHeader := header.TCP(pkt.TransportHeader().View()); len(tcpHeader) >= header.TCPMinimumSize {
+		if tcpHeader := header.TCP(pkt.TransportHeader().Slice()); len(tcpHeader) >= header.TCPMinimumSize {
 			return pkt.Network(), tcpHeader, false, true
 		}
 		return nil, nil, false, false
 	case header.UDPProtocolNumber:
-		if udpHeader := header.UDP(pkt.TransportHeader().View()); len(udpHeader) >= header.UDPMinimumSize {
+		if udpHeader := header.UDP(pkt.TransportHeader().Slice()); len(udpHeader) >= header.UDPMinimumSize {
 			return pkt.Network(), udpHeader, false, true
 		}
 		return nil, nil, false, false
 	case header.ICMPv4ProtocolNumber:
-		icmpHeader := header.ICMPv4(pkt.TransportHeader().View())
+		icmpHeader := header.ICMPv4(pkt.TransportHeader().Slice())
 		if len(icmpHeader) < header.ICMPv4MinimumSize {
 			return nil, nil, false, false
 		}
@@ -335,7 +333,7 @@ func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Trans
 		}
 		return nil, nil, false, false
 	case header.ICMPv6ProtocolNumber:
-		icmpHeader := header.ICMPv6(pkt.TransportHeader().View())
+		icmpHeader := header.ICMPv6(pkt.TransportHeader().Slice())
 		if len(icmpHeader) < header.ICMPv6MinimumSize {
 			return nil, nil, false, false
 		}
@@ -426,15 +424,15 @@ func getTupleIDForEchoPacket(pkt *PacketBuffer, ident uint16, request bool) tupl
 func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 	switch pkt.TransportProtocolNumber {
 	case header.TCPProtocolNumber:
-		if transHeader := header.TCP(pkt.TransportHeader().View()); len(transHeader) >= header.TCPMinimumSize {
+		if transHeader := header.TCP(pkt.TransportHeader().Slice()); len(transHeader) >= header.TCPMinimumSize {
 			return getTupleIDForRegularPacket(pkt.Network(), pkt.NetworkProtocolNumber, transHeader, pkt.TransportProtocolNumber), getTupleIDOKAndAllowNewConn
 		}
 	case header.UDPProtocolNumber:
-		if transHeader := header.UDP(pkt.TransportHeader().View()); len(transHeader) >= header.UDPMinimumSize {
+		if transHeader := header.UDP(pkt.TransportHeader().Slice()); len(transHeader) >= header.UDPMinimumSize {
 			return getTupleIDForRegularPacket(pkt.Network(), pkt.NetworkProtocolNumber, transHeader, pkt.TransportProtocolNumber), getTupleIDOKAndAllowNewConn
 		}
 	case header.ICMPv4ProtocolNumber:
-		icmp := header.ICMPv4(pkt.TransportHeader().View())
+		icmp := header.ICMPv4(pkt.TransportHeader().Slice())
 		if len(icmp) < header.ICMPv4MinimumSize {
 			return tupleID{}, getTupleIDNotOK
 		}
@@ -469,7 +467,7 @@ func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 			return tid, getTupleIDOKAndDontAllowNewConn
 		}
 	case header.ICMPv6ProtocolNumber:
-		icmp := header.ICMPv6(pkt.TransportHeader().View())
+		icmp := header.ICMPv6(pkt.TransportHeader().Slice())
 		if len(icmp) < header.ICMPv6MinimumSize {
 			return tupleID{}, getTupleIDNotOK
 		}
@@ -513,7 +511,7 @@ func (ct *ConnTrack) init() {
 //
 // If the packet's protocol is trackable, the connection's state is updated to
 // match the contents of the packet.
-func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer) *tuple {
+func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation bool) *tuple {
 	// Get or (maybe) create a connection.
 	t := func() *tuple {
 		var allowNewConn bool
@@ -527,6 +525,34 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer) *tuple {
 			allowNewConn = false
 		default:
 			panic(fmt.Sprintf("unhandled %[1]T = %[1]d", res))
+		}
+
+		// Just skip bad packets. They'll be rejected later by the appropriate
+		// protocol package.
+		switch pkt.TransportProtocolNumber {
+		case header.TCPProtocolNumber:
+			_, csumValid, ok := header.TCPValid(
+				header.TCP(pkt.TransportHeader().Slice()),
+				func() uint16 { return pkt.Data().AsRange().Checksum() },
+				uint16(pkt.Data().Size()),
+				tid.srcAddr,
+				tid.dstAddr,
+				pkt.RXTransportChecksumValidated || skipChecksumValidation)
+			if !csumValid || !ok {
+				return nil
+			}
+		case header.UDPProtocolNumber:
+			lengthValid, csumValid := header.UDPValid(
+				header.UDP(pkt.TransportHeader().Slice()),
+				func() uint16 { return pkt.Data().AsRange().Checksum() },
+				uint16(pkt.Data().Size()),
+				pkt.NetworkProtocolNumber,
+				tid.srcAddr,
+				tid.dstAddr,
+				pkt.RXTransportChecksumValidated || skipChecksumValidation)
+			if !lengthValid || !csumValid {
+				return nil
+			}
 		}
 
 		bktID := ct.bucket(tid)
@@ -653,7 +679,7 @@ func (ct *ConnTrack) finalize(cn *conn) finalizeResult {
 }
 
 func (cn *conn) getFinalizeResult() finalizeResult {
-	return finalizeResult(atomic.LoadUint32(&cn.finalizeResult))
+	return finalizeResult(cn.finalizeResult.Load())
 }
 
 // finalize attempts to finalize the connection and returns true iff the
@@ -667,7 +693,7 @@ func (cn *conn) getFinalizeResult() finalizeResult {
 // goroutines will block until the finalizing goroutine finishes finalizing.
 func (cn *conn) finalize() bool {
 	cn.finalizeOnce.Do(func() {
-		atomic.StoreUint32(&cn.finalizeResult, uint32(cn.ct.finalize(cn)))
+		cn.finalizeResult.Store(uint32(cn.ct.finalize(cn)))
 	})
 
 	switch res := cn.getFinalizeResult(); res {
@@ -918,19 +944,19 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 	// not the ICMP packet itself.
 	switch pkt.TransportProtocolNumber {
 	case header.ICMPv4ProtocolNumber:
-		icmp := header.ICMPv4(pkt.TransportHeader().View())
+		icmp := header.ICMPv4(pkt.TransportHeader().Slice())
 		// TODO(https://gvisor.dev/issue/6788): Incrementally update ICMP checksum.
 		icmp.SetChecksum(0)
 		icmp.SetChecksum(header.ICMPv4Checksum(icmp, pkt.Data().AsRange().Checksum()))
 
-		network := header.IPv4(pkt.NetworkHeader().View())
+		network := header.IPv4(pkt.NetworkHeader().Slice())
 		if dnat {
 			network.SetDestinationAddressWithChecksumUpdate(tid.srcAddr)
 		} else {
 			network.SetSourceAddressWithChecksumUpdate(tid.dstAddr)
 		}
 	case header.ICMPv6ProtocolNumber:
-		network := header.IPv6(pkt.NetworkHeader().View())
+		network := header.IPv6(pkt.NetworkHeader().Slice())
 		srcAddr := network.SourceAddress()
 		dstAddr := network.DestinationAddress()
 		if dnat {
@@ -939,7 +965,7 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 			srcAddr = tid.dstAddr
 		}
 
-		icmp := header.ICMPv6(pkt.TransportHeader().View())
+		icmp := header.ICMPv6(pkt.TransportHeader().Slice())
 		// TODO(https://gvisor.dev/issue/6788): Incrementally update ICMP checksum.
 		icmp.SetChecksum(0)
 		payload := pkt.Data()
@@ -982,13 +1008,13 @@ func (ct *ConnTrack) bucket(id tupleID) int {
 
 // reapUnused deletes timed out entries from the conntrack map. The rules for
 // reaping are:
-// - Each call to reapUnused traverses a fraction of the conntrack table.
-//   Specifically, it traverses len(ct.buckets)/fractionPerReaping.
-// - After reaping, reapUnused decides when it should next run based on the
-//   ratio of expired connections to examined connections. If the ratio is
-//   greater than maxExpiredPct, it schedules the next run quickly. Otherwise it
-//   slightly increases the interval between runs.
-// - maxFullTraversal caps the time it takes to traverse the entire table.
+//   - Each call to reapUnused traverses a fraction of the conntrack table.
+//     Specifically, it traverses len(ct.buckets)/fractionPerReaping.
+//   - After reaping, reapUnused decides when it should next run based on the
+//     ratio of expired connections to examined connections. If the ratio is
+//     greater than maxExpiredPct, it schedules the next run quickly. Otherwise it
+//     slightly increases the interval between runs.
+//   - maxFullTraversal caps the time it takes to traverse the entire table.
 //
 // reapUnused returns the next bucket that should be checked and the time after
 // which it should be called again.

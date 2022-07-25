@@ -26,7 +26,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -64,6 +63,14 @@ func NewTCPListener(s *stack.Stack, wq *waiter.Queue, ep tcpip.Endpoint) *TCPLis
 	}
 }
 
+// maxListenBacklog is set to be reasonably high for most uses of gonet. Go net
+// package uses the value in /proc/sys/net/core/somaxconn file in Linux as the
+// default listen backlog. The value below matches the default in common linux
+// distros.
+//
+// See: https://cs.opensource.google/go/go/+/refs/tags/go1.18.1:src/net/sock_linux.go;drc=refs%2Ftags%2Fgo1.18.1;l=66
+const maxListenBacklog = 4096
+
 // ListenTCP creates a new TCPListener.
 func ListenTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPListener, error) {
 	// Create a TCP endpoint, bind it, then start listening.
@@ -83,7 +90,7 @@ func ListenTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProt
 		}
 	}
 
-	if err := ep.Listen(10); err != nil {
+	if err := ep.Listen(maxListenBacklog); err != nil {
 		ep.Close()
 		return nil, &net.OpError{
 			Op:   "listen",
@@ -232,7 +239,7 @@ type TCPConn struct {
 
 	// read contains bytes that have been read from the endpoint,
 	// but haven't yet been returned.
-	read buffer.View
+	read []byte
 }
 
 // NewTCPConn creates a new TCPConn.
