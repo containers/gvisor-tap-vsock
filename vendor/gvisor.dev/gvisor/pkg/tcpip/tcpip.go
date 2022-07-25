@@ -71,6 +71,11 @@ type MonotonicTime struct {
 	nanoseconds int64
 }
 
+// String implements Stringer.
+func (mt MonotonicTime) String() string {
+	return strconv.FormatInt(mt.nanoseconds, 10)
+}
+
 // Before reports whether the monotonic clock reading mt is before u.
 func (mt MonotonicTime) Before(u MonotonicTime) bool {
 	return mt.nanoseconds < u.nanoseconds
@@ -416,13 +421,28 @@ func (l *LimitedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// A ControlMessages contains socket control messages for IP sockets.
+// SendableControlMessages contains socket control messages that can be written.
 //
 // +stateify savable
-type ControlMessages struct {
-	// HasTimestamp indicates whether Timestamp is valid/set.
-	HasTimestamp bool
+type SendableControlMessages struct {
+	// HasTTL indicates whether TTL is valid/set.
+	HasTTL bool
 
+	// TTL is the IPv4 Time To Live of the associated packet.
+	TTL uint8
+
+	// HasHopLimit indicates whether HopLimit is valid/set.
+	HasHopLimit bool
+
+	// HopLimit is the IPv6 Hop Limit of the associated packet.
+	HopLimit uint8
+}
+
+// ReceivableControlMessages contains socket control messages that can be
+// received.
+//
+// +stateify savable
+type ReceivableControlMessages struct {
 	// Timestamp is the time that the last packet used to create the read data
 	// was received.
 	Timestamp time.Time `state:".(int64)"`
@@ -433,11 +453,26 @@ type ControlMessages struct {
 	// Inq is the number of bytes ready to be received.
 	Inq int32
 
-	// HasTOS indicates whether Tos is valid/set.
+	// HasTOS indicates whether TOS is valid/set.
 	HasTOS bool
 
 	// TOS is the IPv4 type of service of the associated packet.
 	TOS uint8
+
+	// HasTTL indicates whether TTL is valid/set.
+	HasTTL bool
+
+	// TTL is the IPv4 Time To Live of the associated packet.
+	TTL uint8
+
+	// HasHopLimit indicates whether HopLimit is valid/set.
+	HasHopLimit bool
+
+	// HopLimit is the IPv6 Hop Limit of the associated packet.
+	HopLimit uint8
+
+	// HasTimestamp indicates whether Timestamp is valid/set.
+	HasTimestamp bool
 
 	// HasTClass indicates whether TClass is valid/set.
 	HasTClass bool
@@ -502,7 +537,7 @@ type ReadResult struct {
 	Total int
 
 	// ControlMessages is the control messages received.
-	ControlMessages ControlMessages
+	ControlMessages ReceivableControlMessages
 
 	// RemoteAddr is the remote address if ReadOptions.NeedAddr is true.
 	RemoteAddr FullAddress
@@ -687,6 +722,9 @@ type WriteOptions struct {
 	// endpoint. If Atomic is false, then data fetched from the Payloader may be
 	// discarded if available endpoint buffer space is unsufficient.
 	Atomic bool
+
+	// ControlMessages contains optional overrides used when writing a packet.
+	ControlMessages SendableControlMessages
 }
 
 // SockOptInt represents socket options which values have the int type.
@@ -1318,7 +1356,7 @@ type NetworkProtocolNumber uint32
 //
 // +stateify savable
 type StatCounter struct {
-	count atomicbitops.AlignedAtomicUint64
+	count atomicbitops.Uint64
 }
 
 // Increment adds one to the counter.
@@ -1660,11 +1698,24 @@ type IPForwardingStats struct {
 	// header.
 	ExtensionHeaderProblem *StatCounter
 
+	// UnexpectedMulticastInputInterface is the number of multicast packets that
+	// were received on an interface that did not match the corresponding route's
+	// expected input interface.
+	UnexpectedMulticastInputInterface *StatCounter
+
+	// UnknownOutputEndpoint is the number of packets that could not be forwarded
+	// because the output endpoint could not be found.
+	UnknownOutputEndpoint *StatCounter
+
+	// NoMulticastPendingQueueBufferSpace is the number of multicast packets that
+	// were dropped due to insufficent buffer space in the pending packet queue.
+	NoMulticastPendingQueueBufferSpace *StatCounter
+
 	// Errors is the number of IP packets received which could not be
 	// successfully forwarded.
 	Errors *StatCounter
 
-	// LINT.ThenChange(network/internal/ip/stats.go:multiCounterIPForwardingStats)
+	// LINT.ThenChange(network/internal/ip/stats.go:MultiCounterIPForwardingStats)
 }
 
 // IPStats collects IP-specific stats (both v4 and v6).
@@ -2065,6 +2116,13 @@ type NICStats struct {
 	// Tx contains statistics about transmitted packets.
 	Tx NICPacketStats
 
+	// TxPacketsDroppedNoBufferSpace is the number of packets dropepd due to the
+	// NIC not having enough buffer space to send the packet.
+	//
+	// Packets may be dropped with a no buffer space error when the device TX
+	// queue is full.
+	TxPacketsDroppedNoBufferSpace *StatCounter
+
 	// Rx contains statistics about received packets.
 	Rx NICPacketStats
 
@@ -2242,12 +2300,10 @@ func (s Stats) FillIn() Stats {
 	return s
 }
 
-// Clone returns a copy of the TransportEndpointStats by atomically reading
-// each field.
-func (src *TransportEndpointStats) Clone() TransportEndpointStats {
-	var dst TransportEndpointStats
-	clone(reflect.ValueOf(&dst).Elem(), reflect.ValueOf(src).Elem())
-	return dst
+// Clone clones a copy of the TransportEndpointStats into dst by atomically
+// reading each field.
+func (src *TransportEndpointStats) Clone(dst *TransportEndpointStats) {
+	clone(reflect.ValueOf(dst).Elem(), reflect.ValueOf(src).Elem())
 }
 
 func clone(dst reflect.Value, src reflect.Value) {
@@ -2455,6 +2511,18 @@ func GetDanglingEndpoints() []Endpoint {
 	}
 	danglingEndpointsMu.Unlock()
 	return es
+}
+
+// ReleaseDanglingEndpoints clears out all all reference counted objects held by
+// dangling endpoints.
+func ReleaseDanglingEndpoints() {
+	// Get the dangling endpoints first to avoid locking around Release(), which
+	// can cause a lock inversion with endpoint.mu and danglingEndpointsMu.
+	// Calling Release on a dangling endpoint that has been deleted is a noop.
+	eps := GetDanglingEndpoints()
+	for _, ep := range eps {
+		ep.Abort()
+	}
 }
 
 // AddDanglingEndpoint adds a dangling endpoint.

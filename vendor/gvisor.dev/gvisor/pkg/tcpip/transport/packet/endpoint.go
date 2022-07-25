@@ -15,8 +15,8 @@
 // Package packet provides the implementation of packet sockets (see
 // packet(7)). Packet sockets allow applications to:
 //
-//   * manually write and inspect link, network, and transport headers
-//   * receive all traffic of a given network protocol, or all protocols
+//   - manually write and inspect link, network, and transport headers
+//   - receive all traffic of a given network protocol, or all protocols
 //
 // Packet sockets are similar to raw sockets, but provide even more power to
 // users, letting them effectively talk directly to the network device.
@@ -39,10 +39,9 @@ import (
 // +stateify savable
 type packet struct {
 	packetEntry
-	// data holds the actual packet data, including any headers and
-	// payload.
-	data       buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	receivedAt time.Time             `state:".(int64)"`
+	// data holds the actual packet data, including any headers and payload.
+	data       *stack.PacketBuffer
+	receivedAt time.Time `state:".(int64)"`
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
 	// packetInfo holds additional information like the protocol
@@ -54,8 +53,9 @@ type packet struct {
 // to have goroutines make concurrent calls into the endpoint.
 //
 // Lock order:
-//   endpoint.mu
-//     endpoint.rcvMu
+//
+//	endpoint.mu
+//	  endpoint.rcvMu
 //
 // +stateify savable
 type endpoint struct {
@@ -144,7 +144,9 @@ func (ep *endpoint) Close() {
 	ep.rcvClosed = true
 	ep.rcvBufSize = 0
 	for !ep.rcvList.Empty() {
-		ep.rcvList.Remove(ep.rcvList.Front())
+		p := ep.rcvList.Front()
+		ep.rcvList.Remove(p)
+		p.data.DecRef()
 	}
 
 	ep.closed = true
@@ -173,6 +175,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 	packet := ep.rcvList.Front()
 	if !opts.Peek {
 		ep.rcvList.Remove(packet)
+		defer packet.data.DecRef()
 		ep.rcvBufSize -= packet.data.Size()
 	}
 
@@ -180,7 +183,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 
 	res := tcpip.ReadResult{
 		Total: packet.data.Size(),
-		ControlMessages: tcpip.ControlMessages{
+		ControlMessages: tcpip.ReceivableControlMessages{
 			HasTimestamp: true,
 			Timestamp:    packet.receivedAt,
 		},
@@ -192,7 +195,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 		res.LinkPacketInfo = packet.packetInfo
 	}
 
-	n, err := packet.data.ReadTo(dst, opts.Peek)
+	n, err := packet.data.Data().ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
 		return res, &tcpip.ErrBadBuffer{}
 	}
@@ -409,7 +412,7 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 }
 
 // HandlePacket implements stack.PacketEndpoint.HandlePacket.
-func (ep *endpoint) HandlePacket(nicID tcpip.NICID, _ tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	ep.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.
@@ -446,20 +449,14 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, _ tcpip.LinkAddress, netProt
 		rcvdPkt.senderAddr.Addr = tcpip.Address(hdr.SourceAddress())
 	}
 
+	// Raw packet endpoints include link-headers in received packets.
+	pktBuf := pkt.Buffer()
 	if ep.cooked {
 		// Cooked packet endpoints don't include the link-headers in received
 		// packets.
-		if v := pkt.NetworkHeader().View(); !v.IsEmpty() {
-			rcvdPkt.data.AppendView(v)
-		}
-		if v := pkt.TransportHeader().View(); !v.IsEmpty() {
-			rcvdPkt.data.AppendView(v)
-		}
-		rcvdPkt.data.Append(pkt.Data().ExtractVV())
-	} else {
-		// Raw packet endpoints include link-headers in received packets.
-		rcvdPkt.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+		pktBuf.TrimFront(int64(len(pkt.LinkHeader().View()) + len(pkt.VirtioNetHeader().View())))
 	}
+	rcvdPkt.data = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: pktBuf})
 
 	ep.rcvList.PushBack(&rcvdPkt)
 	ep.rcvBufSize += rcvdPkt.data.Size()

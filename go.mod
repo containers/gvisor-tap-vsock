@@ -27,5 +27,5 @@ require (
 	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
-	gvisor.dev/gvisor v0.0.0-20220121190119-4f2d380c8b55
+	gvisor.dev/gvisor v0.0.0-20220606021117-7dbe1e667086
 )

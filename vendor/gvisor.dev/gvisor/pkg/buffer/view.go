@@ -33,6 +33,19 @@ type View struct {
 	pool pool
 }
 
+// NewWithData creates a new view initialized with given data.
+func NewWithData(b []byte) View {
+	v := View{
+		size: int64(len(b)),
+	}
+	if len(b) > 0 {
+		buf := v.pool.getNoInit()
+		buf.initWithData(b)
+		v.data.PushBack(buf)
+	}
+	return v
+}
+
 // TrimFront removes the first count bytes from the buffer.
 func (v *View) TrimFront(count int64) {
 	if count >= v.size {
@@ -280,6 +293,16 @@ func (v *View) AppendOwned(data []byte) {
 	}
 }
 
+// PrependOwned takes ownership of data and prepends it to v.
+func (v *View) PrependOwned(data []byte) {
+	if len(data) > 0 {
+		buf := v.pool.getNoInit()
+		buf.initWithData(data)
+		v.data.PushFront(buf)
+		v.size += int64(len(data))
+	}
+}
+
 // PullUp makes the specified range contiguous and returns the backing memory.
 func (v *View) PullUp(offset, length int) ([]byte, bool) {
 	if length == 0 {
@@ -385,6 +408,10 @@ func (v *View) Clone() View {
 		size: v.size,
 	}
 	for buf := v.data.Front(); buf != nil; buf = buf.Next() {
+		// Copy the buffer structs itself as they are stateful and
+		// should not be shared between Views.
+		//
+		// TODO(gvisor.dev/issue/7158): revisit need for View.pool.
 		newBuf := other.pool.getNoInit()
 		*newBuf = *buf
 		other.data.PushBack(newBuf)
@@ -428,7 +455,13 @@ func (v *View) Merge(other *View) {
 	// Copy over all buffers.
 	for buf := other.data.Front(); buf != nil; buf = other.data.Front() {
 		other.data.Remove(buf)
-		v.data.PushBack(buf)
+		// Copy the buffer structs itself as they are stateful and
+		// should not be shared between Views.
+		//
+		// TODO(gvisor.dev/issue/7158): revisit need for View.pool.
+		newBuf := v.pool.getNoInit()
+		*newBuf = *buf
+		v.data.PushBack(newBuf)
 	}
 
 	// Adjust sizes.

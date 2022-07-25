@@ -18,13 +18,15 @@ package network
 
 import (
 	"fmt"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // Endpoint is a datagram-based endpoint. It only supports sending datagrams to
@@ -33,10 +35,11 @@ import (
 // +stateify savable
 type Endpoint struct {
 	// The following fields must only be set once then never changed.
-	stack      *stack.Stack `state:"manual"`
-	ops        *tcpip.SocketOptions
-	netProto   tcpip.NetworkProtocolNumber
-	transProto tcpip.TransportProtocolNumber
+	stack       *stack.Stack `state:"manual"`
+	ops         *tcpip.SocketOptions
+	netProto    tcpip.NetworkProtocolNumber
+	transProto  tcpip.TransportProtocolNumber
+	waiterQueue *waiter.Queue
 
 	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
@@ -95,9 +98,15 @@ type Endpoint struct {
 	// lock when delivering packets/errors to endpoints).
 	//
 	// Writes must be performed through setEndpointState.
+	state atomicbitops.Uint32
+
+	// Callers should not attempt to obtain sendBufferSizeInUseMu while holding
+	// another lock on Endpoint.
+	sendBufferSizeInUseMu sync.RWMutex `state:"nosave"`
+	// sendBufferSizeInUse keeps track of the bytes in use by in-flight packets.
 	//
-	// +checkatomics
-	state uint32
+	// +checklocks:sendBufferSizeInUseMu
+	sendBufferSizeInUse int64 `state:"nosave"`
 }
 
 // +stateify savable
@@ -107,7 +116,7 @@ type multicastMembership struct {
 }
 
 // Init initializes the endpoint.
-func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ops *tcpip.SocketOptions) {
+func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ops *tcpip.SocketOptions, waiterQueue *waiter.Queue) {
 	e.mu.Lock()
 	memberships := e.multicastMemberships
 	e.mu.Unlock()
@@ -122,10 +131,11 @@ func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, tr
 	}
 
 	*e = Endpoint{
-		stack:      s,
-		ops:        ops,
-		netProto:   netProto,
-		transProto: transProto,
+		stack:       s,
+		ops:         ops,
+		netProto:    netProto,
+		transProto:  transProto,
+		waiterQueue: waiterQueue,
 
 		info: stack.TransportEndpointInfo{
 			NetProto:   netProto,
@@ -156,12 +166,12 @@ func (e *Endpoint) NetProto() tcpip.NetworkProtocolNumber {
 //
 // +checklocks:e.mu
 func (e *Endpoint) setEndpointState(state transport.DatagramEndpointState) {
-	atomic.StoreUint32(&e.state, uint32(state))
+	e.state.Store(uint32(state))
 }
 
 // State returns the state of the endpoint.
 func (e *Endpoint) State() transport.DatagramEndpointState {
-	return transport.DatagramEndpointState(atomic.LoadUint32(&e.state))
+	return transport.DatagramEndpointState(e.state.Load())
 }
 
 // Close cleans the endpoint's resources and leaves the endpoint in a closed
@@ -219,11 +229,10 @@ func (e *Endpoint) calculateTTL(route *stack.Route) uint8 {
 
 // WriteContext holds the context for a write.
 type WriteContext struct {
-	transProto tcpip.TransportProtocolNumber
-	route      *stack.Route
-	ttl        uint8
-	tos        uint8
-	owner      tcpip.PacketOwner
+	e     *Endpoint
+	route *stack.Route
+	ttl   uint8
+	tos   uint8
 }
 
 // Release releases held resources.
@@ -251,19 +260,114 @@ func (c *WriteContext) PacketInfo() WritePacketInfo {
 	}
 }
 
+// TryNewPacketBuffer returns a new packet buffer iff the endpoint's send buffer
+// is not full.
+//
+// If this method returns nil, the caller should wait for the endpoint to become
+// writable.
+func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data buffer.Buffer) *stack.PacketBuffer {
+	e := c.e
+
+	e.sendBufferSizeInUseMu.Lock()
+	defer e.sendBufferSizeInUseMu.Unlock()
+
+	if !e.hasSendSpaceRLocked() {
+		return nil
+	}
+
+	// Note that we allow oversubscription - if there is any space at all in the
+	// send buffer, we accept the full packet which may be larger than the space
+	// available. This is because if the endpoint reports that it is writable,
+	// a write operation should succeed.
+	//
+	// This matches Linux behaviour:
+	// https://github.com/torvalds/linux/blob/38d741cb70b/include/net/sock.h#L2519
+	// https://github.com/torvalds/linux/blob/38d741cb70b/net/core/sock.c#L2588
+	pktSize := int64(reserveHdrBytes) + int64(data.Size())
+	e.sendBufferSizeInUse += pktSize
+
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: reserveHdrBytes,
+		Payload:            data,
+		OnRelease: func() {
+			e.sendBufferSizeInUseMu.Lock()
+			if got := e.sendBufferSizeInUse; got < pktSize {
+				e.sendBufferSizeInUseMu.Unlock()
+				panic(fmt.Sprintf("e.sendBufferSizeInUse=(%d) < pktSize(=%d)", got, pktSize))
+			}
+			e.sendBufferSizeInUse -= pktSize
+			signal := e.hasSendSpaceRLocked()
+			e.sendBufferSizeInUseMu.Unlock()
+
+			// Let waiters know if we now have space in the send buffer.
+			if signal {
+				e.waiterQueue.Notify(waiter.WritableEvents)
+			}
+		},
+	})
+}
+
 // WritePacket attempts to write the packet.
 func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool) tcpip.Error {
-	pkt.Owner = c.owner
+	c.e.mu.RLock()
+	pkt.Owner = c.e.owner
+	c.e.mu.RUnlock()
 
 	if headerIncluded {
 		return c.route.WriteHeaderIncludedPacket(pkt)
 	}
 
-	return c.route.WritePacket(stack.NetworkHeaderParams{
-		Protocol: c.transProto,
+	err := c.route.WritePacket(stack.NetworkHeaderParams{
+		Protocol: c.e.transProto,
 		TTL:      c.ttl,
 		TOS:      c.tos,
 	}, pkt)
+
+	if _, ok := err.(*tcpip.ErrNoBufferSpace); ok {
+		var recvErr bool
+		switch netProto := c.route.NetProto(); netProto {
+		case header.IPv4ProtocolNumber:
+			recvErr = c.e.ops.GetIPv4RecvError()
+		case header.IPv6ProtocolNumber:
+			recvErr = c.e.ops.GetIPv6RecvError()
+		default:
+			panic(fmt.Sprintf("unhandled network protocol number = %d", netProto))
+		}
+
+		// Linux only returns ENOBUFS to the caller if IP{,V6}_RECVERR is set.
+		//
+		// https://github.com/torvalds/linux/blob/3e71713c9e75c/net/ipv4/udp.c#L969
+		// https://github.com/torvalds/linux/blob/3e71713c9e75c/net/ipv6/udp.c#L1260
+		if !recvErr {
+			err = nil
+		}
+	}
+
+	return err
+}
+
+// MaybeSignalWritable signals waiters with writable events if the send buffer
+// has space.
+func (e *Endpoint) MaybeSignalWritable() {
+	e.sendBufferSizeInUseMu.RLock()
+	signal := e.hasSendSpaceRLocked()
+	e.sendBufferSizeInUseMu.RUnlock()
+
+	if signal {
+		e.waiterQueue.Notify(waiter.WritableEvents)
+	}
+}
+
+// HasSendSpace returns whether or not the send buffer has space.
+func (e *Endpoint) HasSendSpace() bool {
+	e.sendBufferSizeInUseMu.RLock()
+	defer e.sendBufferSizeInUseMu.RUnlock()
+	return e.hasSendSpaceRLocked()
+}
+
+// +checklocksread:e.sendBufferSizeInUseMu
+func (e *Endpoint) hasSendSpaceRLocked() bool {
+	return e.ops.GetSendBufferSize() > e.sendBufferSizeInUse
 }
 
 // AcquireContextForWrite acquires a WriteContext.
@@ -329,21 +433,31 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 	}
 
 	var tos uint8
+	var ttl uint8
 	switch netProto := route.NetProto(); netProto {
 	case header.IPv4ProtocolNumber:
 		tos = e.ipv4TOS
+		if opts.ControlMessages.HasTTL {
+			ttl = opts.ControlMessages.TTL
+		} else {
+			ttl = e.calculateTTL(route)
+		}
 	case header.IPv6ProtocolNumber:
 		tos = e.ipv6TClass
+		if opts.ControlMessages.HasHopLimit {
+			ttl = opts.ControlMessages.HopLimit
+		} else {
+			ttl = e.calculateTTL(route)
+		}
 	default:
 		panic(fmt.Sprintf("invalid protocol number = %d", netProto))
 	}
 
 	return WriteContext{
-		transProto: e.transProto,
-		route:      route,
-		ttl:        e.calculateTTL(route),
-		tos:        tos,
-		owner:      e.owner,
+		e:     e,
+		route: route,
+		ttl:   ttl,
+		tos:   tos,
 	}, nil
 }
 

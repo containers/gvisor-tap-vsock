@@ -58,14 +58,16 @@ type ResumableEndpoint interface {
 }
 
 // uniqueIDGenerator is a default unique ID generator.
-type uniqueIDGenerator atomicbitops.AlignedAtomicUint64
+type uniqueIDGenerator atomicbitops.Uint64
 
 func (u *uniqueIDGenerator) UniqueID() uint64 {
-	return ((*atomicbitops.AlignedAtomicUint64)(u)).Add(1)
+	return ((*atomicbitops.Uint64)(u)).Add(1)
 }
 
 // Stack is a networking stack, with all supported protocols, NICs, and route
 // table.
+//
+// LOCK ORDERING: mu > routeMu.
 type Stack struct {
 	transportProtocols map[tcpip.TransportProtocolNumber]*transportProtocolState
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
@@ -79,14 +81,11 @@ type Stack struct {
 
 	stats tcpip.Stats
 
-	// LOCK ORDERING: mu > route.mu.
-	route struct {
-		mu struct {
-			sync.RWMutex
+	// routeMu protects annotated fields below.
+	routeMu sync.RWMutex
 
-			table []tcpip.Route
-		}
-	}
+	// +checklocks:routeMu
+	routeTable []tcpip.Route
 
 	mu                       sync.RWMutex
 	nics                     map[tcpip.NICID]*nic
@@ -437,13 +436,13 @@ func (s *Stack) SetNetworkProtocolOption(network tcpip.NetworkProtocolNumber, op
 
 // NetworkProtocolOption allows retrieving individual protocol level option
 // values. This method returns an error if the protocol is not supported or
-// option is not supported by the protocol implementation.
-// e.g.
-// var v ipv4.MyOption
-// err := s.NetworkProtocolOption(tcpip.IPv4ProtocolNumber, &v)
-// if err != nil {
-//   ...
-// }
+// option is not supported by the protocol implementation. E.g.:
+//
+//	var v ipv4.MyOption
+//	err := s.NetworkProtocolOption(tcpip.IPv4ProtocolNumber, &v)
+//	if err != nil {
+//		...
+//	}
 func (s *Stack) NetworkProtocolOption(network tcpip.NetworkProtocolNumber, option tcpip.GettableNetworkProtocolOption) tcpip.Error {
 	netProto, ok := s.networkProtocols[network]
 	if !ok {
@@ -467,10 +466,11 @@ func (s *Stack) SetTransportProtocolOption(transport tcpip.TransportProtocolNumb
 // TransportProtocolOption allows retrieving individual protocol level option
 // values. This method returns an error if the protocol is not supported or
 // option is not supported by the protocol implementation.
-// var v tcp.SACKEnabled
-// if err := s.TransportProtocolOption(tcpip.TCPProtocolNumber, &v); err != nil {
-//   ...
-// }
+//
+//	var v tcp.SACKEnabled
+//	if err := s.TransportProtocolOption(tcpip.TCPProtocolNumber, &v); err != nil {
+//		...
+//	}
 func (s *Stack) TransportProtocolOption(transport tcpip.TransportProtocolNumber, option tcpip.GettableTransportProtocolOption) tcpip.Error {
 	transProtoState, ok := s.transportProtocols[transport]
 	if !ok {
@@ -507,13 +507,15 @@ func (s *Stack) Stats() tcpip.Stats {
 
 // SetNICForwarding enables or disables packet forwarding on the specified NIC
 // for the passed protocol.
-func (s *Stack) SetNICForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) tcpip.Error {
+//
+// Returns the previous configuration on the NIC.
+func (s *Stack) SetNICForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) (bool, tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return &tcpip.ErrUnknownNICID{}
+		return false, &tcpip.ErrUnknownNICID{}
 	}
 
 	return nic.setForwarding(protocol, enable)
@@ -540,7 +542,7 @@ func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNum
 
 	doneOnce := false
 	for id, nic := range s.nics {
-		if err := nic.setForwarding(protocol, enable); err != nil {
+		if _, err := nic.setForwarding(protocol, enable); err != nil {
 			// Expect forwarding to be settable on all interfaces if it was set on
 			// one.
 			if doneOnce {
@@ -562,6 +564,89 @@ func (s *Stack) SetForwardingDefaultAndAllNICs(protocol tcpip.NetworkProtocolNum
 	return nil
 }
 
+// AddMulticastRoute adds a multicast route to be used for the specified
+// addresses and protocol.
+func (s *Stack) AddMulticastRoute(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination, route MulticastRoute) tcpip.Error {
+	netProto, ok := s.networkProtocols[protocol]
+	if !ok {
+		return &tcpip.ErrUnknownProtocol{}
+	}
+
+	forwardingNetProto, ok := netProto.(MulticastForwardingNetworkProtocol)
+	if !ok {
+		return &tcpip.ErrNotSupported{}
+	}
+
+	return forwardingNetProto.AddMulticastRoute(addresses, route)
+}
+
+// RemoveMulticastRoute removes a multicast route that matches the specified
+// addresses and protocol.
+func (s *Stack) RemoveMulticastRoute(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination) tcpip.Error {
+	netProto, ok := s.networkProtocols[protocol]
+	if !ok {
+		return &tcpip.ErrUnknownProtocol{}
+	}
+
+	forwardingNetProto, ok := netProto.(MulticastForwardingNetworkProtocol)
+	if !ok {
+		return &tcpip.ErrNotSupported{}
+	}
+
+	return forwardingNetProto.RemoveMulticastRoute(addresses)
+}
+
+// MulticastRouteLastUsedTime returns a monotonic timestamp that represents the
+// last time that the route that matches the provided addresses and protocol
+// was used or updated.
+func (s *Stack) MulticastRouteLastUsedTime(protocol tcpip.NetworkProtocolNumber, addresses UnicastSourceAndMulticastDestination) (tcpip.MonotonicTime, tcpip.Error) {
+	netProto, ok := s.networkProtocols[protocol]
+	if !ok {
+		return tcpip.MonotonicTime{}, &tcpip.ErrUnknownProtocol{}
+	}
+
+	forwardingNetProto, ok := netProto.(MulticastForwardingNetworkProtocol)
+	if !ok {
+		return tcpip.MonotonicTime{}, &tcpip.ErrNotSupported{}
+	}
+
+	return forwardingNetProto.MulticastRouteLastUsedTime(addresses)
+}
+
+// SetNICMulticastForwarding enables or disables multicast packet forwarding on
+// the specified NIC for the passed protocol.
+//
+// Returns the previous configuration on the NIC.
+//
+// TODO(https://gvisor.dev/issue/7338): Implement support for multicast
+// forwarding. Currently, setting this value is a no-op and is not ready for
+// use.
+func (s *Stack) SetNICMulticastForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) (bool, tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return false, &tcpip.ErrUnknownNICID{}
+	}
+
+	return nic.setMulticastForwarding(protocol, enable)
+}
+
+// NICMulticastForwarding returns the multicast forwarding configuration for
+// the specified NIC.
+func (s *Stack) NICMulticastForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (bool, tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return false, &tcpip.ErrUnknownNICID{}
+	}
+
+	return nic.multicastForwarding(protocol)
+}
+
 // PortRange returns the UDP and TCP inclusive range of ephemeral ports used in
 // both IPv4 and IPv6.
 func (s *Stack) PortRange() (uint16, uint16) {
@@ -579,37 +664,37 @@ func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
 //
 // This method takes ownership of the table.
 func (s *Stack) SetRouteTable(table []tcpip.Route) {
-	s.route.mu.Lock()
-	defer s.route.mu.Unlock()
-	s.route.mu.table = table
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+	s.routeTable = table
 }
 
 // GetRouteTable returns the route table which is currently in use.
 func (s *Stack) GetRouteTable() []tcpip.Route {
-	s.route.mu.RLock()
-	defer s.route.mu.RUnlock()
-	return append([]tcpip.Route(nil), s.route.mu.table...)
+	s.routeMu.RLock()
+	defer s.routeMu.RUnlock()
+	return append([]tcpip.Route(nil), s.routeTable...)
 }
 
 // AddRoute appends a route to the route table.
 func (s *Stack) AddRoute(route tcpip.Route) {
-	s.route.mu.Lock()
-	defer s.route.mu.Unlock()
-	s.route.mu.table = append(s.route.mu.table, route)
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+	s.routeTable = append(s.routeTable, route)
 }
 
 // RemoveRoutes removes matching routes from the route table.
 func (s *Stack) RemoveRoutes(match func(tcpip.Route) bool) {
-	s.route.mu.Lock()
-	defer s.route.mu.Unlock()
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
 
 	var filteredRoutes []tcpip.Route
-	for _, route := range s.route.mu.table {
+	for _, route := range s.routeTable {
 		if !match(route) {
 			filteredRoutes = append(filteredRoutes, route)
 		}
 	}
-	s.route.mu.table = filteredRoutes
+	s.routeTable = filteredRoutes
 }
 
 // NewEndpoint creates a new transport layer endpoint of the given protocol.
@@ -700,7 +785,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 
 	n := newNIC(s, id, ep, opts)
 	for proto := range s.defaultForwardingEnabled {
-		if err := n.setForwarding(proto, true); err != nil {
+		if _, err := n.setForwarding(proto, true); err != nil {
 			panic(fmt.Sprintf("newNIC(%d, ...).setForwarding(%d, true): %s", id, proto, err))
 		}
 	}
@@ -797,18 +882,18 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	delete(s.nics, id)
 
 	// Remove routes in-place. n tracks the number of routes written.
-	s.route.mu.Lock()
+	s.routeMu.Lock()
 	n := 0
-	for i, r := range s.route.mu.table {
-		s.route.mu.table[i] = tcpip.Route{}
+	for i, r := range s.routeTable {
+		s.routeTable[i] = tcpip.Route{}
 		if r.NIC != id {
 			// Keep this route.
-			s.route.mu.table[n] = r
+			s.routeTable[n] = r
 			n++
 		}
 	}
-	s.route.mu.table = s.route.mu.table[:n]
-	s.route.mu.Unlock()
+	s.routeTable = s.routeTable[:n]
+	s.routeMu.Unlock()
 
 	return nic.remove()
 }
@@ -842,6 +927,10 @@ type NICInfo struct {
 	// Forwarding holds the forwarding status for each network endpoint that
 	// supports forwarding.
 	Forwarding map[tcpip.NetworkProtocolNumber]bool
+
+	// MulticastForwarding holds the forwarding status for each network endpoint
+	// that supports multicast forwarding.
+	MulticastForwarding map[tcpip.NetworkProtocolNumber]bool
 }
 
 // HasNIC returns true if the NICID is defined in the stack.
@@ -856,6 +945,21 @@ func (s *Stack) HasNIC(id tcpip.NICID) bool {
 func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	type forwardingFn func(tcpip.NetworkProtocolNumber) (bool, tcpip.Error)
+	forwardingValue := func(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumber, nicID tcpip.NICID, fnName string) (forward bool, ok bool) {
+		switch forwarding, err := forwardingFn(proto); err.(type) {
+		case nil:
+			return forwarding, true
+		case *tcpip.ErrUnknownProtocol:
+			panic(fmt.Sprintf("expected network protocol %d to be available on NIC %d", proto, nicID))
+		case *tcpip.ErrNotSupported:
+			// Not all network protocols support forwarding.
+		default:
+			panic(fmt.Sprintf("nic(id=%d).%s(%d): %s", nicID, fnName, proto, err))
+		}
+		return false, false
+	}
 
 	nics := make(map[tcpip.NICID]NICInfo)
 	for id, nic := range s.nics {
@@ -872,28 +976,26 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 		}
 
 		info := NICInfo{
-			Name:              nic.name,
-			LinkAddress:       nic.NetworkLinkEndpoint.LinkAddress(),
-			ProtocolAddresses: nic.primaryAddresses(),
-			Flags:             flags,
-			MTU:               nic.NetworkLinkEndpoint.MTU(),
-			Stats:             nic.stats.local,
-			NetworkStats:      netStats,
-			Context:           nic.context,
-			ARPHardwareType:   nic.NetworkLinkEndpoint.ARPHardwareType(),
-			Forwarding:        make(map[tcpip.NetworkProtocolNumber]bool),
+			Name:                nic.name,
+			LinkAddress:         nic.NetworkLinkEndpoint.LinkAddress(),
+			ProtocolAddresses:   nic.primaryAddresses(),
+			Flags:               flags,
+			MTU:                 nic.NetworkLinkEndpoint.MTU(),
+			Stats:               nic.stats.local,
+			NetworkStats:        netStats,
+			Context:             nic.context,
+			ARPHardwareType:     nic.NetworkLinkEndpoint.ARPHardwareType(),
+			Forwarding:          make(map[tcpip.NetworkProtocolNumber]bool),
+			MulticastForwarding: make(map[tcpip.NetworkProtocolNumber]bool),
 		}
 
 		for proto := range s.networkProtocols {
-			switch forwarding, err := nic.forwarding(proto); err.(type) {
-			case nil:
+			if forwarding, ok := forwardingValue(nic.forwarding, proto, id, "forwarding"); ok {
 				info.Forwarding[proto] = forwarding
-			case *tcpip.ErrUnknownProtocol:
-				panic(fmt.Sprintf("expected network protocol %d to be available on NIC %d", proto, nic.ID()))
-			case *tcpip.ErrNotSupported:
-				// Not all network protocols support forwarding.
-			default:
-				panic(fmt.Sprintf("nic(id=%d).forwarding(%d): %s", nic.ID(), proto, err))
+			}
+
+			if multicastForwarding, ok := forwardingValue(nic.multicastForwarding, proto, id, "multicastForwarding"); ok {
+				info.MulticastForwarding[proto] = multicastForwarding
 			}
 		}
 
@@ -944,6 +1046,18 @@ func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) tcpip.Error {
 	return &tcpip.ErrUnknownNICID{}
 }
 
+// SetAddressDeprecated sets an address to be deprecated or preferred.
+func (s *Stack) SetAddressDeprecated(id tcpip.NICID, addr tcpip.Address, deprecated bool) tcpip.Error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if nic, ok := s.nics[id]; ok {
+		return nic.setAddressDeprecated(addr, deprecated)
+	}
+
+	return &tcpip.ErrUnknownNICID{}
+}
+
 // AllAddresses returns a map of NICIDs to their protocol addresses (primary
 // and non-primary).
 func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
@@ -978,6 +1092,22 @@ func (s *Stack) getAddressEP(nic *nic, localAddr, remoteAddr tcpip.Address, netP
 		return nic.primaryEndpoint(netProto, remoteAddr)
 	}
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
+}
+
+// NewRouteForMulticast returns a Route that may be used to forward multicast
+// packets.
+//
+// Returns nil if validation fails.
+func (s *Stack) NewRouteForMulticast(nicID tcpip.NICID, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
+	nic, ok := s.nics[nicID]
+	if !ok || !nic.Enabled() {
+		return nil
+	}
+
+	if addressEndpoint := s.getAddressEP(nic, "" /* localAddr */, remoteAddr, netProto); addressEndpoint != nil {
+		return constructAndValidateRoute(netProto, addressEndpoint, nic, nic, "" /* gateway */, "" /* localAddr */, remoteAddr, s.handleLocal, false /* multicastLoop */)
+	}
+	return nil
 }
 
 // findLocalRouteFromNICRLocked is like findLocalRouteRLocked but finds a route
@@ -1135,10 +1265,10 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	// Find a route to the remote with the route table.
 	var chosenRoute tcpip.Route
 	if r := func() *Route {
-		s.route.mu.RLock()
-		defer s.route.mu.RUnlock()
+		s.routeMu.RLock()
+		defer s.routeMu.RUnlock()
 
-		for _, route := range s.route.mu.table {
+		for _, route := range s.routeTable {
 			if len(remoteAddr) != 0 && !route.Destination.Contains(remoteAddr) {
 				continue
 			}
@@ -1531,10 +1661,21 @@ func (s *Stack) Wait() {
 		p.Wait()
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, n := range s.nics {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for id, n := range s.nics {
+		// Remove NIC to ensure that qDisc goroutines are correctly
+		// terminated on stack teardown.
+		s.removeNICLocked(id)
 		n.NetworkLinkEndpoint.Wait()
+	}
+}
+
+// Pause pauses any protocol level background workers.
+func (s *Stack) Pause() {
+	for _, p := range s.transportProtocols {
+		p.proto.Pause()
 	}
 }
 
@@ -1549,6 +1690,10 @@ func (s *Stack) Resume() {
 	s.mu.Unlock()
 	for _, e := range eps {
 		e.Resume(s)
+	}
+	// Now resume any protocol level background workers.
+	for _, p := range s.transportProtocols {
+		p.proto.Resume()
 	}
 }
 
@@ -1643,7 +1788,7 @@ func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNum
 	})
 	defer pkt.DecRef()
 	pkt.NetworkProtocolNumber = proto
-	return nic.WriteRawPacket(pkt)
+	return nic.writeRawPacket(pkt)
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the

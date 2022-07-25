@@ -24,12 +24,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/link/nested"
@@ -38,16 +37,12 @@ import (
 
 // LogPackets is a flag used to enable or disable packet logging via the log
 // package. Valid values are 0 or 1.
-//
-// LogPackets must be accessed atomically.
-var LogPackets uint32 = 1
+var LogPackets atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 
 // LogPacketsToPCAP is a flag used to enable or disable logging packets to a
 // pcap writer. Valid values are 0 or 1. A writer must have been specified when the
 // sniffer was created for this flag to have effect.
-//
-// LogPacketsToPCAP must be accessed atomically.
-var LogPacketsToPCAP uint32 = 1
+var LogPacketsToPCAP atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 
 type endpoint struct {
 	nested.Endpoint
@@ -135,17 +130,17 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
-func (e *endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.dumpPacket(directionRecv, protocol, pkt)
-	e.Endpoint.DeliverNetworkPacket(remote, local, protocol, pkt)
+	e.Endpoint.DeliverNetworkPacket(protocol, pkt)
 }
 
 func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	writer := e.writer
-	if writer == nil && atomic.LoadUint32(&LogPackets) == 1 {
+	if writer == nil && LogPackets.Load() == 1 {
 		logPacket(e.logPrefix, dir, protocol, pkt)
 	}
-	if writer != nil && atomic.LoadUint32(&LogPacketsToPCAP) == 1 {
+	if writer != nil && LogPacketsToPCAP.Load() == 1 {
 		packet := pcapPacket{
 			timestamp:     time.Now(),
 			packet:        pkt,
@@ -165,7 +160,7 @@ func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumbe
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+	for _, pkt := range pkts.AsSlice() {
 		e.dumpPacket(directionSend, pkt.NetworkProtocolNumber, pkt)
 	}
 	return e.Endpoint.WritePackets(pkts)
@@ -198,10 +193,10 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 	//
 	// We trim the link headers from the cloned buffer as the sniffer doesn't
 	// handle link headers.
-	vv := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
-	vv.TrimFront(len(pkt.VirtioNetHeader().View()))
-	vv.TrimFront(len(pkt.LinkHeader().View()))
-	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Data: vv})
+	buf := pkt.Buffer()
+	buf.TrimFront(int64(len(pkt.VirtioNetHeader().View())))
+	buf.TrimFront(int64(len(pkt.LinkHeader().View())))
+	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 	defer pkt.DecRef()
 	switch protocol {
 	case header.IPv4ProtocolNumber:

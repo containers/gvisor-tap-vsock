@@ -128,7 +128,7 @@ golang.org/x/crypto/poly1305
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 golang.org/x/crypto/ssh/knownhosts
-# golang.org/x/mod v0.4.2
+# golang.org/x/mod v0.5.1
 golang.org/x/mod/semver
 # golang.org/x/net v0.0.0-20220225172249-27dd8689420f
 golang.org/x/net/bpf
@@ -172,7 +172,7 @@ golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 ## explicit
 golang.org/x/time/rate
-# golang.org/x/tools v0.1.6-0.20210726203631-07bc1bf47fb2
+# golang.org/x/tools v0.1.9
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/internal/gcimporter
 golang.org/x/tools/go/internal/packagesdriver
@@ -183,6 +183,7 @@ golang.org/x/tools/internal/event/keys
 golang.org/x/tools/internal/event/label
 golang.org/x/tools/internal/gocommand
 golang.org/x/tools/internal/packagesinternal
+golang.org/x/tools/internal/typeparams
 golang.org/x/tools/internal/typesinternal
 # golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 golang.org/x/xerrors
@@ -195,21 +196,17 @@ gopkg.in/tomb.v1
 gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1
 gopkg.in/yaml.v3
-# gvisor.dev/gvisor v0.0.0-20220121190119-4f2d380c8b55
+# gvisor.dev/gvisor v0.0.0-20220606021117-7dbe1e667086
 ## explicit
 gvisor.dev/gvisor/pkg/atomicbitops
 gvisor.dev/gvisor/pkg/buffer
-gvisor.dev/gvisor/pkg/context
+gvisor.dev/gvisor/pkg/cpuid
 gvisor.dev/gvisor/pkg/gohacks
 gvisor.dev/gvisor/pkg/goid
 gvisor.dev/gvisor/pkg/linewriter
 gvisor.dev/gvisor/pkg/log
 gvisor.dev/gvisor/pkg/rand
-gvisor.dev/gvisor/pkg/refs
-gvisor.dev/gvisor/pkg/refsvfs2
 gvisor.dev/gvisor/pkg/sleep
-gvisor.dev/gvisor/pkg/state
-gvisor.dev/gvisor/pkg/state/wire
 gvisor.dev/gvisor/pkg/sync
 gvisor.dev/gvisor/pkg/tcpip
 gvisor.dev/gvisor/pkg/tcpip/adapters/gonet
@@ -224,6 +221,7 @@ gvisor.dev/gvisor/pkg/tcpip/network/arp
 gvisor.dev/gvisor/pkg/tcpip/network/hash
 gvisor.dev/gvisor/pkg/tcpip/network/internal/fragmentation
 gvisor.dev/gvisor/pkg/tcpip/network/internal/ip
+gvisor.dev/gvisor/pkg/tcpip/network/internal/multicast
 gvisor.dev/gvisor/pkg/tcpip/network/ipv4
 gvisor.dev/gvisor/pkg/tcpip/ports
 gvisor.dev/gvisor/pkg/tcpip/seqnum

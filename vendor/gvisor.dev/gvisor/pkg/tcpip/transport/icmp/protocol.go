@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	tcpipbuffer "gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
@@ -87,7 +87,7 @@ func (p *protocol) MinimumPacketSize() int {
 }
 
 // ParsePorts in case of ICMP sets src to 0, dst to ICMP ID, and err to nil.
-func (p *protocol) ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error) {
+func (p *protocol) ParsePorts(v tcpipbuffer.View) (src, dst uint16, err tcpip.Error) {
 	switch p.number {
 	case ProtocolNumber4:
 		hdr := header.ICMPv4(v)
@@ -120,6 +120,12 @@ func (*protocol) Close() {}
 
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
+
+// Pause implements stack.TransportProtocol.Pause.
+func (*protocol) Pause() {}
+
+// Resume implements stack.TransportProtocol.Resume.
+func (*protocol) Resume() {}
 
 // Parse implements stack.TransportProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {

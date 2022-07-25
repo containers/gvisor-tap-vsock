@@ -17,24 +17,24 @@ package stack
 import (
 	"fmt"
 	"strings"
-	"sync"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 // A Hook specifies one of the hooks built into the network stack.
 //
-//                      Userspace app          Userspace app
-//                            ^                      |
-//                            |                      v
-//                         [Input]               [Output]
-//                            ^                      |
-//                            |                      v
-//                            |                   routing
-//                            |                      |
-//                            |                      v
-// ----->[Prerouting]----->routing----->[Forward]---------[Postrouting]----->
+//	                     Userspace app          Userspace app
+//	                           ^                      |
+//	                           |                      v
+//	                        [Input]               [Output]
+//	                           ^                      |
+//	                           |                      v
+//	                           |                   routing
+//	                           |                      |
+//	                           |                      v
+//		----->[Prerouting]----->routing----->[Forward]---------[Postrouting]----->
 type Hook uint
 
 const (

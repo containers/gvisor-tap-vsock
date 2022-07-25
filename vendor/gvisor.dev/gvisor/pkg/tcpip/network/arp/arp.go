@@ -20,8 +20,8 @@ package arp
 import (
 	"fmt"
 	"reflect"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -50,32 +50,30 @@ type endpoint struct {
 	protocol *protocol
 
 	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
-	//
-	// Must be accessed using atomic operations.
-	enabled uint32
+	enabled atomicbitops.Uint32
 
 	nic   stack.NetworkInterface
 	stats sharedStats
 
-	mu struct {
-		sync.Mutex
+	// mu protects annotated fields below.
+	mu sync.Mutex
 
-		dad ip.DAD
-	}
+	// +checklocks:mu
+	dad ip.DAD
 }
 
 // CheckDuplicateAddress implements stack.DuplicateAddressDetector.
 func (e *endpoint) CheckDuplicateAddress(addr tcpip.Address, h stack.DADCompletionHandler) stack.DADCheckAddressDisposition {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.mu.dad.CheckDuplicateAddressLocked(addr, h)
+	return e.dad.CheckDuplicateAddressLocked(addr, h)
 }
 
 // SetDADConfigurations implements stack.DuplicateAddressDetector.
 func (e *endpoint) SetDADConfigurations(c stack.DADConfigurations) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.mu.dad.SetConfigsLocked(c)
+	e.dad.SetConfigsLocked(c)
 }
 
 // DuplicateAddressProtocol implements stack.DuplicateAddressDetector.
@@ -104,15 +102,15 @@ func (e *endpoint) Enabled() bool {
 // isEnabled returns true if the endpoint is enabled, regardless of the
 // enabled status of the NIC.
 func (e *endpoint) isEnabled() bool {
-	return atomic.LoadUint32(&e.enabled) == 1
+	return e.enabled.Load() == 1
 }
 
 // setEnabled sets the enabled status for the endpoint.
 func (e *endpoint) setEnabled(v bool) {
 	if v {
-		atomic.StoreUint32(&e.enabled, 1)
+		e.enabled.Store(1)
 	} else {
-		atomic.StoreUint32(&e.enabled, 0)
+		e.enabled.Store(0)
 	}
 }
 
@@ -230,7 +228,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
 		e.mu.Lock()
-		e.mu.dad.StopLocked(addr, &stack.DADDupAddrDetected{HolderLinkAddress: linkAddr})
+		e.dad.StopLocked(addr, &stack.DADDupAddrDetected{HolderLinkAddress: linkAddr})
 		e.mu.Unlock()
 
 		// The solicited, override, and isRouter flags are not available for ARP;
@@ -280,7 +278,7 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.TransportDisp
 	}
 
 	e.mu.Lock()
-	e.mu.dad.Init(&e.mu, p.options.DADConfigs, ip.DADOptions{
+	e.dad.Init(&e.mu, p.options.DADConfigs, ip.DADOptions{
 		Clock:     p.stack.Clock(),
 		SecureRNG: p.stack.SecureRNG(),
 		// ARP does not support sending nonce values.

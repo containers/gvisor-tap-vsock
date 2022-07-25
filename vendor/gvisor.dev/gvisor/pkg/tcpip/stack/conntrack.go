@@ -20,9 +20,9 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -144,9 +144,7 @@ type conn struct {
 
 	finalizeOnce sync.Once
 	// Holds a finalizeResult.
-	//
-	// +checkatomics
-	finalizeResult uint32
+	finalizeResult atomicbitops.Uint32
 
 	mu sync.RWMutex `state:"nosave"`
 	// sourceManip indicates the source manipulation type.
@@ -219,11 +217,11 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 //
 // ConnTrack keeps all connections in a slice of buckets, each of which holds a
 // linked list of tuples. This gives us some desirable properties:
-// - Each bucket has its own lock, lessening lock contention.
-// - The slice is large enough that lists stay short (<10 elements on average).
-//   Thus traversal is fast.
-// - During linked list traversal we reap expired connections. This amortizes
-//   the cost of reaping them and makes reapUnused faster.
+//   - Each bucket has its own lock, lessening lock contention.
+//   - The slice is large enough that lists stay short (<10 elements on average).
+//     Thus traversal is fast.
+//   - During linked list traversal we reap expired connections. This amortizes
+//     the cost of reaping them and makes reapUnused faster.
 //
 // Locks are ordered by their location in the buckets slice. That is, a
 // goroutine that locks buckets[i] can only lock buckets[j] s.t. i < j.
@@ -513,7 +511,7 @@ func (ct *ConnTrack) init() {
 //
 // If the packet's protocol is trackable, the connection's state is updated to
 // match the contents of the packet.
-func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer) *tuple {
+func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation bool) *tuple {
 	// Get or (maybe) create a connection.
 	t := func() *tuple {
 		var allowNewConn bool
@@ -527,6 +525,34 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer) *tuple {
 			allowNewConn = false
 		default:
 			panic(fmt.Sprintf("unhandled %[1]T = %[1]d", res))
+		}
+
+		// Just skip bad packets. They'll be rejected later by the appropriate
+		// protocol package.
+		switch pkt.TransportProtocolNumber {
+		case header.TCPProtocolNumber:
+			_, csumValid, ok := header.TCPValid(
+				header.TCP(pkt.TransportHeader().View()),
+				func() uint16 { return pkt.Data().AsRange().Checksum() },
+				uint16(pkt.Data().Size()),
+				tid.srcAddr,
+				tid.dstAddr,
+				pkt.RXTransportChecksumValidated || skipChecksumValidation)
+			if !csumValid || !ok {
+				return nil
+			}
+		case header.UDPProtocolNumber:
+			lengthValid, csumValid := header.UDPValid(
+				header.UDP(pkt.TransportHeader().View()),
+				func() uint16 { return pkt.Data().AsRange().Checksum() },
+				uint16(pkt.Data().Size()),
+				pkt.NetworkProtocolNumber,
+				tid.srcAddr,
+				tid.dstAddr,
+				pkt.RXTransportChecksumValidated || skipChecksumValidation)
+			if !lengthValid || !csumValid {
+				return nil
+			}
 		}
 
 		bktID := ct.bucket(tid)
@@ -653,7 +679,7 @@ func (ct *ConnTrack) finalize(cn *conn) finalizeResult {
 }
 
 func (cn *conn) getFinalizeResult() finalizeResult {
-	return finalizeResult(atomic.LoadUint32(&cn.finalizeResult))
+	return finalizeResult(cn.finalizeResult.Load())
 }
 
 // finalize attempts to finalize the connection and returns true iff the
@@ -667,7 +693,7 @@ func (cn *conn) getFinalizeResult() finalizeResult {
 // goroutines will block until the finalizing goroutine finishes finalizing.
 func (cn *conn) finalize() bool {
 	cn.finalizeOnce.Do(func() {
-		atomic.StoreUint32(&cn.finalizeResult, uint32(cn.ct.finalize(cn)))
+		cn.finalizeResult.Store(uint32(cn.ct.finalize(cn)))
 	})
 
 	switch res := cn.getFinalizeResult(); res {
@@ -982,13 +1008,13 @@ func (ct *ConnTrack) bucket(id tupleID) int {
 
 // reapUnused deletes timed out entries from the conntrack map. The rules for
 // reaping are:
-// - Each call to reapUnused traverses a fraction of the conntrack table.
-//   Specifically, it traverses len(ct.buckets)/fractionPerReaping.
-// - After reaping, reapUnused decides when it should next run based on the
-//   ratio of expired connections to examined connections. If the ratio is
-//   greater than maxExpiredPct, it schedules the next run quickly. Otherwise it
-//   slightly increases the interval between runs.
-// - maxFullTraversal caps the time it takes to traverse the entire table.
+//   - Each call to reapUnused traverses a fraction of the conntrack table.
+//     Specifically, it traverses len(ct.buckets)/fractionPerReaping.
+//   - After reaping, reapUnused decides when it should next run based on the
+//     ratio of expired connections to examined connections. If the ratio is
+//     greater than maxExpiredPct, it schedules the next run quickly. Otherwise it
+//     slightly increases the interval between runs.
+//   - maxFullTraversal caps the time it takes to traverse the entire table.
 //
 // reapUnused returns the next bucket that should be checked and the time after
 // which it should be called again.
