@@ -2,7 +2,6 @@ package tap
 
 import (
 	"context"
-	"gvisor.dev/gvisor/pkg/bufferv2"
 	"io"
 	"net"
 	"sync"
@@ -13,6 +12,7 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
