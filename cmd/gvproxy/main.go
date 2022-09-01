@@ -420,7 +420,12 @@ func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http
 		return ln.Close()
 	})
 	g.Go(func() error {
-		err := http.Serve(ln, mux)
+		s := &http.Server{
+			Handler:      mux,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		err := s.Serve(ln)
 		if err != nil {
 			if err != http.ErrServerClosed {
 				return err

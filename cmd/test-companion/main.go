@@ -3,6 +3,7 @@ package main
 import (
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -41,5 +42,12 @@ func main() {
 	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		_, _ = writer.Write([]byte(`Hello world!`))
 	})
-	log.Fatal(http.ListenAndServe(":8080", mux))
+
+	s := &http.Server{
+		Addr:         ":8080",
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+	log.Fatal(s.ListenAndServe())
 }

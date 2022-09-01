@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
@@ -38,7 +39,13 @@ var _ = Describe("port forwarding", func() {
 			_, _ = writer.Write([]byte("Hello from the host"))
 		})
 		go func() {
-			if err := http.Serve(ln, mux); err != nil {
+			s := &http.Server{
+				Handler:      mux,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			}
+			err := s.Serve(ln)
+			if err != nil {
 				log.Error(err)
 			}
 		}()
