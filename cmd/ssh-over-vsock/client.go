@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net"
+	"os"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -27,7 +27,7 @@ func newClient(conn net.Conn, user string, key string) (*client, error) {
 }
 
 func newConfig(user string, keyFile string) (*ssh.ClientConfig, error) {
-	key, err := ioutil.ReadFile(keyFile)
+	key, err := os.ReadFile(keyFile)
 	if err != nil {
 		return nil, err
 	}

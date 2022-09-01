@@ -5,7 +5,6 @@ package e2e
 import (
 	"context"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -80,10 +79,10 @@ var _ = Describe("connectivity", func() {
 		reader, err := cmd.StdoutPipe()
 		Expect(err).ShouldNot(HaveOccurred())
 		cmd.Start()
-		output, err := ioutil.ReadAll(reader)
+		output, err := io.ReadAll(reader)
 		Expect(err).ShouldNot(HaveOccurred())
 		cmd.Wait()
 		Expect(strings.Contains(string(output), `[info ] test: Listening on: \\.\pipe\fake_docker_engine`)).Should(BeTrue())
-		Expect(strings.Contains(string(output),`[debug] test: Socket forward established`)).Should(BeTrue())
+		Expect(strings.Contains(string(output), `[debug] test: Socket forward established`)).Should(BeTrue())
 	})
 })
