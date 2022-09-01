@@ -5,7 +5,6 @@ package e2e
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +38,7 @@ func init() {
 	flag.StringVar(&binDir, "bin", "../bin", "directory with compiled binaries")
 	_ = os.MkdirAll(tmpDir, 0755)
 	keyFile = filepath.Join(tmpDir, "id.key")
-	_ = ioutil.WriteFile(keyFile, []byte(fakeHostKey), 0600)
+	_ = os.WriteFile(keyFile, []byte(fakeHostKey), 0600)
 	winSshProxy = filepath.Join(binDir, "win-sshproxy.exe")
 	tidFile = filepath.Join(tmpDir, "win-sshproxy.tid")
 }
@@ -59,7 +58,7 @@ func startProxy() error {
 }
 
 func readTid() (uint32, uint32, error) {
-	contents, err := ioutil.ReadFile(tidFile)
+	contents, err := os.ReadFile(tidFile)
 	if err != nil {
 		return 0, 0, err
 	}

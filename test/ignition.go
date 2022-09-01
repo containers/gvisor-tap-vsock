@@ -2,8 +2,8 @@ package e2e
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"net/url"
+	"os"
 )
 
 var (
@@ -142,7 +142,7 @@ ExecStart=/usr/bin/sleep infinity
 	}
 
 	// #nosec
-	return ioutil.WriteFile(ignitionFile, contents, 0644)
+	return os.WriteFile(ignitionFile, contents, 0644)
 }
 
 func dir(path string) Directory {

@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -176,7 +175,7 @@ func createSSHKeys() (string, error) {
 }
 
 func readPublicKey() (string, error) {
-	publicKey, err := ioutil.ReadFile(publicKeyFile)
+	publicKey, err := os.ReadFile(publicKeyFile)
 	if err != nil {
 		return "", nil
 	}
