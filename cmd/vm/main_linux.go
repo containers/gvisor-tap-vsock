@@ -31,6 +31,7 @@ var (
 	mac              string
 	debug            bool
 	mtu              int
+	tapPreexists     bool
 )
 
 func main() {
@@ -40,6 +41,7 @@ func main() {
 	flag.StringVar(&mac, "mac", "5a:94:ef:e4:0c:ee", "mac address")
 	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.IntVar(&mtu, "mtu", 4000, "mtu")
+	flag.BoolVar(&tapPreexists, "preexisting", false, "use preexisting/preconfigured TAP interface")
 	flag.Parse()
 
 	expected := strings.Split(stopIfIfaceExist, ",")
@@ -96,18 +98,22 @@ func run() error {
 	}
 	defer tap.Close()
 
-	if err := linkUp(); err != nil {
-		return errors.Wrap(err, "cannot set mac address")
+	if !tapPreexists {
+		if err := linkUp(); err != nil {
+			return errors.Wrap(err, "cannot set mac address")
+		}
 	}
 
 	errCh := make(chan error, 1)
 	go tx(conn, tap, errCh, mtu)
 	go rx(conn, tap, errCh, mtu)
-	go func() {
-		if err := dhcp(); err != nil {
-			errCh <- errors.Wrap(err, "dhcp error")
-		}
-	}()
+	if !tapPreexists {
+		go func() {
+			if err := dhcp(); err != nil {
+				errCh <- errors.Wrap(err, "dhcp error")
+			}
+		}()
+	}
 	return <-errCh
 }
 
