@@ -191,7 +191,7 @@ golang.org/x/tools/internal/typesinternal
 gopkg.in/tomb.v1
 # gopkg.in/yaml.v3 v3.0.1
 gopkg.in/yaml.v3
-# gvisor.dev/gvisor v0.0.0-20220722234115-e3e6499abbba
+# gvisor.dev/gvisor v0.0.0-20220908032458-edc830a43ba6
 ## explicit
 gvisor.dev/gvisor/pkg/atomicbitops
 gvisor.dev/gvisor/pkg/bits
