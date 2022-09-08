@@ -216,12 +216,12 @@ func panicCheck(con string) (bool, error) {
 		return false, err
 	}
 
-	_, _ = file.Seek(-500, os.SEEK_END)
+	_, _ = file.Seek(-500, io.SeekEnd)
 	// Ignore seek errors (not enough content yet)
 
 	contents := make([]byte, 500)
 	_, err = io.ReadAtLeast(file, contents, len(contents))
-	if err != nil {
+	if err != nil && err != io.ErrUnexpectedEOF {
 		return false, err
 	}
 
