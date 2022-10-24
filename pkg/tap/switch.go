@@ -267,21 +267,22 @@ func (e *Switch) rxBuf(ctx context.Context, id int, buf []byte) {
 	e.camLock.Unlock()
 
 	if eth.DestinationAddress() != e.gateway.LinkAddress() {
-		if err := e.tx(stack.NewPacketBuffer(stack.PacketBufferOptions{
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: bufferv2.MakeWithData(buf),
-		})); err != nil {
+		})
+		if err := e.tx(pkt); err != nil {
 			log.Error(err)
 		}
+		pkt.DecRef()
 	}
 	if eth.DestinationAddress() == e.gateway.LinkAddress() || eth.DestinationAddress() == header.EthernetBroadcastAddress {
 		data := bufferv2.MakeWithData(buf)
 		data.TrimFront(header.EthernetMinimumSize)
-		e.gateway.DeliverNetworkPacket(
-			eth.Type(),
-			stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: data,
-			}),
-		)
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Payload: data,
+		})
+		e.gateway.DeliverNetworkPacket(eth.Type(), pkt)
+		pkt.DecRef()
 	}
 
 	atomic.AddUint64(&e.Received, uint64(len(buf)))
