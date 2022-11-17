@@ -1,11 +1,13 @@
 TAG ?= $(shell git describe --match=NeVeRmAtCh --always --abbrev=40 --dirty)
 CONTAINER_RUNTIME ?= podman
-TOOLS_BINDIR = $(realpath tools/bin)
-
-LDFLAGS = -ldflags '-s -w'
 
 .PHONY: build
 build: gvproxy qemu-wrapper vm
+
+TOOLS_DIR := tools
+include tools/tools.mk
+
+LDFLAGS = -ldflags '-s -w'
 
 .PHONY: gvproxy
 gvproxy:
@@ -48,10 +50,6 @@ cross: $(TOOLS_BINDIR)/makefat
 	GOARCH=arm64 GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin-arm64 ./cmd/gvproxy
 	GOARCH=amd64 GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux ./cmd/gvproxy
 	cd bin && $(TOOLS_BINDIR)/makefat gvproxy-darwin gvproxy-darwin-amd64 gvproxy-darwin-arm64
-
-# Needed to build macOS universal binary
-$(TOOLS_BINDIR)/makefat:
-	GOBIN=$(TOOLS_BINDIR) go install -mod=mod github.com/randall77/makefat@latest
 
 .PHONY: test-companion
 test-companion:

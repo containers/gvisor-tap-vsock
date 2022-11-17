@@ -45,11 +45,11 @@ github.com/insomniacslk/dhcp/rfc1035label
 # github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
 ## explicit; go 1.17
 github.com/linuxkit/virtsock/pkg/hvsock
-# github.com/mdlayher/socket v0.2.0
-## explicit; go 1.17
+# github.com/mdlayher/socket v0.4.0
+## explicit; go 1.18
 github.com/mdlayher/socket
-# github.com/mdlayher/vsock v1.1.1
-## explicit; go 1.17
+# github.com/mdlayher/vsock v1.2.0
+## explicit; go 1.18
 github.com/mdlayher/vsock
 # github.com/miekg/dns v1.1.50
 ## explicit; go 1.14
@@ -83,7 +83,7 @@ github.com/onsi/ginkgo/reporters/stenographer
 github.com/onsi/ginkgo/reporters/stenographer/support/go-colorable
 github.com/onsi/ginkgo/reporters/stenographer/support/go-isatty
 github.com/onsi/ginkgo/types
-# github.com/onsi/gomega v1.24.0
+# github.com/onsi/gomega v1.24.1
 ## explicit; go 1.18
 github.com/onsi/gomega
 github.com/onsi/gomega/format
@@ -143,7 +143,7 @@ golang.org/x/crypto/ssh/knownhosts
 # golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
 ## explicit; go 1.17
 golang.org/x/mod/semver
-# golang.org/x/net v0.1.0
+# golang.org/x/net v0.2.0
 ## explicit; go 1.17
 golang.org/x/net/bpf
 golang.org/x/net/html
@@ -153,7 +153,7 @@ golang.org/x/net/internal/iana
 golang.org/x/net/internal/socket
 golang.org/x/net/ipv4
 golang.org/x/net/ipv6
-# golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
+# golang.org/x/sync v0.1.0
 ## explicit
 golang.org/x/sync/errgroup
 # golang.org/x/sys v0.2.0
