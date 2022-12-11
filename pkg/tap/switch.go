@@ -19,13 +19,13 @@ import (
 )
 
 type VirtualDevice interface {
-	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer)
+	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr)
 	LinkAddress() tcpip.LinkAddress
 	IP() string
 }
 
 type NetworkSwitch interface {
-	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer)
+	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr)
 }
 
 type Switch struct {
@@ -73,7 +73,7 @@ func (e *Switch) Connect(ep VirtualDevice) {
 	e.gateway = ep
 }
 
-func (e *Switch) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *Switch) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	if err := e.tx(pkt); err != nil {
 		log.Error(err)
 	}
@@ -111,24 +111,24 @@ func (e *Switch) connect(conn net.Conn) (int, bool) {
 	return id, false
 }
 
-func (e *Switch) tx(pkt *stack.PacketBuffer) error {
+func (e *Switch) tx(pkt stack.PacketBufferPtr) error {
 	if e.protocol.Stream() {
 		return e.txStream(pkt, e.protocol.(streamProtocol))
 	}
 	return e.txNonStream(pkt)
 }
 
-func (e *Switch) txNonStream(pkt *stack.PacketBuffer) error {
+func (e *Switch) txNonStream(pkt stack.PacketBufferPtr) error {
 	return e.txBuf(pkt, nil)
 }
 
-func (e *Switch) txStream(pkt *stack.PacketBuffer, sProtocol streamProtocol) error {
+func (e *Switch) txStream(pkt stack.PacketBufferPtr, sProtocol streamProtocol) error {
 	size := sProtocol.Buf()
 	sProtocol.Write(size, pkt.Size())
 	return e.txBuf(pkt, size)
 }
 
-func (e *Switch) txBuf(pkt *stack.PacketBuffer, size []byte) error {
+func (e *Switch) txBuf(pkt stack.PacketBufferPtr, size []byte) error {
 	e.writeLock.Lock()
 	defer e.writeLock.Unlock()
 
