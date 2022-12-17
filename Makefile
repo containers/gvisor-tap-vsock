@@ -26,6 +26,11 @@ vm:
 win-sshproxy:
 	GOOS=windows go build -ldflags -H=windowsgui -o bin/win-sshproxy.exe ./cmd/win-sshproxy
 
+# gvproxy for windows is compiled as a windows GUI to support backgrounding
+.PHONY: win-gvproxy
+win-gvproxy:
+	GOOS=windows go build -ldflags -H=windowsgui -o bin/gvproxy.exe ./cmd/gvproxy
+
 .PHONY: clean
 clean:
 	rm -rf ./bin
