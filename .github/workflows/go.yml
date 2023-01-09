@@ -24,8 +24,8 @@ jobs:
 
     - uses: actions/upload-artifact@v3
       with:
-        name: gvproxy
-        path: bin/gvproxy*
+        name: gvisor-tap-vsock-binaries
+        path: bin/*
 
   tests:
     runs-on: macos-11 # Only Mac runners support nested virt
