@@ -79,12 +79,14 @@ func run() error {
 	}
 	defer conn.Close()
 
-	req, err := http.NewRequest("POST", path, nil)
-	if err != nil {
-		return err
-	}
-	if err := req.Write(conn); err != nil {
-		return err
+	if path != "" {
+		req, err := http.NewRequest("POST", path, nil)
+		if err != nil {
+			return err
+		}
+		if err := req.Write(conn); err != nil {
+			return err
+		}
 	}
 
 	tap, err := water.New(water.Config{
