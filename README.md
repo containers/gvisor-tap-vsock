@@ -33,6 +33,12 @@ With gvproxy and the VM discussing on a unix socket:
 (terminal 2) $ bin/qemu-wrapper /tmp/qemu.sock qemu-system-x86_64 (all your qemu options) -netdev socket,id=vlan,fd=3 -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee
 ```
 
+Starting from Qemu version 7.2.0 it is possible to run w/o a wrapper:
+```
+(terminal 1) $ bin/gvproxy -debug -listen unix:///tmp/network.sock -listen-qemu unix:///tmp/qemu.sock
+(terminal 2) $ qemu-system-x86_64 (all your qemu options) -netdev stream,id=vlan,addr.type=unix,addr.path=/tmp/qemu.sock -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee
+```
+
 ## Run with User Mode Linux
 
 ```
