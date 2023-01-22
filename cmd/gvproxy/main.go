@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/net/stdio"
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
@@ -34,6 +35,7 @@ var (
 	vpnkitSocket    string
 	qemuSocket      string
 	bessSocket      string
+	stdioSocket     string
 	forwardSocket   arrayFlags
 	forwardDest     arrayFlags
 	forwardUser     arrayFlags
@@ -56,12 +58,14 @@ func main() {
 	flag.StringVar(&vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
 	flag.StringVar(&qemuSocket, "listen-qemu", "", "Socket to be used by Qemu")
 	flag.StringVar(&bessSocket, "listen-bess", "", "unixpacket socket to be used by Bess-compatible applications")
+	flag.StringVar(&stdioSocket, "listen-stdio", "", "accept stdio pipe")
 	flag.Var(&forwardSocket, "forward-sock", "Forwards a unix socket to the guest virtual machine over SSH")
 	flag.Var(&forwardDest, "forward-dest", "Forwards a unix socket to the guest virtual machine over SSH")
 	flag.Var(&forwardUser, "forward-user", "SSH user to use for unix socket forward")
 	flag.Var(&forwardIdentify, "forward-identity", "Path to SSH identity key for forwarding")
 	flag.StringVar(&pidFile, "pid-file", "", "Generate a file with the PID in it")
 	flag.Parse()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	// Make this the last defer statement in the stack
 	defer os.Exit(exitCode)
@@ -275,7 +279,7 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 			for {
 				select {
 				case <-time.After(5 * time.Second):
-					fmt.Printf("%v sent to the VM, %v received from the VM\n", humanize.Bytes(vn.BytesSent()), humanize.Bytes(vn.BytesReceived()))
+					log.Debugf("%v sent to the VM, %v received from the VM\n", humanize.Bytes(vn.BytesSent()), humanize.Bytes(vn.BytesReceived()))
 				case <-ctx.Done():
 					break debugLog
 				}
@@ -356,6 +360,13 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 
 			}
 			return vn.AcceptBess(ctx, conn)
+		})
+	}
+
+	if stdioSocket != "" {
+		g.Go(func() error {
+			conn := stdio.GetStdioConn()
+			return vn.AcceptQemu(ctx, conn)
 		})
 	}
 
