@@ -21,13 +21,13 @@ With this project, this is the same but you have to run a daemon on the host.
 
 There 2 ways for the VM to communicate with the daemon: with a tcp port or with a unix socket.
 
-With gvproxy and the VM discussing on a tcp port:
+- With gvproxy and the VM discussing on a tcp port:
 ```
 (terminal 1) $ bin/gvproxy -debug -listen unix:///tmp/network.sock -listen-qemu tcp://0.0.0.0:1234
 (terminal 2) $ qemu-system-x86_64 (all your qemu options) -netdev socket,id=vlan,connect=127.0.0.1:1234 -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee
 ```
 
-With gvproxy and the VM discussing on a unix socket:
+- With gvproxy and the VM discussing on a unix socket:
 ```
 (terminal 1) $ bin/gvproxy -debug -listen unix:///tmp/network.sock -listen-qemu unix:///tmp/qemu.sock
 (terminal 2) $ bin/qemu-wrapper /tmp/qemu.sock qemu-system-x86_64 (all your qemu options) -netdev socket,id=vlan,fd=3 -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee
@@ -53,7 +53,7 @@ More docs about the User Mode Linux with BESS socket transport: https://www.kern
 
 ## Run with vsock
 
-Made for Windows but also works for Linux and macOS with [HyperKit](https://github.com/moby/hyperkit).
+Made for Windows but also works for Linux and macOS with [vfkit](https://github.com/crc-org/vfkit).
 
 ### Host
 
