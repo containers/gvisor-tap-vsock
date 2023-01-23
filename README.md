@@ -6,7 +6,7 @@ It is based on the network stack of [gVisor](https://github.com/google/gvisor/tr
 
 Compared to libslirp, gvisor-tap-vsock brings a configurable DNS server and dynamic port forwarding.
 
-It can be used with Qemu, Hyperkit, Hyper-V and User Mode Linux.
+It can be used with QEMU, Hyperkit, Hyper-V and User Mode Linux.
 
 ## Build
 
@@ -14,9 +14,9 @@ It can be used with Qemu, Hyperkit, Hyper-V and User Mode Linux.
 make
 ```
 
-## Run with Qemu (Linux or macOS)
+## Run with QEMU (Linux or macOS)
 
-Usually with Qemu, to not run as root, you would have to use `-netdev user,id=n0`.
+Usually with QEMU, to not run as root, you would have to use `-netdev user,id=n0`.
 With this project, this is the same but you have to run a daemon on the host.
 
 There 2 ways for the VM to communicate with the daemon: with a tcp port or with a unix socket.
@@ -168,7 +168,7 @@ A working example for SSH can be found [here](https://github.com/containers/gvis
 
 ## Performance
 
-Using iperf3, it can achieve between 1.6 and 2.3Gbits/s depending on which side the test is performed (tested with a mtu of 4000 with Qemu on macOS).
+Using iperf3, it can achieve between 1.6 and 2.3Gbits/s depending on which side the test is performed (tested with a mtu of 4000 with QEMU on macOS).
 
 ## How it works with vsock
 
