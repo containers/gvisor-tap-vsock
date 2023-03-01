@@ -1,6 +1,7 @@
 package tap
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net"
@@ -220,6 +221,7 @@ loop:
 }
 
 func (e *Switch) rxStream(ctx context.Context, id int, conn net.Conn, sProtocol streamProtocol) error {
+	reader := bufio.NewReader(conn)
 	sizeBuf := sProtocol.Buf()
 loop:
 	for {
@@ -229,14 +231,14 @@ loop:
 		default:
 			// passthrough
 		}
-		_, err := io.ReadFull(conn, sizeBuf)
+		_, err := io.ReadFull(reader, sizeBuf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read size from socket")
 		}
 		size := sProtocol.Read(sizeBuf)
 
 		buf := make([]byte, size)
-		_, err = io.ReadFull(conn, buf)
+		_, err = io.ReadFull(reader, buf)
 		if err != nil {
 			return errors.Wrap(err, "cannot read packet from socket")
 		}
