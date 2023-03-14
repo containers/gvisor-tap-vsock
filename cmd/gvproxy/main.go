@@ -366,7 +366,7 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 	if stdioSocket != "" {
 		g.Go(func() error {
 			conn := stdio.GetStdioConn()
-			return vn.AcceptQemu(ctx, conn)
+			return vn.AcceptStdio(ctx, conn)
 		})
 	}
 
