@@ -61,6 +61,8 @@ const (
 	QemuProtocol Protocol = "qemu"
 	// BessProtocol transfers bare L2 packets as SOCK_SEQPACKET.
 	BessProtocol Protocol = "bess"
+	// StdioProtocol is HyperKitProtocol without the handshake
+	StdioProtocol Protocol = "stdio"
 )
 
 type Zone struct {
