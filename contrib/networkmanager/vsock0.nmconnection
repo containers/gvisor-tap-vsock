@@ -1,0 +1,15 @@
+[connection]
+id=vsock0
+type=tun
+interface-name=vsock0
+
+[tun]
+mode=2
+
+[802-3-ethernet]
+cloned-mac-address=5A:94:EF:E4:0C:EE
+
+[ipv4]
+method=auto
+
+[proxy]
