@@ -123,10 +123,10 @@ outer:
 			}
 
 			// Check for panic
-			panic, err := panicCheck(qconLog)
+			didPanic, err := panicCheck(qconLog)
 			Expect(err).ShouldNot(HaveOccurred())
 
-			if panic {
+			if didPanic {
 				Expect(panics).ToNot(BeNumerically(">", 15), "No more than 15 panics allowed")
 				log.Info("Detected Kernel panic, retrying...")
 				_ = client.Process.Kill()
