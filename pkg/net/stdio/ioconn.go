@@ -37,14 +37,14 @@ func (c IoConn) RemoteAddr() net.Addr {
 	return c.remote
 }
 
-func (c IoConn) SetDeadline(t time.Time) error {
+func (c IoConn) SetDeadline(_ time.Time) error {
 	return nil
 }
 
-func (c IoConn) SetReadDeadline(t time.Time) error {
+func (c IoConn) SetReadDeadline(_ time.Time) error {
 	return nil
 }
 
-func (c IoConn) SetWriteDeadline(t time.Time) error {
+func (c IoConn) SetWriteDeadline(_ time.Time) error {
 	return nil
 }
