@@ -34,6 +34,8 @@ BuildRequires: git-core
 BuildRequires: go-rpm-macros
 %endif
 Provides: podman-gvproxy = %{epoch}:%{version}-%{release}
+# Obsolete everything <= Epoch 101
+Obsoletes: podman-gvproxy <= 100:4.5.0-1
 
 %description
 %{summary}
