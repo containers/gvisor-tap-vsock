@@ -3,7 +3,8 @@
 # https://packit.dev/docs/configuration/
 
 # Build targets can be found at:
-# https://copr.fedorainfracloud.org/coprs/rhcontainerbot/packit-builds/
+# On PR: https://copr.fedorainfracloud.org/coprs/rhcontainerbot/packit-builds/
+# On commit: https://copr.fedorainfracloud.org/coprs/rhcontainerbot/podman-next/
 
 specfile_path: gvisor-tap-vsock.spec
 

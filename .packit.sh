@@ -9,8 +9,7 @@ REPO="gvisor-tap-vsock"
 SPEC=$REPO.spec
 
 # Get Version from HEAD
-# FIXME: Don't know where to fetch this from yet
-VERSION=0.0
+VERSION=$(git describe --abbrev=0 | sed -e "s/^v//")
 
 # Generate source tarball from HEAD
 git archive --prefix=$REPO-$VERSION/ -o $REPO-$VERSION.tar.gz HEAD
