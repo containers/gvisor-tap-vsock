@@ -1,5 +1,5 @@
 [Unit]
-Description=vsock_network
+Description=gvisor-tap-vsock Network Traffic Forwarder
 After=NetworkManager.service
 
 [Service]
