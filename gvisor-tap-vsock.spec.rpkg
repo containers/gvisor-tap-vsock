@@ -30,6 +30,7 @@ Source: {{{ git_dir_pack }}}
 BuildRequires: gcc
 BuildRequires: golang >= 1.16.6
 BuildRequires: git-core
+BuildRequires: systemd-rpm-macros
 %if 0%{?fedora} || 0%{?rhel} >= 9
 BuildRequires: go-rpm-macros
 %endif
@@ -77,11 +78,23 @@ export GOPATH=$(pwd)/_build:$(pwd)
 install -dp %{buildroot}%{_libexecdir}/podman
 install -p -m0755 bin/gvproxy %{buildroot}%{_libexecdir}/podman
 install -p -m0755 bin/vm %{buildroot}%{_libexecdir}/podman
+install -dp %{buildroot}%{_unitdir}
+install -p -m0644 contrib/systemd/gv-user-network@.service %{buildroot}%{_unitdir}
+
+%post
+%systemd_post gv-user-network@.service
+
+%preun
+%systemd_preun gv-user-network@.service
+
+%postun
+%systemd_postun_with_restart gv-user-network@.service
 
 %files
 %dir %{_libexecdir}/podman
 %{_libexecdir}/podman/gvproxy
 %{_libexecdir}/podman/vm
+%{_unitdir}/gv-user-network@.service
 
 %changelog
 {{{ git_dir_changelog }}}
