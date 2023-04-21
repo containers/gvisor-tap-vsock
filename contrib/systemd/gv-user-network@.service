@@ -1,6 +1,8 @@
 [Unit]
 Description=gvisor-tap-vsock Network Traffic Forwarder
 After=NetworkManager.service
+BindsTo=sys-devices-virtual-net-%i.device
+After=sys-devices-virtual-net-%i.device
 
 [Service]
 Environment=GV_VSOCK_PORT="1024"
