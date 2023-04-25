@@ -72,12 +72,12 @@ ln -s vendor src
 
 export GOPATH=$(pwd)/_build:$(pwd)
 %gobuild -o bin/gvproxy ./cmd/gvproxy
-%gobuild -o bin/vm ./cmd/vm
+%gobuild -o bin/gvforwarder ./cmd/vm
 
 %install
 install -dp %{buildroot}%{_libexecdir}/podman
 install -p -m0755 bin/gvproxy %{buildroot}%{_libexecdir}/podman
-install -p -m0755 bin/vm %{buildroot}%{_libexecdir}/podman
+install -p -m0755 bin/gvforwarder %{buildroot}%{_libexecdir}/podman
 install -dp %{buildroot}%{_unitdir}
 install -p -m0644 contrib/systemd/gv-user-network@.service %{buildroot}%{_unitdir}
 
@@ -93,7 +93,7 @@ install -p -m0644 contrib/systemd/gv-user-network@.service %{buildroot}%{_unitdi
 %files
 %dir %{_libexecdir}/podman
 %{_libexecdir}/podman/gvproxy
-%{_libexecdir}/podman/vm
+%{_libexecdir}/podman/gvforwarder
 %{_unitdir}/gv-user-network@.service
 
 %changelog
