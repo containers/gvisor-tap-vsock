@@ -1,0 +1,13 @@
+[Unit]
+Description=gvisor-tap-vsock Network Traffic Forwarder
+After=NetworkManager.service
+BindsTo=sys-devices-virtual-net-%i.device
+After=sys-devices-virtual-net-%i.device
+
+[Service]
+Environment=GV_VSOCK_PORT="1024"
+EnvironmentFile=-/etc/sysconfig/gv-user-network
+ExecStart=/usr/libexec/podman/gvforwarder -preexisting -iface %i -url vsock://2:${GV_VSOCK_PORT}/connect
+
+[Install]
+WantedBy=multi-user.target

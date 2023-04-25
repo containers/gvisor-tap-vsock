@@ -94,7 +94,7 @@ With a container:
 
 With the executable:
 ```
-(vm) # ./vm -debug
+(vm) # ./gvforwarder -debug
 ```
 
 ## Services
