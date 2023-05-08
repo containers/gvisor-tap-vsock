@@ -168,14 +168,15 @@ func (e *Switch) txBuf(id int, conn protocolConn, buf []byte) error {
 		size := conn.protocolImpl.(streamProtocol).Buf()
 		conn.protocolImpl.(streamProtocol).Write(size, len(buf))
 
-		if _, err := conn.Write(size); err != nil {
+		if _, err := conn.Write(append(size, buf...)); err != nil {
 			e.disconnect(id, conn)
 			return err
 		}
-	}
-	if _, err := conn.Write(buf); err != nil {
-		e.disconnect(id, conn)
-		return err
+	} else {
+		if _, err := conn.Write(buf); err != nil {
+			e.disconnect(id, conn)
+			return err
+		}
 	}
 	return nil
 }

@@ -152,6 +152,7 @@ func dhcp() error {
 
 func rx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 	log.Info("waiting for packets...")
+	size := make([]byte, 2)
 	var frame ethernet.Frame
 	for {
 		frame.Resize(mtu)
@@ -167,15 +168,9 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 			log.Info(packet.String())
 		}
 
-		size := make([]byte, 2)
 		binary.LittleEndian.PutUint16(size, uint16(n))
-
-		if _, err := conn.Write(size); err != nil {
-			errCh <- errors.Wrap(err, "cannot write size to socket")
-			return
-		}
-		if _, err := conn.Write(frame); err != nil {
-			errCh <- errors.Wrap(err, "cannot write packet to socket")
+		if _, err := conn.Write(append(size, frame...)); err != nil {
+			errCh <- errors.Wrap(err, "cannot write size and packet to socket")
 			return
 		}
 	}
