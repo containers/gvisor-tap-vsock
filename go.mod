@@ -1,6 +1,6 @@
 module github.com/containers/gvisor-tap-vsock
 
-go 1.18
+go 1.20
 
 require (
 	github.com/Microsoft/go-winio v0.6.1
