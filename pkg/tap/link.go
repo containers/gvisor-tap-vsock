@@ -109,7 +109,7 @@ func (e *LinkEndpoint) writePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 	h := header.ARP(pkt.NetworkHeader().Slice())
 	if h.IsValid() &&
 		h.Op() == header.ARPReply {
-		ip := tcpip.Address(h.ProtocolAddressSender()).String()
+		ip := tcpip.AddrFromSlice(h.ProtocolAddressSender()).String()
 		_, ok := e.virtualIPs[ip]
 		if ip != e.IP() && !ok {
 			log.Debugf("dropping spoofing packets from the gateway about IP %s", ip)

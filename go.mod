@@ -24,7 +24,7 @@ require (
 	golang.org/x/crypto v0.10.0
 	golang.org/x/sync v0.3.0
 	golang.org/x/sys v0.10.0
-	gvisor.dev/gvisor v0.0.0-20221216231429-a78e892a26d2
+	gvisor.dev/gvisor v0.0.0-20230518002134-99c295d3b367
 	inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0
 )
 
@@ -41,7 +41,7 @@ require (
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.10.0 // indirect
 	golang.org/x/text v0.10.0 // indirect
-	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
+	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8 // indirect
 	golang.org/x/tools v0.9.1 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
