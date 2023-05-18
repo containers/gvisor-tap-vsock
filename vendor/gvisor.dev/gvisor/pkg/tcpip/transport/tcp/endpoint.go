@@ -1012,6 +1012,7 @@ func (e *endpoint) Abort() {
 	switch state := e.EndpointState(); {
 	case state.connected():
 		e.resetConnectionLocked(&tcpip.ErrAborted{})
+		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 		return
 	}
 	e.closeLocked()
@@ -2225,8 +2226,8 @@ func (e *endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 
 		h := jenkins.Sum32(e.protocol.portOffsetSecret)
 		for _, s := range [][]byte{
-			[]byte(e.ID.LocalAddress),
-			[]byte(e.ID.RemoteAddress),
+			e.ID.LocalAddress.AsSlice(),
+			e.ID.RemoteAddress.AsSlice(),
 			portBuf,
 		} {
 			// Per io.Writer.Write:
@@ -2424,6 +2425,9 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 	e.setEndpointState(StateConnecting)
 	if err := e.registerEndpoint(addr, netProto, r.NICID()); err != nil {
 		e.setEndpointState(oldState)
+		if _, ok := err.(*tcpip.ErrPortInUse); ok {
+			return &tcpip.ErrBadLocalAddress{}
+		}
 		return err
 	}
 
@@ -2713,7 +2717,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 	// v6only set to false.
 	if netProto == header.IPv6ProtocolNumber {
 		stackHasV4 := e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber)
-		alsoBindToV4 := !e.ops.GetV6Only() && addr.Addr == "" && stackHasV4
+		alsoBindToV4 := !e.ops.GetV6Only() && addr.Addr == tcpip.Address{} && stackHasV4
 		if alsoBindToV4 {
 			netProtos = append(netProtos, header.IPv4ProtocolNumber)
 		}
@@ -2722,7 +2726,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 	var nic tcpip.NICID
 	// If an address is specified, we must ensure that it's one of our
 	// local addresses.
-	if len(addr.Addr) != 0 {
+	if addr.Addr.Len() != 0 {
 		nic = e.stack.CheckLocalAddress(addr.NIC, netProto, addr.Addr)
 		if nic == 0 {
 			return &tcpip.ErrBadLocalAddress{}
@@ -2909,6 +2913,16 @@ func (e *endpoint) HandleError(transErr stack.TransportError, pkt stack.PacketBu
 		e.onICMPError(&tcpip.ErrHostUnreachable{}, transErr, pkt)
 	case stack.DestinationNetworkUnreachableTransportError:
 		e.onICMPError(&tcpip.ErrNetworkUnreachable{}, transErr, pkt)
+	case stack.DestinationPortUnreachableTransportError:
+		e.onICMPError(&tcpip.ErrConnectionRefused{}, transErr, pkt)
+	case stack.DestinationProtoUnreachableTransportError:
+		e.onICMPError(&tcpip.ErrUnknownProtocolOption{}, transErr, pkt)
+	case stack.SourceRouteFailedTransportError:
+		e.onICMPError(&tcpip.ErrNotSupported{}, transErr, pkt)
+	case stack.SourceHostIsolatedTransportError:
+		e.onICMPError(&tcpip.ErrNoNet{}, transErr, pkt)
+	case stack.DestinationHostDownTransportError:
+		e.onICMPError(&tcpip.ErrHostDown{}, transErr, pkt)
 	}
 }
 
