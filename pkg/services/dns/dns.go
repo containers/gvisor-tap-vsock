@@ -121,3 +121,14 @@ func Serve(udpConn net.PacketConn, zones []types.Zone) error {
 	}
 	return srv.ActivateAndServe()
 }
+
+func ServeTCP(tcpListener net.Listener, zones []types.Zone) error {
+	mux := dns.NewServeMux()
+	handler := &dnsHandler{zones: zones}
+	mux.HandleFunc(".", handler.handle)
+	tcpSrv := &dns.Server{
+		Listener: tcpListener,
+		Handler:  mux,
+	}
+	return tcpSrv.ActivateAndServe()
+}
