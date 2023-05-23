@@ -66,8 +66,22 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
 		return err
 	}
 
+	tcpLn, err := gonet.ListenTCP(s, tcpip.FullAddress{
+		NIC:  1,
+		Addr: tcpip.Address(net.ParseIP(configuration.GatewayIP).To4()),
+		Port: uint16(53),
+	}, ipv4.ProtocolNumber)
+	if err != nil {
+		return err
+	}
+
 	go func() {
 		if err := dns.Serve(udpConn, configuration.DNS); err != nil {
+			log.Error(err)
+		}
+	}()
+	go func() {
+		if err := dns.ServeTCP(tcpLn, configuration.DNS); err != nil {
 			log.Error(err)
 		}
 	}()
