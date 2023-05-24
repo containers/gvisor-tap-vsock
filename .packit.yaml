@@ -24,8 +24,8 @@ jobs:
       fix-spec-file:
         - "bash .packit.sh"
 
-  - <<: *copr
+    #- <<: *copr
     # Run on commit to main branch
-    trigger: commit
-    branch: main
-    project: podman-next
+    #trigger: commit
+    #branch: main
+    #project: podman-next
