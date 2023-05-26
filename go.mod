@@ -19,7 +19,7 @@ require (
 	github.com/sirupsen/logrus v1.9.2
 	github.com/songgao/packets v0.0.0-20160404182456-549a10cd4091
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
-	github.com/stretchr/testify v1.8.2
+	github.com/stretchr/testify v1.8.3
 	github.com/vishvananda/netlink v1.2.1-beta.2
 	golang.org/x/crypto v0.8.0
 	golang.org/x/sync v0.2.0
