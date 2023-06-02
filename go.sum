@@ -3,8 +3,8 @@ github.com/Microsoft/go-winio v0.6.1/go.mod h1:LRdKpFKfdobln8UmuiYcKPot9D2v6svN5
 github.com/apparentlymart/go-cidr v1.1.0 h1:2mAhrMoF+nhXqxTzSZMUzDHkLjmIHC+Zzn4tdgBZjnU=
 github.com/apparentlymart/go-cidr v1.1.0/go.mod h1:EBcsNrHc3zQeuaeCeCtQruQm+n9/YjEn/vI25Lg7Gwc=
 github.com/armon/go-proxyproto v0.0.0-20210323213023-7e956b284f0a/go.mod h1:QmP9hvJ91BbJmGVGSbutW19IC0Q9phDCLGaomwTJbgU=
-github.com/coreos/stream-metadata-go v0.4.1 h1:5fCXpH/cDi8cR2hEpkc5dS8+Kp23tZeuKfSnRql5VOI=
-github.com/coreos/stream-metadata-go v0.4.1/go.mod h1:Lwjwqf1zwnVa7uy/v/KW28eUkda4jnOTOW8sx9s4kzc=
+github.com/coreos/stream-metadata-go v0.4.2 h1:A0Ug0Ecb6mlJ5X/tXpBZgZJsA/Ulhj1BR0rEZJMzN4I=
+github.com/coreos/stream-metadata-go v0.4.2/go.mod h1:fMObQqQm8Ku91G04btKzEH3AsdP1mrAb986z9aaK0tE=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

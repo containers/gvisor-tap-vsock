@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/Microsoft/go-winio v0.6.1
 	github.com/apparentlymart/go-cidr v1.1.0
-	github.com/coreos/stream-metadata-go v0.4.1
+	github.com/coreos/stream-metadata-go v0.4.2
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/gopacket v1.1.19
 	github.com/insomniacslk/dhcp v0.0.0-20220504074936-1ca156eafb9f
