@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/Microsoft/go-winio v0.6.1
 	github.com/apparentlymart/go-cidr v1.1.0
-	github.com/coreos/stream-metadata-go v0.4.1
+	github.com/coreos/stream-metadata-go v0.4.2
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/gopacket v1.1.19
 	github.com/insomniacslk/dhcp v0.0.0-20220504074936-1ca156eafb9f
@@ -19,7 +19,7 @@ require (
 	github.com/sirupsen/logrus v1.9.2
 	github.com/songgao/packets v0.0.0-20160404182456-549a10cd4091
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
-	github.com/stretchr/testify v1.8.3
+	github.com/stretchr/testify v1.8.4
 	github.com/vishvananda/netlink v1.2.1-beta.2
 	golang.org/x/crypto v0.9.0
 	golang.org/x/sync v0.2.0
