@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
@@ -12,7 +13,8 @@ import (
 )
 
 type dnsHandler struct {
-	zones []types.Zone
+	zones     []types.Zone
+	zonesLock sync.RWMutex
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg) {
@@ -26,6 +28,8 @@ func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func (h *dnsHandler) addAnswers(m *dns.Msg) {
+	h.zonesLock.RLock()
+	defer h.zonesLock.RUnlock()
 	for _, q := range m.Question {
 		for _, zone := range h.zones {
 			zoneSuffix := fmt.Sprintf(".%s", zone.Name)
