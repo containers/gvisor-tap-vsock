@@ -2,8 +2,10 @@ package dns
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -144,4 +146,31 @@ func (s *Server) ServeTCP() error {
 		Handler:  mux,
 	}
 	return tcpSrv.ActivateAndServe()
+}
+
+func (s *Server) Mux() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/all", func(w http.ResponseWriter, r *http.Request) {
+		s.handler.zonesLock.RLock()
+		_ = json.NewEncoder(w).Encode(s.handler.zones)
+		s.handler.zonesLock.RUnlock()
+	})
+
+	mux.HandleFunc("/add", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "post only", http.StatusBadRequest)
+			return
+		}
+		var req types.Zone
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		s.handler.zonesLock.Lock()
+		s.handler.zones = append([]types.Zone{req}, s.handler.zones...)
+		s.handler.zonesLock.Unlock()
+		w.WriteHeader(http.StatusOK)
+	})
+	return mux
 }

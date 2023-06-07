@@ -1,6 +1,12 @@
 package e2e
 
 import (
+	"context"
+	"net"
+	"net/http"
+
+	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -57,5 +63,61 @@ var _ = Describe("dns", func() {
 		out, err := sshExec("nslookup host.containers.internal")
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.254"))
+	})
+
+	It("should resolve dynamically added dns entry test.dynamic.internal", func() {
+		client := gvproxyclient.New(&http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return net.Dial("unix", sock)
+				},
+			},
+		}, "http://base")
+		err := client.AddDNS(&types.Zone{
+			Name: "dynamic.internal.",
+			Records: []types.Record{
+				{
+					Name: "test",
+					IP:   net.ParseIP("192.168.127.254"),
+				},
+			},
+		})
+		Expect(err).ShouldNot(HaveOccurred())
+
+		out, err := sshExec("nslookup test.dynamic.internal")
+
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.254"))
+	})
+
+	It("should resolve recently added dns entry test.dynamic.internal", func() {
+		client := gvproxyclient.New(&http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return net.Dial("unix", sock)
+				},
+			},
+		}, "http://base")
+		err := client.AddDNS(&types.Zone{
+			Name: "dynamic.internal.",
+			Records: []types.Record{
+				{
+					Name: "test",
+					IP:   net.ParseIP("192.168.127.254"),
+				},
+			},
+		})
+		Expect(err).ShouldNot(HaveOccurred())
+
+		err = client.AddDNS(&types.Zone{
+			Name:      "dynamic.internal.",
+			DefaultIP: net.ParseIP("192.168.127.253"),
+		})
+		Expect(err).ShouldNot(HaveOccurred())
+
+		out, err := sshExec("nslookup test.dynamic.internal")
+
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.253"))
 	})
 })
