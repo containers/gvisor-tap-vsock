@@ -75,13 +75,18 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) error {
 		return err
 	}
 
+	server, err := dns.New(udpConn, tcpLn, configuration.DNS)
+	if err != nil {
+		return err
+	}
+
 	go func() {
-		if err := dns.Serve(udpConn, configuration.DNS); err != nil {
+		if err := server.Serve(); err != nil {
 			log.Error(err)
 		}
 	}()
 	go func() {
-		if err := dns.ServeTCP(tcpLn, configuration.DNS); err != nil {
+		if err := server.ServeTCP(); err != nil {
 			log.Error(err)
 		}
 	}()

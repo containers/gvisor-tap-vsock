@@ -111,23 +111,32 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 	}
 }
 
-func Serve(udpConn net.PacketConn, zones []types.Zone) error {
-	mux := dns.NewServeMux()
+type Server struct {
+	udpConn net.PacketConn
+	tcpLn   net.Listener
+	handler *dnsHandler
+}
+
+func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Server, error) {
 	handler := &dnsHandler{zones: zones}
-	mux.HandleFunc(".", handler.handle)
+	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
+}
+
+func (s *Server) Serve() error {
+	mux := dns.NewServeMux()
+	mux.HandleFunc(".", s.handler.handle)
 	srv := &dns.Server{
-		PacketConn: udpConn,
+		PacketConn: s.udpConn,
 		Handler:    mux,
 	}
 	return srv.ActivateAndServe()
 }
 
-func ServeTCP(tcpListener net.Listener, zones []types.Zone) error {
+func (s *Server) ServeTCP() error {
 	mux := dns.NewServeMux()
-	handler := &dnsHandler{zones: zones}
-	mux.HandleFunc(".", handler.handle)
+	mux.HandleFunc(".", s.handler.handle)
 	tcpSrv := &dns.Server{
-		Listener: tcpListener,
+		Listener: s.tcpLn,
 		Handler:  mux,
 	}
 	return tcpSrv.ActivateAndServe()
