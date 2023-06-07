@@ -115,7 +115,7 @@ github.com/songgao/packets/ethernet
 # github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 ## explicit
 github.com/songgao/water
-# github.com/stretchr/testify v1.8.3
+# github.com/stretchr/testify v1.8.4
 ## explicit; go 1.20
 github.com/stretchr/testify/assert
 # github.com/u-root/uio v0.0.0-20210528114334-82958018845c
