@@ -23,6 +23,7 @@ func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.RecursionAvailable = true
+	m.Compress = true
 	h.addAnswers(m)
 	if err := w.WriteMsg(m); err != nil {
 		log.Error(err)
