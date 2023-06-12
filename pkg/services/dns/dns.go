@@ -89,23 +89,6 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 			PreferGo: false,
 		}
 		switch q.Qtype {
-		case dns.TypeNS:
-			records, err := resolver.LookupNS(context.TODO(), q.Name)
-			if err != nil {
-				m.Rcode = dns.RcodeNameError
-				return
-			}
-			for _, ns := range records {
-				m.Answer = append(m.Answer, &dns.NS{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeNS,
-						Class:  dns.ClassINET,
-						Ttl:    0,
-					},
-					Ns: ns.Host,
-				})
-			}
 		case dns.TypeA:
 			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
 			if err != nil {
@@ -124,6 +107,23 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 						Ttl:    0,
 					},
 					A: ip.IP.To4(),
+				})
+			}
+		case dns.TypeNS:
+			records, err := resolver.LookupNS(context.TODO(), q.Name)
+			if err != nil {
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+			for _, ns := range records {
+				m.Answer = append(m.Answer, &dns.NS{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeNS,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					Ns: ns.Host,
 				})
 			}
 		}
