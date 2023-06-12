@@ -53,6 +53,33 @@ var _ = Describe("dns", func() {
 		Expect(string(out)).To(ContainSubstring("Address: 52.200.142.250"))
 	})
 
+	It("should resolve CNAME record for www.wikipedia.org", func() {
+		out, err := sshExec("nslookup -query=cname www.wikipedia.org")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("www.wikipedia.org	canonical name = dyna.wikimedia.org."))
+	})
+	It("should resolve MX record for wikipedia.org", func() {
+		out, err := sshExec("nslookup -query=mx wikipedia.org")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("wikipedia.org	mail exchanger = 10 mx1001.wikimedia.org."))
+	})
+
+	It("should resolve NS record for wikipedia.org", func() {
+		out, err := sshExec("nslookup -query=ns wikipedia.org")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("wikipedia.org	nameserver = ns0.wikimedia.org."))
+	})
+	It("should resolve LDAP SRV record for google.com", func() {
+		out, err := sshExec("nslookup -query=srv _ldap._tcp.google.com")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring(`_ldap._tcp.google.com	service = 5 0 389 ldap.google.com.`))
+	})
+	It("should resolve TXT for wikipedia.org", func() {
+		out, err := sshExec("nslookup -query=txt wikipedia.org")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring(`"v=spf1 include:wikimedia.org ~all"`))
+	})
+
 	It("should resolve gateway.containers.internal", func() {
 		out, err := sshExec("nslookup gateway.containers.internal")
 		Expect(err).ShouldNot(HaveOccurred())
