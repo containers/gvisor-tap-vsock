@@ -110,8 +110,13 @@ var _ = Describe("dns", func() {
 		Expect(err).ShouldNot(HaveOccurred())
 
 		err = client.AddDNS(&types.Zone{
-			Name:      "dynamic.internal.",
-			DefaultIP: net.ParseIP("192.168.127.253"),
+			Name: "dynamic.internal.",
+			Records: []types.Record{
+				{
+					Name: "test",
+					IP:   net.ParseIP("192.168.127.253"),
+				},
+			},
 		})
 		Expect(err).ShouldNot(HaveOccurred())
 
@@ -119,5 +124,48 @@ var _ = Describe("dns", func() {
 
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.253"))
+	})
+
+	It("should retain order of existing zone", func() {
+		client := gvproxyclient.New(&http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return net.Dial("unix", sock)
+				},
+			},
+		}, "http://base")
+		_ = client.AddDNS(&types.Zone{
+			Name:      "dynamic.testing.",
+			DefaultIP: net.ParseIP("192.168.127.2"),
+		})
+		_ = client.AddDNS(&types.Zone{
+			Name: "testing.",
+			Records: []types.Record{
+				{
+					Name: "host",
+					IP:   net.ParseIP("192.168.127.3"),
+				},
+			},
+		})
+		out, err := sshExec("nslookup test.dynamic.internal")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.2"))
+
+		_ = client.AddDNS(&types.Zone{
+			Name: "testing.",
+			Records: []types.Record{
+				{
+					Name: "gateway",
+					IP:   net.ParseIP("192.168.127.1"),
+				},
+			},
+		})
+		out, err = sshExec("nslookup *.dynamic.testing")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.2"))
+
+		out, err = sshExec("nslookup gateway.testing")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.1"))
 	})
 })
