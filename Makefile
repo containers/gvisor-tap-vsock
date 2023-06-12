@@ -62,4 +62,4 @@ test-companion:
 
 .PHONY: test
 test: gvproxy test-companion
-	go test -v ./test
+	go test -v ./...

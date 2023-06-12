@@ -168,10 +168,22 @@ func (s *Server) Mux() http.Handler {
 			return
 		}
 
-		s.handler.zonesLock.Lock()
-		s.handler.zones = append([]types.Zone{req}, s.handler.zones...)
-		s.handler.zonesLock.Unlock()
+		s.addZone(req)
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux
+}
+
+func (s *Server) addZone(req types.Zone) {
+	s.handler.zonesLock.Lock()
+	defer s.handler.zonesLock.Unlock()
+	for i, zone := range s.handler.zones {
+		if zone.Name == req.Name {
+			req.Records = append(req.Records, zone.Records...)
+			s.handler.zones[i] = req
+			return
+		}
+	}
+	// No existing zone for req.Name, add new one
+	s.handler.zones = append(s.handler.zones, req)
 }
