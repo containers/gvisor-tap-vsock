@@ -19,15 +19,27 @@ type dnsHandler struct {
 	zonesLock sync.RWMutex
 }
 
-func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg) {
+func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.RecursionAvailable = true
-	m.Compress = true
 	h.addAnswers(m)
+	edns0 := r.IsEdns0()
+	if edns0 != nil {
+		responseMessageSize = int(edns0.UDPSize())
+	}
+	m.Truncate(responseMessageSize)
 	if err := w.WriteMsg(m); err != nil {
 		log.Error(err)
 	}
+}
+
+func (h *dnsHandler) handleTCP(w dns.ResponseWriter, r *dns.Msg) {
+	h.handle(w, r, dns.MaxMsgSize)
+}
+
+func (h *dnsHandler) handleUDP(w dns.ResponseWriter, r *dns.Msg) {
+	h.handle(w, r, dns.MinMsgSize)
 }
 
 func (h *dnsHandler) addAnswers(m *dns.Msg) {
@@ -131,7 +143,7 @@ func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Serve
 
 func (s *Server) Serve() error {
 	mux := dns.NewServeMux()
-	mux.HandleFunc(".", s.handler.handle)
+	mux.HandleFunc(".", s.handler.handleUDP)
 	srv := &dns.Server{
 		PacketConn: s.udpConn,
 		Handler:    mux,
@@ -141,7 +153,7 @@ func (s *Server) Serve() error {
 
 func (s *Server) ServeTCP() error {
 	mux := dns.NewServeMux()
-	mux.HandleFunc(".", s.handler.handle)
+	mux.HandleFunc(".", s.handler.handleTCP)
 	tcpSrv := &dns.Server{
 		Listener: s.tcpLn,
 		Handler:  mux,
