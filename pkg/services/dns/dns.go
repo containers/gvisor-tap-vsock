@@ -89,23 +89,6 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 			PreferGo: false,
 		}
 		switch q.Qtype {
-		case dns.TypeNS:
-			records, err := resolver.LookupNS(context.TODO(), q.Name)
-			if err != nil {
-				m.Rcode = dns.RcodeNameError
-				return
-			}
-			for _, ns := range records {
-				m.Answer = append(m.Answer, &dns.NS{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeNS,
-						Class:  dns.ClassINET,
-						Ttl:    0,
-					},
-					Ns: ns.Host,
-				})
-			}
 		case dns.TypeA:
 			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
 			if err != nil {
@@ -126,6 +109,91 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 					A: ip.IP.To4(),
 				})
 			}
+		case dns.TypeCNAME:
+			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
+			if err != nil {
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+			m.Answer = append(m.Answer, &dns.CNAME{
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeCNAME,
+					Class:  dns.ClassINET,
+					Ttl:    0,
+				},
+				Target: cname,
+			})
+		case dns.TypeMX:
+			records, err := resolver.LookupMX(context.TODO(), q.Name)
+			if err != nil {
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+			for _, mx := range records {
+				m.Answer = append(m.Answer, &dns.MX{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeMX,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					Mx:         mx.Host,
+					Preference: mx.Pref,
+				})
+			}
+		case dns.TypeNS:
+			records, err := resolver.LookupNS(context.TODO(), q.Name)
+			if err != nil {
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+			for _, ns := range records {
+				m.Answer = append(m.Answer, &dns.NS{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeNS,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					Ns: ns.Host,
+				})
+			}
+		case dns.TypeSRV:
+			_, records, err := resolver.LookupSRV(context.TODO(), "", "", q.Name)
+			if err != nil {
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+			for _, srv := range records {
+				m.Answer = append(m.Answer, &dns.SRV{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeSRV,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					Port:     srv.Port,
+					Priority: srv.Priority,
+					Target:   srv.Target,
+					Weight:   srv.Weight,
+				})
+			}
+		case dns.TypeTXT:
+			records, err := resolver.LookupTXT(context.TODO(), q.Name)
+			if err != nil {
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+			m.Answer = append(m.Answer, &dns.TXT{
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeTXT,
+					Class:  dns.ClassINET,
+					Ttl:    0,
+				},
+				Txt: records,
+			})
 		}
 	}
 }
