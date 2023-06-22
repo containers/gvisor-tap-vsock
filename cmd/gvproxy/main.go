@@ -36,6 +36,7 @@ var (
 	qemuSocket      string
 	bessSocket      string
 	stdioSocket     string
+	vfkitSocket     string
 	forwardSocket   arrayFlags
 	forwardDest     arrayFlags
 	forwardUser     arrayFlags
@@ -59,6 +60,7 @@ func main() {
 	flag.StringVar(&qemuSocket, "listen-qemu", "", "Socket to be used by Qemu")
 	flag.StringVar(&bessSocket, "listen-bess", "", "unixpacket socket to be used by Bess-compatible applications")
 	flag.StringVar(&stdioSocket, "listen-stdio", "", "accept stdio pipe")
+	flag.StringVar(&vfkitSocket, "listen-vfkit", "", "unixgram socket to be used by vfkit-compatible applications")
 	flag.Var(&forwardSocket, "forward-sock", "Forwards a unix socket to the guest virtual machine over SSH")
 	flag.Var(&forwardDest, "forward-dest", "Forwards a unix socket to the guest virtual machine over SSH")
 	flag.Var(&forwardUser, "forward-user", "SSH user to use for unix socket forward")
@@ -101,6 +103,18 @@ func main() {
 			exitWithError(errors.Errorf("%q already exists", uri.Path))
 		}
 	}
+	if len(vfkitSocket) > 0 {
+		uri, err := url.Parse(vfkitSocket)
+		if err != nil || uri == nil {
+			exitWithError(errors.Wrapf(err, "invalid value for listen-vfkit"))
+		}
+		if uri.Scheme != "unixgram" {
+			exitWithError(errors.New("listen-vfkit must be unixgram:// address"))
+		}
+		if _, err := os.Stat(uri.Path); err == nil {
+			exitWithError(errors.Errorf("%q already exists", uri.Path))
+		}
+	}
 
 	if vpnkitSocket != "" && qemuSocket != "" {
 		exitWithError(errors.New("cannot use qemu and vpnkit protocol at the same time"))
@@ -123,6 +137,9 @@ func main() {
 	}
 	if bessSocket != "" {
 		protocol = types.BessProtocol
+	}
+	if vfkitSocket != "" {
+		protocol = types.VfkitProtocol
 	}
 
 	if c := len(forwardSocket); c != len(forwardDest) || c != len(forwardUser) || c != len(forwardIdentify) {
@@ -360,6 +377,29 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 
 			}
 			return vn.AcceptBess(ctx, conn)
+		})
+	}
+
+	if vfkitSocket != "" {
+		conn, err := transport.ListenUnixgram(vfkitSocket)
+		if err != nil {
+			return err
+		}
+
+		g.Go(func() error {
+			<-ctx.Done()
+			if err := conn.Close(); err != nil {
+				log.Errorf("error closing %s: %q", vfkitSocket, err)
+			}
+			return os.Remove(vfkitSocket)
+		})
+
+		g.Go(func() error {
+			vfkitConn, err := transport.AcceptVfkit(conn)
+			if err != nil {
+				return err
+			}
+			return vn.AcceptVfkit(ctx, vfkitConn)
 		})
 	}
 
