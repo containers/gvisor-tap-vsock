@@ -213,11 +213,11 @@ gopkg.in/tomb.v1
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
-# gvisor.dev/gvisor v0.0.0-20230518002134-99c295d3b367
+# gvisor.dev/gvisor v0.0.0-20230715022000-fd277b20b8db
 ## explicit; go 1.20
 gvisor.dev/gvisor/pkg/atomicbitops
 gvisor.dev/gvisor/pkg/bits
-gvisor.dev/gvisor/pkg/bufferv2
+gvisor.dev/gvisor/pkg/buffer
 gvisor.dev/gvisor/pkg/context
 gvisor.dev/gvisor/pkg/cpuid
 gvisor.dev/gvisor/pkg/gohacks

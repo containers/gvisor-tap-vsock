@@ -1145,21 +1145,19 @@ func (s *stdClock) StateTypeName() string {
 
 func (s *stdClock) StateFields() []string {
 	return []string{
-		"maxMonotonic",
+		"monotonicOffset",
 	}
 }
-
-func (s *stdClock) beforeSave() {}
 
 // +checklocksignore
 func (s *stdClock) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.maxMonotonic)
+	stateSinkObject.Save(0, &s.monotonicOffset)
 }
 
 // +checklocksignore
 func (s *stdClock) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.maxMonotonic)
+	stateSourceObject.Load(0, &s.monotonicOffset)
 	stateSourceObject.AfterLoad(s.afterLoad)
 }
 
@@ -1250,6 +1248,7 @@ func (f *FullAddress) StateFields() []string {
 		"NIC",
 		"Addr",
 		"Port",
+		"LinkAddr",
 	}
 }
 
@@ -1261,6 +1260,7 @@ func (f *FullAddress) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &f.NIC)
 	stateSinkObject.Save(1, &f.Addr)
 	stateSinkObject.Save(2, &f.Port)
+	stateSinkObject.Save(3, &f.LinkAddr)
 }
 
 func (f *FullAddress) afterLoad() {}
@@ -1270,6 +1270,7 @@ func (f *FullAddress) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.NIC)
 	stateSourceObject.Load(1, &f.Addr)
 	stateSourceObject.Load(2, &f.Port)
+	stateSourceObject.Load(3, &f.LinkAddr)
 }
 
 func (s *SendableControlMessages) StateTypeName() string {

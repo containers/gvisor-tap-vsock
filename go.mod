@@ -24,7 +24,7 @@ require (
 	golang.org/x/crypto v0.10.0
 	golang.org/x/sync v0.3.0
 	golang.org/x/sys v0.10.0
-	gvisor.dev/gvisor v0.0.0-20230518002134-99c295d3b367
+	gvisor.dev/gvisor v0.0.0-20230715022000-fd277b20b8db
 	inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0
 )
 

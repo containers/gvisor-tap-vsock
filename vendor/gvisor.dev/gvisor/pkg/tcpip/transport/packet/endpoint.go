@@ -25,11 +25,10 @@
 package packet
 
 import (
-	"fmt"
 	"io"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -220,11 +219,7 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 
 	var remote tcpip.LinkAddress
 	if to := opts.To; to != nil {
-		// This is a hack. FullAddress is designed to carry IP
-		// addresses, but it's overloaded here to carry a link address.
-		// Assume the address is a 6 byte link address prepended to 10
-		// zeroed bytes.
-		remote = tcpip.LinkAddress(to.Addr.AsSlice()[:header.EthernetAddressSize])
+		remote = to.LinkAddr
 
 		if n := to.NIC; n != 0 {
 			nicID = n
@@ -244,7 +239,7 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 		return 0, &tcpip.ErrMessageTooLong{}
 	}
 
-	var payload bufferv2.Buffer
+	var payload buffer.Buffer
 	if _, err := payload.WriteFromReader(p, int64(p.Len())); err != nil {
 		return 0, &tcpip.ErrBadBuffer{}
 	}
@@ -456,16 +451,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoc
 
 	if len(pkt.LinkHeader().Slice()) != 0 {
 		hdr := header.Ethernet(pkt.LinkHeader().Slice())
-		// This is a hack. FullAddress is designed to carry IP
-		// addresses, but it's overloaded here to carry a link address.
-		// Assume the address is a 6 byte link address prepended to 10
-		// zeroed bytes.
-		if len(hdr.SourceAddress()) != 6 {
-			panic(fmt.Sprintf("invalid ethernet address size: %d", len(hdr.SourceAddress())))
-		}
-		rcvdPkt.senderAddr.Addr = tcpip.AddrFrom16Slice(
-			append([]byte(hdr.SourceAddress()), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...),
-		)
+		rcvdPkt.senderAddr.LinkAddr = hdr.SourceAddress()
 	}
 
 	// Raw packet endpoints include link-headers in received packets.

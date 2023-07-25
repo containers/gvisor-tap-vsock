@@ -1,4 +1,4 @@
-// Copyright 2022 The gVisor Authors.
+// Copyright 2023 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bufferv2
+//go:build amd64
+// +build amd64
 
-// saveData is invoked by stateify.
-func (b *Buffer) saveData() []byte {
-	return b.Flatten()
-}
+package checksum
 
-// loadData is invoked by stateify.
-func (b *Buffer) loadData(data []byte) {
-	*b = MakeWithData(data)
-}
+// Note: odd indicates whether initial is a partial checksum over an odd number
+// of bytes.
+//
+// calculateChecksum is defined in assembly.
+func calculateChecksum(buf []byte, odd bool, initial uint16) (uint16, bool)

@@ -63,6 +63,8 @@ func (e *LinkEndpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber
 func (e *LinkEndpoint) AddHeader(_ stack.PacketBufferPtr) {
 }
 
+func (e *LinkEndpoint) ParseHeader(stack.PacketBufferPtr) bool { return true }
+
 func (e *LinkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return stack.CapabilityResolutionRequired | stack.CapabilityRXChecksumOffload
 }

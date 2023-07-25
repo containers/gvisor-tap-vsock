@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
@@ -181,14 +182,7 @@ func (gb *groBucket) findGROPacket6(pkt PacketBufferPtr, ipHdr header.IPv6, tcpH
 			continue
 		}
 		// Unlike IPv4, IPv6 packets with extension headers can be coalesced.
-		hdrsEqual := true
-		for i := header.IPv6MinimumSize; i < len(ipHdr); i++ {
-			if ipHdr[i] != groIPHdr[i] {
-				hdrsEqual = false
-				break
-			}
-		}
-		if !hdrsEqual {
+		if !bytes.Equal(ipHdr[header.IPv6MinimumSize:], groIPHdr[header.IPv6MinimumSize:]) {
 			continue
 		}
 
@@ -240,10 +234,8 @@ func (gb *groBucket) found(gd *groDispatcher, groPkt *groPacket, flushGROPkt boo
 		groPkt = nil
 	} else if groPkt != nil {
 		// Merge pkt in to GRO packet.
-		buf := pkt.Data().ToBuffer()
-		buf.TrimFront(int64(len(ipHdr)) + int64(dataOff))
-		groPkt.pkt.Data().MergeBuffer(&buf)
-		buf.Release()
+		pkt.Data().TrimFront(len(ipHdr) + int(dataOff))
+		groPkt.pkt.Data().Merge(pkt.Data())
 		// Update the IP total length.
 		updateIPHdr(groPkt.ipHdr, tcpPayloadSize)
 		// Add flags from the packet to the GRO packet.
@@ -686,8 +678,9 @@ func (gd *groDispatcher) close() {
 	for i := range gd.buckets {
 		bucket := &gd.buckets[i]
 		bucket.mu.Lock()
-		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
+		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = bucket.packets.Front() {
 			groPkt.pkt.DecRef()
+			bucket.removeOne(groPkt)
 		}
 		bucket.mu.Unlock()
 	}
@@ -723,12 +716,7 @@ func shouldFlushTCP(groPkt *groPacket, tcpHdr header.TCP) bool {
 		return true
 	}
 	// The options, including timestamps, must be identical.
-	for i := header.TCPMinimumSize; i < int(dataOff); i++ {
-		if tcpHdr[i] != groPkt.tcpHdr[i] {
-			return true
-		}
-	}
-	return false
+	return !bytes.Equal(tcpHdr[header.TCPMinimumSize:], groPkt.tcpHdr[header.TCPMinimumSize:])
 }
 
 func updateIPv4Hdr(ipHdrBytes []byte, newBytes int) {
