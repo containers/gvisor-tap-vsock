@@ -18,6 +18,17 @@ jobs:
     srpm_build_deps:
       - make
       - rpkg
+    targets:
+      - fedora-rawhide-aarch64
+      - fedora-rawhide-x86_64
+      - fedora-eln-aarch64
+      - fedora-eln-x86_64
+      - fedora-38-aarch64
+      - fedora-38-x86_64
+      - centos-stream-9-aarch64
+      - centos-stream-9-x86_64
+      - centos-stream-8-aarch64
+      - centos-stream-8-x86_64
     actions:
       post-upstream-clone:
         - "rpkg spec --outdir ./"
@@ -29,3 +40,14 @@ jobs:
     #trigger: commit
     #branch: main
     #project: podman-next
+    #targets:
+    #  - fedora-rawhide-aarch64
+    #  - fedora-rawhide-x86_64
+    #  - fedora-eln-aarch64
+    #  - fedora-eln-x86_64
+    #  - fedora-38-aarch64
+    #  - fedora-38-x86_64
+    #  - centos-stream-9-aarch64
+    #  - centos-stream-9-x86_64
+    #  - centos-stream-8-aarch64
+    #  - centos-stream-8-x86_64
