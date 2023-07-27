@@ -13,7 +13,7 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -262,7 +262,7 @@ func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
 
 	if eth.DestinationAddress() != e.gateway.LinkAddress() {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: bufferv2.MakeWithData(buf),
+			Payload: buffer.MakeWithData(buf),
 		})
 		if err := e.tx(pkt); err != nil {
 			log.Error(err)
@@ -270,7 +270,7 @@ func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
 		pkt.DecRef()
 	}
 	if eth.DestinationAddress() == e.gateway.LinkAddress() || eth.DestinationAddress() == header.EthernetBroadcastAddress {
-		data := bufferv2.MakeWithData(buf)
+		data := buffer.MakeWithData(buf)
 		data.TrimFront(header.EthernetMinimumSize)
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: data,
