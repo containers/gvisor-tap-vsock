@@ -49,6 +49,9 @@ var (
 const (
 	gatewayIP   = "192.168.127.1"
 	sshHostPort = "192.168.127.2:22"
+	hostIP      = "192.168.127.254"
+	host        = "host"
+	gateway     = "gateway"
 )
 
 func main() {
@@ -187,25 +190,25 @@ func main() {
 				Name: "containers.internal.",
 				Records: []types.Record{
 					{
-						Name: "gateway",
+						Name: gateway,
 						IP:   net.ParseIP(gatewayIP),
 					},
 					{
-						Name: "host",
-						IP:   net.ParseIP("192.168.127.254"),
+						Name: host,
+						IP:   net.ParseIP(hostIP),
 					},
 				},
 			},
 			{
-				Name: "crc.testing.", // still used by current version of podman machine CNI
+				Name: "docker.internal.",
 				Records: []types.Record{
 					{
-						Name: "gateway",
+						Name: gateway,
 						IP:   net.ParseIP(gatewayIP),
 					},
 					{
-						Name: "host",
-						IP:   net.ParseIP("192.168.127.254"),
+						Name: host,
+						IP:   net.ParseIP(hostIP),
 					},
 				},
 			},
@@ -215,9 +218,9 @@ func main() {
 			fmt.Sprintf("127.0.0.1:%d", sshPort): sshHostPort,
 		},
 		NAT: map[string]string{
-			"192.168.127.254": "127.0.0.1",
+			hostIP: "127.0.0.1",
 		},
-		GatewayVirtualIPs: []string{"192.168.127.254"},
+		GatewayVirtualIPs: []string{hostIP},
 		VpnKitUUIDMacAddresses: map[string]string{
 			"c3d68012-0208-11ea-9fd7-f2189899ab08": "5a:94:ef:e4:0c:ee",
 		},

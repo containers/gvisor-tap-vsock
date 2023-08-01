@@ -50,7 +50,11 @@ var _ = Describe("port forwarding", func() {
 			}
 		}()
 
-		out, err := sshExec("curl http://host.crc.testing:9090")
+		out, err := sshExec("curl http://host.containers.internal:9090")
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("Hello from the host"))
+
+		out, err = sshExec("curl http://host.docker.internal:9090")
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(string(out)).To(ContainSubstring("Hello from the host"))
 	})
