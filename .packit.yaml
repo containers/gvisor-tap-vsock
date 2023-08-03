@@ -6,7 +6,8 @@
 # On PR: https://copr.fedorainfracloud.org/coprs/rhcontainerbot/packit-builds/
 # On commit: https://copr.fedorainfracloud.org/coprs/rhcontainerbot/podman-next/
 
-specfile_path: gvisor-tap-vsock.spec
+specfile_path: rpm/gvisor-tap-vsock.spec
+upstream_tag_template: v{version}
 
 jobs:
   - &copr
@@ -17,7 +18,6 @@ jobs:
     enable_net: true
     srpm_build_deps:
       - make
-      - rpkg
     targets:
       - fedora-rawhide-aarch64
       - fedora-rawhide-x86_64
@@ -29,25 +29,47 @@ jobs:
       - centos-stream-9-x86_64
       - centos-stream-8-aarch64
       - centos-stream-8-x86_64
-    actions:
-      post-upstream-clone:
-        - "rpkg spec --outdir ./"
-      fix-spec-file:
-        - "bash .packit.sh"
 
-    #- <<: *copr
+  - <<: *copr
     # Run on commit to main branch
-    #trigger: commit
-    #branch: main
-    #project: podman-next
-    #targets:
-    #  - fedora-rawhide-aarch64
-    #  - fedora-rawhide-x86_64
-    #  - fedora-eln-aarch64
-    #  - fedora-eln-x86_64
-    #  - fedora-38-aarch64
-    #  - fedora-38-x86_64
-    #  - centos-stream-9-aarch64
-    #  - centos-stream-9-x86_64
-    #  - centos-stream-8-aarch64
-    #  - centos-stream-8-x86_64
+    trigger: commit
+    branch: main
+    project: podman-next
+    targets:
+      - fedora-rawhide-aarch64
+      - fedora-rawhide-ppc64le
+      - fedora-rawhide-s390x
+      - fedora-rawhide-x86_64
+      - fedora-eln-aarch64
+      - fedora-eln-ppc64le
+      - fedora-eln-s390x
+      - fedora-eln-x86_64
+      - fedora-38-aarch64
+      - fedora-38-ppc64le
+      - fedora-38-s390x
+      - fedora-38-x86_64
+      - centos-stream+epel-next-9-aarch64
+      - centos-stream+epel-next-9-ppc64le
+      - centos-stream+epel-next-9-s390x
+      - centos-stream+epel-next-9-x86_64
+      - centos-stream+epel-next-8-aarch64
+      - centos-stream+epel-next-8-ppc64le
+      - centos-stream+epel-next-8-x86_64
+
+  - job: propose_downstream
+    trigger: release
+    update_release: false
+    dist_git_branches:
+      - fedora-rawhide
+      - fedora-38
+
+  - job: koji_build
+    trigger: commit
+    dist_git_branches:
+      - fedora-rawhide
+      - fedora-38
+
+  - job: bodhi_update
+    trigger: commit
+    dist_git_branches:
+      - fedora-38 # rawhide updates are created automatically
