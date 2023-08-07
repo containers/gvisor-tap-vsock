@@ -6,7 +6,7 @@ It is based on the network stack of [gVisor](https://github.com/google/gvisor/tr
 
 Compared to libslirp, gvisor-tap-vsock brings a configurable DNS server and dynamic port forwarding.
 
-It can be used with Qemu, Hyperkit, Hyper-V and User Mode Linux.
+It can be used with QEMU, Hyperkit, Hyper-V and User Mode Linux.
 
 ## Build
 
@@ -14,20 +14,20 @@ It can be used with Qemu, Hyperkit, Hyper-V and User Mode Linux.
 make
 ```
 
-## Run with Qemu (Linux or macOS)
+## Run with QEMU (Linux or macOS)
 
-Usually with Qemu, to not run as root, you would have to use `-netdev user,id=n0`.
+Usually with QEMU, to not run as root, you would have to use `-netdev user,id=n0`.
 With this project, this is the same but you have to run a daemon on the host.
 
 There 2 ways for the VM to communicate with the daemon: with a tcp port or with a unix socket.
 
-With gvproxy and the VM discussing on a tcp port:
+- With gvproxy and the VM discussing on a tcp port:
 ```
 (terminal 1) $ bin/gvproxy -debug -listen unix:///tmp/network.sock -listen-qemu tcp://0.0.0.0:1234
 (terminal 2) $ qemu-system-x86_64 (all your qemu options) -netdev socket,id=vlan,connect=127.0.0.1:1234 -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee
 ```
 
-With gvproxy and the VM discussing on a unix socket:
+- With gvproxy and the VM discussing on a unix socket:
 ```
 (terminal 1) $ bin/gvproxy -debug -listen unix:///tmp/network.sock -listen-qemu unix:///tmp/qemu.sock
 (terminal 2) $ bin/qemu-wrapper /tmp/qemu.sock qemu-system-x86_64 (all your qemu options) -netdev socket,id=vlan,fd=3 -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee
@@ -53,7 +53,7 @@ More docs about the User Mode Linux with BESS socket transport: https://www.kern
 
 ## Run with vsock
 
-Made for Windows but also works for Linux and macOS with [HyperKit](https://github.com/moby/hyperkit).
+Made for Windows but also works for Linux and macOS with [vfkit](https://github.com/crc-org/vfkit).
 
 ### Host
 
@@ -168,7 +168,7 @@ A working example for SSH can be found [here](https://github.com/containers/gvis
 
 ## Performance
 
-Using iperf3, it can achieve between 1.6 and 2.3Gbits/s depending on which side the test is performed (tested with a mtu of 4000 with Qemu on macOS).
+Using iperf3, it can achieve between 1.6 and 2.3Gbits/s depending on which side the test is performed (tested with a mtu of 4000 with QEMU on macOS).
 
 ## How it works with vsock
 
