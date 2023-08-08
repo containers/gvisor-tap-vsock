@@ -9,52 +9,35 @@
 specfile_path: rpm/gvisor-tap-vsock.spec
 upstream_tag_template: v{version}
 
-jobs:
-  - &copr
-    job: copr_build
-    trigger: pull_request
-    owner: rhcontainerbot
-    project: packit-builds
-    enable_net: true
-    srpm_build_deps:
-      - make
-    targets:
-      - fedora-rawhide-aarch64
-      - fedora-rawhide-x86_64
-      - fedora-eln-aarch64
-      - fedora-eln-x86_64
-      - fedora-38-aarch64
-      - fedora-38-x86_64
-      - centos-stream-9-aarch64
-      - centos-stream-9-x86_64
-      - centos-stream-8-aarch64
-      - centos-stream-8-x86_64
+srpm_build_deps:
+  - make
 
-  - <<: *copr
-    # Run on commit to main branch
-    trigger: commit
-    branch: main
-    project: podman-next
+jobs:
+  - job: copr_build
+    trigger: pull_request
+    enable_net: true
+    # keep in sync with https://copr.fedorainfracloud.org/coprs/rhcontainerbot/podman-next
     targets:
       - fedora-rawhide-aarch64
-      - fedora-rawhide-ppc64le
-      - fedora-rawhide-s390x
       - fedora-rawhide-x86_64
       - fedora-eln-aarch64
-      - fedora-eln-ppc64le
-      - fedora-eln-s390x
       - fedora-eln-x86_64
       - fedora-38-aarch64
-      - fedora-38-ppc64le
-      - fedora-38-s390x
       - fedora-38-x86_64
-      - centos-stream+epel-next-9-aarch64
-      - centos-stream+epel-next-9-ppc64le
-      - centos-stream+epel-next-9-s390x
-      - centos-stream+epel-next-9-x86_64
-      - centos-stream+epel-next-8-aarch64
-      - centos-stream+epel-next-8-ppc64le
       - centos-stream+epel-next-8-x86_64
+      - centos-stream+epel-next-8-aarch64
+      - centos-stream+epel-next-9-x86_64
+      - centos-stream+epel-next-9-aarch64
+    additional_repos:
+      - "copr://rhcontainerbot/podman-next"
+
+  # Run on commit to main branch
+  - job: copr_build
+    trigger: commit
+    enable_net: true
+    branch: main
+    owner: rhcontainerbot
+    project: podman-next
 
   - job: propose_downstream
     trigger: release
