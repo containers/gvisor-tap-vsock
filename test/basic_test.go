@@ -196,3 +196,25 @@ var _ = Describe("dns", func() {
 		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.1"))
 	})
 })
+
+var _ = Describe("command-line format", func() {
+	It("should convert Command to command line format", func() {
+		command := types.NewCommand()
+		command.AddEndpoint("unix:///tmp/network.sock")
+		command.Debug = true
+		command.AddQemuSocket("tcp://0.0.0.0:1234")
+		command.PidFile = "~/gv-pidfile.txt"
+		command.AddForwardUser("demouser")
+
+		cmd := command.ToCmdline()
+		Expect(cmd).To(Equal([]string{
+			"-listen unix:///tmp/network.sock",
+			"-debug",
+			"-mtu 1500",
+			"-ssh-port 2222",
+			"-listen-qemu tcp://0.0.0.0:1234",
+			"-forward-user demouser",
+			"-pid-file ~/gv-pidfile.txt",
+		}))
+	})
+})
