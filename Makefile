@@ -55,7 +55,7 @@ cross: $(TOOLS_BINDIR)/makefat
 	GOARCH=arm64 GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux-arm64 ./cmd/gvproxy
 	GOARCH=amd64 GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin-amd64 ./cmd/gvproxy
 	GOARCH=arm64 GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin-arm64 ./cmd/gvproxy
-	cd bin && $(TOOLS_BINDIR)/makefat gvproxy-darwin gvproxy-darwin-amd64 gvproxy-darwin-arm64
+	cd bin && $(TOOLS_BINDIR)/makefat gvproxy-darwin gvproxy-darwin-amd64 gvproxy-darwin-arm64 && rm gvproxy-darwin-amd64 gvproxy-darwin-arm64
 
 .PHONY: test-companion
 test-companion:
