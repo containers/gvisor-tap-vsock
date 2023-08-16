@@ -51,9 +51,10 @@ image:
 .PHONY: cross
 cross: $(TOOLS_BINDIR)/makefat
 	GOARCH=amd64 GOOS=windows go build $(LDFLAGS) -o bin/gvproxy-windows.exe ./cmd/gvproxy
+	GOARCH=amd64 GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux-amd64 ./cmd/gvproxy
+	GOARCH=arm64 GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux-arm64 ./cmd/gvproxy
 	GOARCH=amd64 GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin-amd64 ./cmd/gvproxy
 	GOARCH=arm64 GOOS=darwin  go build $(LDFLAGS) -o bin/gvproxy-darwin-arm64 ./cmd/gvproxy
-	GOARCH=amd64 GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux ./cmd/gvproxy
 	cd bin && $(TOOLS_BINDIR)/makefat gvproxy-darwin gvproxy-darwin-amd64 gvproxy-darwin-arm64
 
 .PHONY: test-companion
