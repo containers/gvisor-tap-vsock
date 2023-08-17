@@ -1,4 +1,4 @@
-module github.com/code-ready/crc/tools
+module github.com/containers/gvisor-tap-vsock/tools
 
 go 1.17
 
