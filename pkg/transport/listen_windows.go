@@ -33,11 +33,3 @@ func Listen(endpoint string) (net.Listener, error) {
 		return nil, errors.New("unexpected scheme")
 	}
 }
-
-func ListenUnixgram(endpoint string) (net.Conn, error) {
-	return nil, errors.New("unsupported 'unixgram' scheme")
-}
-
-func AcceptVfkit(listeningConn net.Conn) (net.Conn, error) {
-	return nil, errors.New("vfkit is unsupported on Windows")
-}
