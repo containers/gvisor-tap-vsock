@@ -85,11 +85,7 @@ func (c *Command) AddVfkitSocket(socket string) {
 }
 
 func (c *Command) addForwardInfo(flag, value string) {
-	if _, ok := c.forwardInfo[flag]; ok {
-		c.forwardInfo[flag] = append(c.forwardInfo[flag], value)
-	} else {
-		c.forwardInfo[flag] = []string{value}
-	}
+	c.forwardInfo[flag] = append(c.forwardInfo[flag], value)
 }
 
 func (c *Command) AddForwardSock(socket string) {
@@ -189,5 +185,5 @@ func (c *Command) ToCmdline() []string {
 // Cmd converts Command to a commandline format and returns an exec.Cmd which
 // can be executed by os/exec
 func (c *Command) Cmd(gvproxyPath string) *exec.Cmd {
-	return exec.Command(gvproxyPath, c.ToCmdline()...)
+	return exec.Command(gvproxyPath, c.ToCmdline()...) // #nosec G204
 }
