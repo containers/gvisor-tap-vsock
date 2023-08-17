@@ -41,8 +41,8 @@ vendor:
 	go mod vendor
 
 .PHONY: lint
-lint:
-	golangci-lint run
+lint: $(TOOLS_BINDIR)/golangci-lint
+	"$(TOOLS_BINDIR)"/golangci-lint run
 
 .PHONY: image
 image:
