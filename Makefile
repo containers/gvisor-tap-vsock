@@ -50,6 +50,7 @@ image:
 
 .PHONY: cross
 cross: $(TOOLS_BINDIR)/makefat
+	GOARCH=amd64 GOOS=freebsd  go build $(LDFLAGS) -o bin/gvproxy-freebsd-amd64 ./cmd/gvproxy
 	GOARCH=amd64 GOOS=windows go build $(LDFLAGS) -o bin/gvproxy-windows.exe ./cmd/gvproxy
 	GOARCH=amd64 GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux-amd64 ./cmd/gvproxy
 	GOARCH=arm64 GOOS=linux   go build $(LDFLAGS) -o bin/gvproxy-linux-arm64 ./cmd/gvproxy
