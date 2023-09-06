@@ -199,7 +199,7 @@ var _ = Describe("dns", func() {
 
 var _ = Describe("command-line format", func() {
 	It("should convert Command to command line format", func() {
-		command := types.NewCommand()
+		command := types.NewGvproxyCommand()
 		command.AddEndpoint("unix:///tmp/network.sock")
 		command.Debug = true
 		command.AddQemuSocket("tcp://0.0.0.0:1234")

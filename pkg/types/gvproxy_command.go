@@ -5,7 +5,7 @@ import (
 	"strconv"
 )
 
-type Command struct {
+type GvproxyCommand struct {
 	// Print packets on stderr
 	Debug bool
 
@@ -29,8 +29,8 @@ type Command struct {
 	SSHPort int
 }
 
-func NewCommand() Command {
-	return Command{
+func NewGvproxyCommand() GvproxyCommand {
+	return GvproxyCommand{
 		MTU:         1500,
 		SSHPort:     2222,
 		endpoints:   []string{},
@@ -39,19 +39,19 @@ func NewCommand() Command {
 	}
 }
 
-func (c *Command) checkSocketsInitialized() {
+func (c *GvproxyCommand) checkSocketsInitialized() {
 	if len(c.sockets) < 1 {
 		c.sockets = map[string]string{}
 	}
 }
 
-func (c *Command) checkForwardInfoInitialized() {
+func (c *GvproxyCommand) checkForwardInfoInitialized() {
 	if len(c.forwardInfo) < 1 {
 		c.forwardInfo = map[string][]string{}
 	}
 }
 
-func (c *Command) AddEndpoint(endpoint string) {
+func (c *GvproxyCommand) AddEndpoint(endpoint string) {
 	if len(c.endpoints) < 1 {
 		c.endpoints = []string{}
 	}
@@ -59,57 +59,57 @@ func (c *Command) AddEndpoint(endpoint string) {
 	c.endpoints = append(c.endpoints, endpoint)
 }
 
-func (c *Command) AddVpnkitSocket(socket string) {
+func (c *GvproxyCommand) AddVpnkitSocket(socket string) {
 	c.checkSocketsInitialized()
 	c.sockets["listen-vpnkit"] = socket
 }
 
-func (c *Command) AddQemuSocket(socket string) {
+func (c *GvproxyCommand) AddQemuSocket(socket string) {
 	c.checkSocketsInitialized()
 	c.sockets["listen-qemu"] = socket
 }
 
-func (c *Command) AddBessSocket(socket string) {
+func (c *GvproxyCommand) AddBessSocket(socket string) {
 	c.checkSocketsInitialized()
 	c.sockets["listen-bess"] = socket
 }
 
-func (c *Command) AddStdioSocket(socket string) {
+func (c *GvproxyCommand) AddStdioSocket(socket string) {
 	c.checkSocketsInitialized()
 	c.sockets["listen-stdio"] = socket
 }
 
-func (c *Command) AddVfkitSocket(socket string) {
+func (c *GvproxyCommand) AddVfkitSocket(socket string) {
 	c.checkSocketsInitialized()
 	c.sockets["listen-vfkit"] = socket
 }
 
-func (c *Command) addForwardInfo(flag, value string) {
+func (c *GvproxyCommand) addForwardInfo(flag, value string) {
 	c.forwardInfo[flag] = append(c.forwardInfo[flag], value)
 }
 
-func (c *Command) AddForwardSock(socket string) {
+func (c *GvproxyCommand) AddForwardSock(socket string) {
 	c.checkForwardInfoInitialized()
 	c.addForwardInfo("forward-sock", socket)
 }
 
-func (c *Command) AddForwardDest(dest string) {
+func (c *GvproxyCommand) AddForwardDest(dest string) {
 	c.checkForwardInfoInitialized()
 	c.addForwardInfo("forward-dest", dest)
 }
 
-func (c *Command) AddForwardUser(user string) {
+func (c *GvproxyCommand) AddForwardUser(user string) {
 	c.checkForwardInfoInitialized()
 	c.addForwardInfo("forward-user", user)
 }
 
-func (c *Command) AddForwardIdentity(identity string) {
+func (c *GvproxyCommand) AddForwardIdentity(identity string) {
 	c.checkForwardInfoInitialized()
 	c.addForwardInfo("forward-identity", identity)
 }
 
 // socketsToCmdline converts Command.sockets to a commandline format
-func (c *Command) socketsToCmdline() []string {
+func (c *GvproxyCommand) socketsToCmdline() []string {
 	args := []string{}
 
 	for socketFlag, socket := range c.sockets {
@@ -122,7 +122,7 @@ func (c *Command) socketsToCmdline() []string {
 }
 
 // forwardInfoToCmdline converts Command.forwardInfo to a commandline format
-func (c *Command) forwardInfoToCmdline() []string {
+func (c *GvproxyCommand) forwardInfoToCmdline() []string {
 	args := []string{}
 
 	for forwardInfoFlag, forwardInfo := range c.forwardInfo {
@@ -137,7 +137,7 @@ func (c *Command) forwardInfoToCmdline() []string {
 }
 
 // endpointsToCmdline converts Command.endpoints to a commandline format
-func (c *Command) endpointsToCmdline() []string {
+func (c *GvproxyCommand) endpointsToCmdline() []string {
 	args := []string{}
 
 	for _, endpoint := range c.endpoints {
@@ -151,7 +151,7 @@ func (c *Command) endpointsToCmdline() []string {
 
 // ToCmdline converts Command to a properly formatted command for gvproxy based
 // on its fields
-func (c *Command) ToCmdline() []string {
+func (c *GvproxyCommand) ToCmdline() []string {
 	args := []string{}
 
 	// listen (endpoints)
@@ -184,6 +184,6 @@ func (c *Command) ToCmdline() []string {
 
 // Cmd converts Command to a commandline format and returns an exec.Cmd which
 // can be executed by os/exec
-func (c *Command) Cmd(gvproxyPath string) *exec.Cmd {
+func (c *GvproxyCommand) Cmd(gvproxyPath string) *exec.Cmd {
 	return exec.Command(gvproxyPath, c.ToCmdline()...) // #nosec G204
 }
