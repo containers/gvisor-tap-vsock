@@ -208,13 +208,13 @@ var _ = Describe("command-line format", func() {
 
 		cmd := command.ToCmdline()
 		Expect(cmd).To(Equal([]string{
-			"-listen unix:///tmp/network.sock",
+			"-listen", "unix:///tmp/network.sock",
 			"-debug",
-			"-mtu 1500",
-			"-ssh-port 2222",
-			"-listen-qemu tcp://0.0.0.0:1234",
-			"-forward-user demouser",
-			"-pid-file ~/gv-pidfile.txt",
+			"-mtu", "1500",
+			"-ssh-port", "2222",
+			"-listen-qemu", "tcp://0.0.0.0:1234",
+			"-forward-user", "demouser",
+			"-pid-file", "~/gv-pidfile.txt",
 		}))
 	})
 })

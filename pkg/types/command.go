@@ -1,8 +1,8 @@
 package types
 
 import (
-	"fmt"
 	"os/exec"
+	"strconv"
 )
 
 type Command struct {
@@ -114,7 +114,7 @@ func (c *Command) socketsToCmdline() []string {
 
 	for socketFlag, socket := range c.sockets {
 		if socket != "" {
-			args = append(args, fmt.Sprintf("-%s %s", socketFlag, socket))
+			args = append(args, "-"+socketFlag, socket)
 		}
 	}
 
@@ -128,7 +128,7 @@ func (c *Command) forwardInfoToCmdline() []string {
 	for forwardInfoFlag, forwardInfo := range c.forwardInfo {
 		for _, i := range forwardInfo {
 			if i != "" {
-				args = append(args, fmt.Sprintf("-%s %s", forwardInfoFlag, i))
+				args = append(args, "-"+forwardInfoFlag, i)
 			}
 		}
 	}
@@ -142,7 +142,7 @@ func (c *Command) endpointsToCmdline() []string {
 
 	for _, endpoint := range c.endpoints {
 		if endpoint != "" {
-			args = append(args, "-listen "+endpoint)
+			args = append(args, "-listen", endpoint)
 		}
 	}
 
@@ -163,10 +163,10 @@ func (c *Command) ToCmdline() []string {
 	}
 
 	// mtu
-	args = append(args, fmt.Sprintf("-mtu %d", c.MTU))
+	args = append(args, "-mtu", strconv.Itoa(c.MTU))
 
 	// ssh-port
-	args = append(args, fmt.Sprintf("-ssh-port %d", c.SSHPort))
+	args = append(args, "-ssh-port", strconv.Itoa(c.SSHPort))
 
 	// sockets
 	args = append(args, c.socketsToCmdline()...)
@@ -176,7 +176,7 @@ func (c *Command) ToCmdline() []string {
 
 	// pid-file
 	if c.PidFile != "" {
-		args = append(args, "-pid-file "+c.PidFile)
+		args = append(args, "-pid-file", c.PidFile)
 	}
 
 	return args
