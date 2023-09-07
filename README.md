@@ -51,9 +51,18 @@ Starting from Qemu version 7.2.0 it is possible to run w/o a wrapper:
 
 More docs about the User Mode Linux with BESS socket transport: https://www.kernel.org/doc/html/latest/virt/uml/user_mode_linux_howto_v2.html#bess-socket-transport
 
+## Run with [vfkit](https://github.com/crc-org/vfkit)
+
+With vfkit 0.1.0 or newer, gvproxy can be used without any helper running in the VM:
+
+```
+(terminal 1) $ bin/gvproxy -debug -listen unix:///tmp/network.sock --listen-vfkit unixgram:///tmp/vfkit.sock
+(terminal 2) $ vfkit (all your vfkit options) --device virtio-net,unixSocketPath=/tmp/vfkit.sock,mac=5a:94:ef:e4:0c:ee
+```
+
 ## Run with vsock
 
-Made for Windows but also works for Linux and macOS with [vfkit](https://github.com/crc-org/vfkit).
+Made for Windows but also works for Linux and macOS with vfkit.
 
 ### Host
 
@@ -74,8 +83,10 @@ On Fedora 32, it worked out of the box. On others distros, you might have to loo
 
 #### macOS prerequisites
 
-Please locate the hyperkit state (there is a file called `connect` inside) folder and launch `gvproxy` with the following listen argument:
-`--listen vsock://null:1024/path_to_connect_directory`
+
+`vfkit` must be started with a vsock device: `--device virtio-vsock,port=1024,socketURL=/tmp/vfkit-vsock-1024.sock`
+Then you can launch `gvproxy` with the following listen argument:
+`--listen unix:///tmp/vfkit-vsock-1024.sock`
 
 #### Run
 
