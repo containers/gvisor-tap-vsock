@@ -11,6 +11,8 @@
 
 %global _gvisor_installdir %{_libexecdir}/podman
 
+%global desc_gvforwarder Forward traffic from a tap interface over vsock
+
 Name: gvisor-tap-vsock
 %if %{defined copr_username}
 Epoch: 103
@@ -57,12 +59,20 @@ Obsoletes: podman-gvproxy < 102:4.7.0-1
 Obsoletes: podman-gvproxy < 5:4.7.0-1
 %endif
 Provides: podman-gvproxy = %{epoch}:%{version}-%{release}
+Requires: %{name}-gvforwarder = %{epoch}:%{version}-%{release}
 
 %description
 A replacement for libslirp and VPNKit, written in pure Go.
 It is based on the network stack of gVisor. Compared to libslirp,
 gvisor-tap-vsock brings a configurable DNS server and
 dynamic port forwarding.
+
+%package gvforwarder
+Summary: %{desc_gvforwarder}
+Provides: gvforwarder = %{epoch}:%{version}-%{release}
+
+%description gvforwarder
+%{desc_gvforwarder}
 
 %prep
 %autosetup -Sgit -n %{name}-%{version}
@@ -101,6 +111,9 @@ install -p -m0755 bin/gvforwarder %{buildroot}%{_gvisor_installdir}
 %doc README.md
 %dir %{_gvisor_installdir}
 %{_gvisor_installdir}/gvproxy
+
+%files gvforwarder
+%dir %{_gvisor_installdir}
 %{_gvisor_installdir}/gvforwarder
 
 %changelog
