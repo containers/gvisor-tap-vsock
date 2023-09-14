@@ -22,6 +22,7 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
+	"github.com/containers/winquit/pkg/winquit"
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -83,6 +84,9 @@ func main() {
 	if debug {
 		log.SetLevel(log.DebugLevel)
 	}
+
+	// Intercept WM_QUIT/WM_CLOSE events if on Windows as SIGTERM (noop on other OSs)
+	winquit.SimulateSigTermOnQuit(sigChan)
 
 	// Make sure the qemu socket provided is valid syntax
 	if len(qemuSocket) > 0 {
