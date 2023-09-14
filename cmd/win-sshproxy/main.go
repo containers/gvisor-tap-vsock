@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package main
@@ -8,15 +9,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"unsafe"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
+	"github.com/containers/winquit/pkg/winquit"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc/eventlog"
 )
 
@@ -24,15 +24,6 @@ const (
 	ERR_BAD_ARGS = 0x000A
 	WM_QUIT      = 0x12
 )
-
-type MSG struct {
-	hwnd    uintptr
-	message uint32
-	wParam  uintptr
-	lParam  uintptr
-	time    uint32
-	pt      struct{ X, Y int32 }
-}
 
 var (
 	stateDir string
@@ -73,11 +64,18 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	group, ctx := errgroup.WithContext(ctx)
 
+	quit := make(chan bool, 1)
 	// Wait for a WM_QUIT message to exit
-	group.Go(func() error {
-		logrus.Debug("Starting message loop")
-		return messageLoop(ctx, group, cancel)
-	})
+	winquit.NotifyOnQuit(quit)
+	go func() {
+		<-quit
+		cancel()
+	}()
+
+	// Save thread for legacy callers which use it to post a quit
+	if _, err := saveThreadId(); err != nil {
+		logrus.Errorf("Error saving thread id: " + err.Error())
+	}
 
 	logrus.Debug("Setting up proxies")
 	setupProxies(ctx, group, sources, dests, identities)
@@ -106,36 +104,6 @@ func setupLogging(name string) (*eventlog.Log, error) {
 	}
 
 	return log, nil
-}
-
-func messageLoop(ctx context.Context, group *errgroup.Group, cancel func()) error {
-	user32 := syscall.NewLazyDLL("user32.dll")
-	getMessage := user32.NewProc("GetMessageW")
-
-	runtime.LockOSThread() // GetMessageW relies on thread state
-	defer runtime.UnlockOSThread()
-	tid, err := saveThreadId()
-	if err != nil {
-		return err
-	}
-
-	// Abort the message loop thread on cancellation
-	group.Go(func() error {
-		<-ctx.Done()
-		terminate(tid)
-		return nil
-	})
-
-	for {
-		var msg = &MSG{}
-		ret, _, _ := getMessage.Call(uintptr(unsafe.Pointer(msg)), 0, 0, 0, 1)
-		if ret == 0 || int(ret) == -1 {
-			logrus.Info("Received QUIT notification")
-			cancel()
-			return nil
-		}
-		logrus.Infof("Unhandled message: %d", msg.message)
-	}
 }
 
 func setupProxies(ctx context.Context, g *errgroup.Group, sources []string, dests []string, identities []string) error {
@@ -199,15 +167,9 @@ func saveThreadId() (uint32, error) {
 		return 0, err
 	}
 	defer file.Close()
-	tid := windows.GetCurrentThreadId()
+	tid := winquit.GetCurrentMessageLoopThreadId()
 	fmt.Fprintf(file, "%d:%d\n", os.Getpid(), tid)
 	return tid, nil
-}
-
-func terminate(tid uint32) {
-	user32 := syscall.NewLazyDLL("user32.dll")
-	postMessage := user32.NewProc("PostThreadMessageW")
-	postMessage.Call(uintptr(tid), WM_QUIT, 0, 0)
 }
 
 // Creates an "error" style pop-up window
