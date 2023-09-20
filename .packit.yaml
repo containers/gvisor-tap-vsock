@@ -22,6 +22,8 @@ jobs:
       - fedora-rawhide-x86_64
       - fedora-eln-aarch64
       - fedora-eln-x86_64
+      - fedora-39-aarch64
+      - fedora-39-x86_64
       - fedora-38-aarch64
       - fedora-38-x86_64
       - centos-stream+epel-next-8-x86_64
