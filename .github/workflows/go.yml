@@ -9,7 +9,7 @@ on:
 jobs:
 
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04 # explicitly use 20.04, see commit 428c40018a
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v3
@@ -20,7 +20,9 @@ jobs:
         go-version: 1.20.x
 
     - name: Build
-      run: make cross qemu-wrapper vm
+      run: |
+        make cross qemu-wrapper vm win-gvproxy win-sshproxy
+        mv bin/gvproxy.exe bin/gvproxy-windowsgui.exe
 
     - uses: actions/upload-artifact@v3
       with:
@@ -28,7 +30,7 @@ jobs:
         path: bin/*
 
   tests:
-    runs-on: macos-11 # Only Mac runners support nested virt
+    runs-on: macos-latest # Only Mac runners support nested virt
     needs: build # Don't bother testing if cross arch build fails
     timeout-minutes: 30
     steps:
@@ -65,7 +67,7 @@ jobs:
         go-version: 1.20.x
 
     - name: Build 
-      run: go build -ldflags -H=windowsgui -o bin/win-sshproxy.exe ./cmd/win-sshproxy
+      run: make win-sshproxy
 
     - name: Test 
       run: go test -v .\test-win-sshproxy
