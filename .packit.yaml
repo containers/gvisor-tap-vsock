@@ -16,8 +16,7 @@ jobs:
   - job: copr_build
     trigger: pull_request
     enable_net: true
-    # keep in sync with https://copr.fedorainfracloud.org/coprs/rhcontainerbot/podman-next
-    targets: &copr_targets
+    targets:
       - fedora-rawhide-aarch64
       - fedora-rawhide-x86_64
       - fedora-eln-aarch64
@@ -40,7 +39,23 @@ jobs:
     branch: main
     owner: rhcontainerbot
     project: podman-next
-    targets: *copr_targets
+    targets:
+      - fedora-rawhide-aarch64
+      - fedora-rawhide-ppc64le
+      - fedora-rawhide-s390x
+      - fedora-rawhide-x86_64
+      - fedora-eln-aarch64
+      - fedora-eln-ppc64le
+      - fedora-eln-s390x
+      - fedora-eln-x86_64
+      - fedora-39-aarch64
+      - fedora-39-ppc64le
+      - fedora-39-s390x
+      - fedora-39-x86_64
+      - fedora-38-aarch64
+      - fedora-38-ppc64le
+      - fedora-38-s390x
+      - fedora-38-x86_64
 
   - job: propose_downstream
     trigger: release
