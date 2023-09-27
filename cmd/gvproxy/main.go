@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/fileserver"
 	"github.com/containers/gvisor-tap-vsock/pkg/net/stdio"
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
@@ -44,6 +45,7 @@ var (
 	forwardIdentify arrayFlags
 	sshPort         int
 	pidFile         string
+	shareVolumes    arrayFlags
 	exitCode        int
 )
 
@@ -70,6 +72,7 @@ func main() {
 	flag.Var(&forwardUser, "forward-user", "SSH user to use for unix socket forward")
 	flag.Var(&forwardIdentify, "forward-identity", "Path to SSH identity key for forwarding")
 	flag.StringVar(&pidFile, "pid-file", "", "Generate a file with the PID in it")
+	flag.Var(&shareVolumes, "share-volume", "Share a volume to the guest virtual machine over 9p")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -161,6 +164,20 @@ func main() {
 		}
 	}
 
+	// Verify syntax of requested volume shares
+	hvsockShares := make(map[string]string, len(shareVolumes))
+	for i := 0; i < len(shareVolumes); i++ {
+		splitPath := strings.Split(shareVolumes[i], ":")
+
+		if len(splitPath) < 2 {
+			exitWithError(errors.New("Share paths passed to --share-volume must include a vsock guid"))
+		}
+
+		path := strings.Join(splitPath[:len(splitPath)-1], ":")
+
+		hvsockShares[path] = splitPath[len(splitPath)-1]
+	}
+
 	// Create a PID file if requested
 	if len(pidFile) > 0 {
 		f, err := os.Create(pidFile)
@@ -177,6 +194,11 @@ func main() {
 		if _, err := f.WriteString(strconv.Itoa(pid)); err != nil {
 			exitWithError(err)
 		}
+	}
+
+	// Start shares
+	if err := fileserver.StartShares(hvsockShares); err != nil {
+		exitWithError(err)
 	}
 
 	config := types.Configuration{

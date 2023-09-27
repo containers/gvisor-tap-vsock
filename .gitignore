@@ -1,4 +1,4 @@
-./bin/
+/bin/
 capture.pcap
 tmp/
 test/qcon.log

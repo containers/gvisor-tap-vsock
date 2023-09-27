@@ -222,8 +222,7 @@ func PrependModifiers(m []Modifier, other ...Modifier) []Modifier {
 // NewInform builds a new DHCPv4 Informational message with the specified
 // hardware address.
 func NewInform(hwaddr net.HardwareAddr, localIP net.IP, modifiers ...Modifier) (*DHCPv4, error) {
-	return New(PrependModifiers(
-		modifiers,
+	return New(PrependModifiers(modifiers,
 		WithHwAddr(hwaddr),
 		WithMessageType(MessageTypeInform),
 		WithClientIP(localIP),
@@ -231,6 +230,7 @@ func NewInform(hwaddr net.HardwareAddr, localIP net.IP, modifiers ...Modifier) (
 }
 
 // NewRequestFromOffer builds a DHCPv4 request from an offer.
+// It assumes the SELECTING state by default, see Section 4.3.2 in RFC 2131 for more details.
 func NewRequestFromOffer(offer *DHCPv4, modifiers ...Modifier) (*DHCPv4, error) {
 	return New(PrependModifiers(modifiers,
 		WithReply(offer),
@@ -239,6 +239,25 @@ func NewRequestFromOffer(offer *DHCPv4, modifiers ...Modifier) (*DHCPv4, error) 
 		WithOption(OptRequestedIPAddress(offer.YourIPAddr)),
 		// This is usually the server IP.
 		WithOptionCopied(offer, OptionServerIdentifier),
+		WithRequestedOptions(
+			OptionSubnetMask,
+			OptionRouter,
+			OptionDomainName,
+			OptionDomainNameServer,
+		),
+	)...)
+}
+
+// NewRenewFromAck builds a DHCPv4 RENEW-style request from the ACK of a lease. RENEW requests have
+// minor changes to their options compared to SELECT requests as specified by RFC 2131, section 4.3.2.
+func NewRenewFromAck(ack *DHCPv4, modifiers ...Modifier) (*DHCPv4, error) {
+	return New(PrependModifiers(modifiers,
+		WithReply(ack),
+		WithMessageType(MessageTypeRequest),
+		// The client IP must be filled in with the IP offered to the client
+		WithClientIP(ack.YourIPAddr),
+		// The renewal request must use unicast
+		WithBroadcast(false),
 		WithRequestedOptions(
 			OptionSubnetMask,
 			OptionRouter,
@@ -380,6 +399,13 @@ func (d *DHCPv4) SetUnicast() {
 // concatenated, and hence this should always just return one option.
 func (d *DHCPv4) GetOneOption(code OptionCode) []byte {
 	return d.Options.Get(code)
+}
+
+// DeleteOption deletes an existing option with the given option code.
+func (d *DHCPv4) DeleteOption(code OptionCode) {
+	if d.Options != nil {
+		d.Options.Del(code)
+	}
 }
 
 // UpdateOption replaces an existing option with the same option code with the

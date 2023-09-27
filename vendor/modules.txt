@@ -41,13 +41,25 @@ github.com/google/go-cmp/cmp/internal/value
 ## explicit; go 1.12
 github.com/google/gopacket
 github.com/google/gopacket/layers
-# github.com/insomniacslk/dhcp v0.0.0-20220504074936-1ca156eafb9f
-## explicit; go 1.13
+# github.com/hugelgupf/p9 v0.3.1-0.20230822151754-54f5c5530921
+## explicit; go 1.20
+github.com/hugelgupf/p9/fsimpl/localfs
+github.com/hugelgupf/p9/fsimpl/templatefs
+github.com/hugelgupf/p9/fsimpl/xattr
+github.com/hugelgupf/p9/internal
+github.com/hugelgupf/p9/linux
+github.com/hugelgupf/p9/p9
+github.com/hugelgupf/p9/vecnet
+# github.com/insomniacslk/dhcp v0.0.0-20230731140434-0f9eb93a696c
+## explicit; go 1.18
 github.com/insomniacslk/dhcp/dhcpv4
 github.com/insomniacslk/dhcp/dhcpv4/server4
 github.com/insomniacslk/dhcp/iana
 github.com/insomniacslk/dhcp/interfaces
 github.com/insomniacslk/dhcp/rfc1035label
+# github.com/josharian/native v1.1.0
+## explicit; go 1.13
+github.com/josharian/native
 # github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
 ## explicit; go 1.17
 github.com/linuxkit/virtsock/pkg/hvsock
@@ -104,6 +116,13 @@ github.com/onsi/gomega/types
 # github.com/opencontainers/go-digest v1.0.0
 ## explicit; go 1.13
 github.com/opencontainers/go-digest
+# github.com/pierrec/lz4/v4 v4.1.18
+## explicit; go 1.14
+github.com/pierrec/lz4/v4
+github.com/pierrec/lz4/v4/internal/lz4block
+github.com/pierrec/lz4/v4/internal/lz4errors
+github.com/pierrec/lz4/v4/internal/lz4stream
+github.com/pierrec/lz4/v4/internal/xxh32
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
@@ -122,17 +141,17 @@ github.com/songgao/water
 # github.com/stretchr/testify v1.8.4
 ## explicit; go 1.20
 github.com/stretchr/testify/assert
-# github.com/u-root/uio v0.0.0-20210528114334-82958018845c
-## explicit; go 1.15
+# github.com/u-root/uio v0.0.0-20230305220412-3e8cd9d6bf63
+## explicit; go 1.16
 github.com/u-root/uio/rand
-github.com/u-root/uio/ubinary
 github.com/u-root/uio/uio
+github.com/u-root/uio/ulog
 # github.com/vishvananda/netlink v1.2.1-beta.2
 ## explicit; go 1.12
 github.com/vishvananda/netlink
 github.com/vishvananda/netlink/nl
-# github.com/vishvananda/netns v0.0.0-20211101163701-50045581ed74
-## explicit; go 1.12
+# github.com/vishvananda/netns v0.0.4
+## explicit; go 1.17
 github.com/vishvananda/netns
 # golang.org/x/crypto v0.13.0
 ## explicit; go 1.17
