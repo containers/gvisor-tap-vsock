@@ -5,33 +5,33 @@ import (
 	"testing"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"github.com/onsi/ginkgo"
+	"github.com/onsi/gomega"
 )
 
 func TestSuite(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "gvisor-tap-vsock dns suit")
+	gomega.RegisterFailHandler(ginkgo.Fail)
+	ginkgo.RunSpecs(t, "gvisor-tap-vsock dns suit")
 }
 
-var _ = Describe("dns add test", func() {
+var _ = ginkgo.Describe("dns add test", func() {
 	var server *Server
 
-	BeforeEach(func() {
+	ginkgo.BeforeEach(func() {
 		server, _ = New(nil, nil, []types.Zone{})
 	})
 
-	It("should add dns zone with ip", func() {
+	ginkgo.It("should add dns zone with ip", func() {
 		req := types.Zone{
 			Name:      "internal.",
 			DefaultIP: net.ParseIP("192.168.0.1"),
 		}
 		server.addZone(req)
 
-		Expect(server.handler.zones).To(Equal([]types.Zone{req}))
+		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{req}))
 	})
 
-	It("should add dns zone with record", func() {
+	ginkgo.It("should add dns zone with record", func() {
 		req := types.Zone{
 			Name: "internal.",
 			Records: []types.Record{{
@@ -41,10 +41,10 @@ var _ = Describe("dns add test", func() {
 		}
 		server.addZone(req)
 
-		Expect(server.handler.zones).To(Equal([]types.Zone{req}))
+		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{req}))
 	})
 
-	It("should add dns zone with record and ip", func() {
+	ginkgo.It("should add dns zone with record and ip", func() {
 		ipReq := types.Zone{
 			Name:      "dynamic.internal.",
 			DefaultIP: net.ParseIP("192.168.0.1"),
@@ -59,10 +59,10 @@ var _ = Describe("dns add test", func() {
 		server.addZone(ipReq)
 		server.addZone(recordReq)
 
-		Expect(server.handler.zones).To(Equal([]types.Zone{ipReq, recordReq}))
+		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{ipReq, recordReq}))
 	})
 
-	It("should add new zone to existing zone with default ip", func() {
+	ginkgo.It("should add new zone to existing zone with default ip", func() {
 		ipReq := types.Zone{
 			Name:      "internal.",
 			DefaultIP: net.ParseIP("192.168.0.1"),
@@ -77,7 +77,7 @@ var _ = Describe("dns add test", func() {
 		}
 		server.addZone(recordReq)
 
-		Expect(server.handler.zones).To(Equal([]types.Zone{{
+		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{{
 			Name: "internal.",
 			Records: []types.Record{{
 				Name: "crc.testing",
@@ -86,7 +86,7 @@ var _ = Describe("dns add test", func() {
 		}}))
 	})
 
-	It("should add new zone to existing zone with records", func() {
+	ginkgo.It("should add new zone to existing zone with records", func() {
 		ipReq := types.Zone{
 			Name: "internal.",
 			Records: []types.Record{{
@@ -104,7 +104,7 @@ var _ = Describe("dns add test", func() {
 		}
 		server.addZone(recordReq)
 
-		Expect(server.handler.zones).To(Equal([]types.Zone{{
+		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{{
 			Name: "internal.",
 			Records: []types.Record{{
 				Name: "crc.testing",
@@ -116,7 +116,7 @@ var _ = Describe("dns add test", func() {
 		}}))
 	})
 
-	It("should add new zone to existing zone with records", func() {
+	ginkgo.It("should add new zone to existing zone with records", func() {
 		ipReq := types.Zone{
 			Name: "internal.",
 			Records: []types.Record{{
@@ -134,7 +134,7 @@ var _ = Describe("dns add test", func() {
 		}
 		server.addZone(recordReq)
 
-		Expect(server.handler.zones).To(Equal([]types.Zone{{
+		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{{
 			Name: "internal.",
 			Records: []types.Record{{
 				Name: "crc.testing",
@@ -146,7 +146,7 @@ var _ = Describe("dns add test", func() {
 		}}))
 	})
 
-	It("should retain the order of zones", func() {
+	ginkgo.It("should retain the order of zones", func() {
 		server, _ = New(nil, nil, []types.Zone{
 			{
 				Name:      "crc.testing.",
@@ -171,7 +171,7 @@ var _ = Describe("dns add test", func() {
 				},
 			},
 		})
-		Expect(server.handler.zones).To(Equal([]types.Zone{
+		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{
 			{
 				Name:      "crc.testing.",
 				DefaultIP: net.ParseIP("192.168.127.2"),

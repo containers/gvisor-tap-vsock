@@ -13,15 +13,15 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"github.com/onsi/ginkgo"
+	"github.com/onsi/gomega"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
 func TestSuite(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "gvisor-tap-vsock suite")
+	gomega.RegisterFailHandler(ginkgo.Fail)
+	ginkgo.RunSpecs(t, "gvisor-tap-vsock suite")
 }
 
 const (
@@ -60,19 +60,19 @@ func init() {
 
 }
 
-var _ = BeforeSuite(func() {
-	Expect(os.MkdirAll(filepath.Join(tmpDir, "disks"), os.ModePerm)).Should(Succeed())
+var _ = ginkgo.BeforeSuite(func() {
+	gomega.Expect(os.MkdirAll(filepath.Join(tmpDir, "disks"), os.ModePerm)).Should(gomega.Succeed())
 
 	downloader, err := NewFcosDownloader(filepath.Join(tmpDir, "disks"))
-	Expect(err).ShouldNot(HaveOccurred())
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 	qemuImage, err := downloader.DownloadImage()
-	Expect(err).ShouldNot(HaveOccurred())
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 	publicKey, err := createSSHKeys()
-	Expect(err).ShouldNot(HaveOccurred())
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 	err = CreateIgnition(ignFile, publicKey, ignitionUser, ignitionPasswordHash)
-	Expect(err).ShouldNot(HaveOccurred())
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 outer:
 	for panics := 0; ; panics++ {
@@ -87,7 +87,7 @@ outer:
 
 		host.Stderr = os.Stderr
 		host.Stdout = os.Stdout
-		Expect(host.Start()).Should(Succeed())
+		gomega.Expect(host.Start()).Should(gomega.Succeed())
 		go func() {
 			if err := host.Wait(); err != nil {
 				log.Error(err)
@@ -109,7 +109,7 @@ outer:
 		client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), qconLog, qemuImage, ignFile, qemuPort), " ")...)
 		client.Stderr = os.Stderr
 		client.Stdout = os.Stdout
-		Expect(client.Start()).Should(Succeed())
+		gomega.Expect(client.Start()).Should(gomega.Succeed())
 		go func() {
 			if err := client.Wait(); err != nil {
 				log.Error(err)
@@ -124,10 +124,10 @@ outer:
 
 			// Check for panic
 			didPanic, err := panicCheck(qconLog)
-			Expect(err).ShouldNot(HaveOccurred())
+			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 			if didPanic {
-				Expect(panics).ToNot(BeNumerically(">", 15), "No more than 15 panics allowed")
+				gomega.Expect(panics).ToNot(gomega.BeNumerically(">", 15), "No more than 15 panics allowed")
 				log.Info("Detected Kernel panic, retrying...")
 				_ = client.Process.Kill()
 				_ = host.Process.Kill()
@@ -141,11 +141,11 @@ outer:
 	}
 
 	err = scp(filepath.Join(binDir, "test-companion"), "/tmp/test-companion")
-	Expect(err).ShouldNot(HaveOccurred())
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 	// start an embedded DNS and http server in the VM. Wait a bit for the server to start.
 	cmd := sshCommand("sudo /tmp/test-companion")
-	Expect(cmd.Start()).ShouldNot(HaveOccurred())
+	gomega.Expect(cmd.Start()).ShouldNot(gomega.HaveOccurred())
 	time.Sleep(5 * time.Second)
 })
 
@@ -228,7 +228,7 @@ func panicCheck(con string) (bool, error) {
 	return strings.Contains(string(contents), "end Kernel panic"), nil
 }
 
-var _ = AfterSuite(func() {
+var _ = ginkgo.AfterSuite(func() {
 	if host != nil {
 		if err := host.Process.Kill(); err != nil {
 			log.Error(err)

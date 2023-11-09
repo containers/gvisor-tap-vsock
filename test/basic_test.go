@@ -7,92 +7,92 @@ import (
 
 	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"github.com/onsi/ginkgo"
+	"github.com/onsi/gomega"
 )
 
-var _ = Describe("connectivity", func() {
-	It("should configure the interface", func() {
+var _ = ginkgo.Describe("connectivity", func() {
+	ginkgo.It("should configure the interface", func() {
 		out, err := sshExec("ifconfig $(route | grep '^default' | grep -o '[^ ]*$')")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("mtu 1500"))
-		Expect(string(out)).To(ContainSubstring("inet 192.168.127.2"))
-		Expect(string(out)).To(ContainSubstring("netmask 255.255.255.0"))
-		Expect(string(out)).To(ContainSubstring("broadcast 192.168.127.255"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("mtu 1500"))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("inet 192.168.127.2"))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("netmask 255.255.255.0"))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("broadcast 192.168.127.255"))
 	})
 
-	It("should configure the default route", func() {
+	ginkgo.It("should configure the default route", func() {
 		out, err := sshExec("ip route show")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(MatchRegexp(`default via 192\.168\.127\.1 dev (.*?) proto dhcp (src 192\.168\.127\.2 )?metric 100`))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.MatchRegexp(`default via 192\.168\.127\.1 dev (.*?) proto dhcp (src 192\.168\.127\.2 )?metric 100`))
 	})
 
-	It("should configure dns settings", func() {
+	ginkgo.It("should configure dns settings", func() {
 		out, err := sshExec("cat /etc/resolv.conf")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("nameserver 192.168.127.1"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("nameserver 192.168.127.1"))
 	})
 
-	It("should ping the tap device", func() {
+	ginkgo.It("should ping the tap device", func() {
 		out, err := sshExec("ping -c2 192.168.127.2")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("2 packets transmitted, 2 received, 0% packet loss"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("2 packets transmitted, 2 received, 0% packet loss"))
 	})
 
-	It("should ping the gateway", func() {
+	ginkgo.It("should ping the gateway", func() {
 		out, err := sshExec("ping -c2 192.168.127.1")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("2 packets transmitted, 2 received, 0% packet loss"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("2 packets transmitted, 2 received, 0% packet loss"))
 	})
 })
 
-var _ = Describe("dns", func() {
-	It("should resolve redhat.com", func() {
+var _ = ginkgo.Describe("dns", func() {
+	ginkgo.It("should resolve redhat.com", func() {
 		out, err := sshExec("nslookup redhat.com")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Address: 52.200.142.250"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 52.200.142.250"))
 	})
 
-	It("should resolve CNAME record for www.wikipedia.org", func() {
+	ginkgo.It("should resolve CNAME record for www.wikipedia.org", func() {
 		out, err := sshExec("nslookup -query=cname www.wikipedia.org")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("www.wikipedia.org	canonical name = dyna.wikimedia.org."))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("www.wikipedia.org	canonical name = dyna.wikimedia.org."))
 	})
-	It("should resolve MX record for wikipedia.org", func() {
+	ginkgo.It("should resolve MX record for wikipedia.org", func() {
 		out, err := sshExec("nslookup -query=mx wikipedia.org")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("wikipedia.org	mail exchanger = 10 mx1001.wikimedia.org."))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("wikipedia.org	mail exchanger = 10 mx1001.wikimedia.org."))
 	})
 
-	It("should resolve NS record for wikipedia.org", func() {
+	ginkgo.It("should resolve NS record for wikipedia.org", func() {
 		out, err := sshExec("nslookup -query=ns wikipedia.org")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("wikipedia.org	nameserver = ns0.wikimedia.org."))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("wikipedia.org	nameserver = ns0.wikimedia.org."))
 	})
-	It("should resolve LDAP SRV record for google.com", func() {
+	ginkgo.It("should resolve LDAP SRV record for google.com", func() {
 		out, err := sshExec("nslookup -query=srv _ldap._tcp.google.com")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring(`_ldap._tcp.google.com	service = 5 0 389 ldap.google.com.`))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring(`_ldap._tcp.google.com	service = 5 0 389 ldap.google.com.`))
 	})
-	It("should resolve TXT for wikipedia.org", func() {
+	ginkgo.It("should resolve TXT for wikipedia.org", func() {
 		out, err := sshExec("nslookup -query=txt wikipedia.org")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring(`"v=spf1 include:wikimedia.org ~all"`))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring(`"v=spf1 include:wikimedia.org ~all"`))
 	})
 
-	It("should resolve gateway.containers.internal", func() {
+	ginkgo.It("should resolve gateway.containers.internal", func() {
 		out, err := sshExec("nslookup gateway.containers.internal")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.1"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.1"))
 	})
 
-	It("should resolve host.containers.internal", func() {
+	ginkgo.It("should resolve host.containers.internal", func() {
 		out, err := sshExec("nslookup host.containers.internal")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.254"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.254"))
 	})
 
-	It("should resolve dynamically added dns entry test.dynamic.internal", func() {
+	ginkgo.It("should resolve dynamically added dns entry test.dynamic.internal", func() {
 		client := gvproxyclient.New(&http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -109,15 +109,15 @@ var _ = Describe("dns", func() {
 				},
 			},
 		})
-		Expect(err).ShouldNot(HaveOccurred())
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 		out, err := sshExec("nslookup test.dynamic.internal")
 
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.254"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.254"))
 	})
 
-	It("should resolve recently added dns entry test.dynamic.internal", func() {
+	ginkgo.It("should resolve recently added dns entry test.dynamic.internal", func() {
 		client := gvproxyclient.New(&http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -134,7 +134,7 @@ var _ = Describe("dns", func() {
 				},
 			},
 		})
-		Expect(err).ShouldNot(HaveOccurred())
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 		err = client.AddDNS(&types.Zone{
 			Name: "dynamic.internal.",
@@ -145,15 +145,15 @@ var _ = Describe("dns", func() {
 				},
 			},
 		})
-		Expect(err).ShouldNot(HaveOccurred())
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 		out, err := sshExec("nslookup test.dynamic.internal")
 
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.253"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.253"))
 	})
 
-	It("should retain order of existing zone", func() {
+	ginkgo.It("should retain order of existing zone", func() {
 		client := gvproxyclient.New(&http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -175,8 +175,8 @@ var _ = Describe("dns", func() {
 			},
 		})
 		out, err := sshExec("nslookup test.dynamic.internal")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.2"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.2"))
 
 		_ = client.AddDNS(&types.Zone{
 			Name: "testing.",
@@ -188,17 +188,17 @@ var _ = Describe("dns", func() {
 			},
 		})
 		out, err = sshExec("nslookup *.dynamic.testing")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.2"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.2"))
 
 		out, err = sshExec("nslookup gateway.testing")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Address: 192.168.127.1"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.1"))
 	})
 })
 
-var _ = Describe("command-line format", func() {
-	It("should convert Command to command line format", func() {
+var _ = ginkgo.Describe("command-line format", func() {
+	ginkgo.It("should convert Command to command line format", func() {
 		command := types.NewGvproxyCommand()
 		command.AddEndpoint("unix:///tmp/network.sock")
 		command.Debug = true
@@ -207,7 +207,7 @@ var _ = Describe("command-line format", func() {
 		command.AddForwardUser("demouser")
 
 		cmd := command.ToCmdline()
-		Expect(cmd).To(Equal([]string{
+		gomega.Expect(cmd).To(gomega.Equal([]string{
 			"-listen", "unix:///tmp/network.sock",
 			"-debug",
 			"-mtu", "1500",

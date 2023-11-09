@@ -15,12 +15,12 @@ import (
 	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"github.com/onsi/ginkgo"
+	"github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
 )
 
-var _ = Describe("port forwarding", func() {
+var _ = ginkgo.Describe("port forwarding", func() {
 	client := gvproxyclient.New(&http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -29,9 +29,9 @@ var _ = Describe("port forwarding", func() {
 		},
 	}, "http://base")
 
-	It("should reach a http server on the host", func() {
+	ginkgo.It("should reach a http server on the host", func() {
 		ln, err := net.Listen("tcp", "127.0.0.1:9090")
-		Expect(err).ShouldNot(HaveOccurred())
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		defer ln.Close()
 
 		mux := http.NewServeMux()
@@ -51,62 +51,62 @@ var _ = Describe("port forwarding", func() {
 		}()
 
 		out, err := sshExec("curl http://host.containers.internal:9090")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Hello from the host"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Hello from the host"))
 
 		out, err = sshExec("curl http://host.docker.internal:9090")
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(out)).To(ContainSubstring("Hello from the host"))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Hello from the host"))
 	})
 
-	It("should reach a http server in the VM using dynamic port forwarding", func() {
+	ginkgo.It("should reach a http server in the VM using dynamic port forwarding", func() {
 		_, err := net.Dial("tcp", "127.0.0.1:9090")
-		Expect(err).Should(HaveOccurred())
-		Expect(err.Error()).To(HaveSuffix("connection refused"))
+		gomega.Expect(err).Should(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.HaveSuffix("connection refused"))
 
-		Expect(client.Expose(&types.ExposeRequest{
+		gomega.Expect(client.Expose(&types.ExposeRequest{
 			Local:  "127.0.0.1:9090",
 			Remote: "192.168.127.2:8080",
-		})).Should(Succeed())
+		})).Should(gomega.Succeed())
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			resp, err := http.Get("http://127.0.0.1:9090")
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+		}).Should(gomega.Succeed())
 
-		Expect(client.Unexpose(&types.UnexposeRequest{
+		gomega.Expect(client.Unexpose(&types.UnexposeRequest{
 			Local: "127.0.0.1:9090",
-		})).Should(Succeed())
+		})).Should(gomega.Succeed())
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			_, err = net.Dial("tcp", "127.0.0.1:9090")
-			g.Expect(err).Should(HaveOccurred())
-			g.Expect(err.Error()).To(HaveSuffix("connection refused"))
-		}).Should(Succeed())
+			g.Expect(err).Should(gomega.HaveOccurred())
+			g.Expect(err.Error()).To(gomega.HaveSuffix("connection refused"))
+		}).Should(gomega.Succeed())
 	})
 
-	It("should reach a dns server in the VM using dynamic port forwarding", func() {
-		Expect(client.Expose(&types.ExposeRequest{
+	ginkgo.It("should reach a dns server in the VM using dynamic port forwarding", func() {
+		gomega.Expect(client.Expose(&types.ExposeRequest{
 			Local:    ":1053",
 			Remote:   "192.168.127.2:53",
 			Protocol: "udp",
-		})).Should(Succeed())
+		})).Should(gomega.Succeed())
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			cmd := exec.Command("nslookup", "-timeout=1", "-port=1053", "foobar", "127.0.0.1")
 			out, err := cmd.CombinedOutput()
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(string(out)).To(ContainSubstring("Address: 1.2.3.4"))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(string(out)).To(gomega.ContainSubstring("Address: 1.2.3.4"))
+		}).Should(gomega.Succeed())
 
-		Expect(client.Unexpose(&types.UnexposeRequest{
+		gomega.Expect(client.Unexpose(&types.UnexposeRequest{
 			Local:    ":1053",
 			Protocol: "udp",
-		})).Should(Succeed())
+		})).Should(gomega.Succeed())
 	})
 
-	It("should reach a http server in the VM using the tunneling of the daemon", func() {
+	ginkgo.It("should reach a http server in the VM using the tunneling of the daemon", func() {
 		httpClient := &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -119,38 +119,38 @@ var _ = Describe("port forwarding", func() {
 			},
 		}
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			resp, err := httpClient.Get("http://placeholder/")
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+		}).Should(gomega.Succeed())
 	})
 
-	It("should reach a http server in the VM using dynamic port forwarding configured within the VM", func() {
+	ginkgo.It("should reach a http server in the VM using dynamic port forwarding configured within the VM", func() {
 		_, err := net.Dial("tcp", "127.0.0.1:9090")
-		Expect(err).Should(HaveOccurred())
-		Expect(err.Error()).To(HaveSuffix("connection refused"))
+		gomega.Expect(err).Should(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.HaveSuffix("connection refused"))
 
 		_, err = sshExec(`curl http://gateway.containers.internal/services/forwarder/expose -X POST -d'{"local":":9090", "remote":":8080"}'`)
-		Expect(err).ShouldNot(HaveOccurred())
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			resp, err := http.Get("http://127.0.0.1:9090")
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+		}).Should(gomega.Succeed())
 
 		_, err = sshExec(`curl http://gateway.containers.internal/services/forwarder/unexpose -X POST -d'{"local":":9090"}'`)
-		Expect(err).ShouldNot(HaveOccurred())
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			_, err = net.Dial("tcp", "127.0.0.1:9090")
-			g.Expect(err).Should(HaveOccurred())
-			g.Expect(err.Error()).To(HaveSuffix("connection refused"))
-		}).Should(Succeed())
+			g.Expect(err).Should(gomega.HaveOccurred())
+			g.Expect(err.Error()).To(gomega.HaveSuffix("connection refused"))
+		}).Should(gomega.Succeed())
 	})
 
-	It("should reach rootless podman API using unix socket forwarding over ssh", func() {
+	ginkgo.It("should reach rootless podman API using unix socket forwarding over ssh", func() {
 		httpClient := &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -159,21 +159,21 @@ var _ = Describe("port forwarding", func() {
 			},
 		}
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			resp, err := httpClient.Get("http://host/_ping")
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
-			g.Expect(resp.ContentLength).To(Equal(int64(2)))
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+			g.Expect(resp.ContentLength).To(gomega.Equal(int64(2)))
 
 			reply := make([]byte, resp.ContentLength)
 			_, err = io.ReadAtLeast(resp.Body, reply, len(reply))
 
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(string(reply)).To(Equal("OK"))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(string(reply)).To(gomega.Equal("OK"))
+		}).Should(gomega.Succeed())
 	})
 
-	It("should reach rootful podman API using unix socket forwarding over ssh", func() {
+	ginkgo.It("should reach rootful podman API using unix socket forwarding over ssh", func() {
 		httpClient := &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -182,36 +182,36 @@ var _ = Describe("port forwarding", func() {
 			},
 		}
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			resp, err := httpClient.Get("http://host/_ping")
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
-			g.Expect(resp.ContentLength).To(Equal(int64(2)))
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+			g.Expect(resp.ContentLength).To(gomega.Equal(int64(2)))
 
 			reply := make([]byte, resp.ContentLength)
 			_, err = io.ReadAtLeast(resp.Body, reply, len(reply))
 
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(string(reply)).To(Equal("OK"))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(string(reply)).To(gomega.Equal("OK"))
+		}).Should(gomega.Succeed())
 	})
 
-	It("should expose and reach an http service using unix to tcp forwarding", func() {
+	ginkgo.It("should expose and reach an http service using unix to tcp forwarding", func() {
 		if runtime.GOOS == "windows" {
-			Skip("AF_UNIX not supported on Windows")
+			ginkgo.Skip("AF_UNIX not supported on Windows")
 		}
 
 		unix2tcpfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
 
 		out, err := sshExec(`curl http://gateway.containers.internal/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2tcpfwdsock + `","remote":"tcp://192.168.127.2:8080"}'`)
-		Expect(string(out)).Should(Equal(""))
-		Expect(err).ShouldNot(HaveOccurred())
+		gomega.Expect(string(out)).Should(gomega.Equal(""))
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			sockfile, err := os.Stat(unix2tcpfwdsock)
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(sockfile.Mode().Type().String()).To(Equal(os.ModeSocket.String()))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(sockfile.Mode().Type().String()).To(gomega.Equal(os.ModeSocket.String()))
+		}).Should(gomega.Succeed())
 
 		httpClient := &http.Client{
 			Transport: &http.Transport{
@@ -221,29 +221,29 @@ var _ = Describe("port forwarding", func() {
 			},
 		}
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			resp, err := httpClient.Get("http://placeholder/")
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+		}).Should(gomega.Succeed())
 	})
 
-	It("should expose and reach rootless podman API using unix to unix forwarding over ssh", func() {
+	ginkgo.It("should expose and reach rootless podman API using unix to unix forwarding over ssh", func() {
 		if runtime.GOOS == "windows" {
-			Skip("AF_UNIX not supported on Windows")
+			ginkgo.Skip("AF_UNIX not supported on Windows")
 		}
 
 		unix2unixfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
 
 		remoteuri := fmt.Sprintf(`ssh-tunnel://root@%s:%d%s?key=%s`, "192.168.127.2", 22, podmanSock, privateKeyFile)
 		_, err := sshExec(`curl http://192.168.127.1/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2unixfwdsock + `","remote":"` + remoteuri + `"}'`)
-		Expect(err).ShouldNot(HaveOccurred())
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			sockfile, err := os.Stat(unix2unixfwdsock)
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(sockfile.Mode().Type().String()).To(Equal(os.ModeSocket.String()))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(sockfile.Mode().Type().String()).To(gomega.Equal(os.ModeSocket.String()))
+		}).Should(gomega.Succeed())
 
 		httpClient := &http.Client{
 			Transport: &http.Transport{
@@ -253,17 +253,17 @@ var _ = Describe("port forwarding", func() {
 			},
 		}
 
-		Eventually(func(g Gomega) {
+		gomega.Eventually(func(g gomega.Gomega) {
 			resp, err := httpClient.Get("http://host/_ping")
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
-			g.Expect(resp.ContentLength).To(Equal(int64(2)))
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+			g.Expect(resp.ContentLength).To(gomega.Equal(int64(2)))
 
 			reply := make([]byte, resp.ContentLength)
 			_, err = io.ReadAtLeast(resp.Body, reply, len(reply))
 
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(string(reply)).To(Equal("OK"))
-		}).Should(Succeed())
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(string(reply)).To(gomega.Equal("OK"))
+		}).Should(gomega.Succeed())
 	})
 })
