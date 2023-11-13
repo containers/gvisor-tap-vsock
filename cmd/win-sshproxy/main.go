@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/winquit/pkg/winquit"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -33,10 +34,15 @@ var (
 func main() {
 	args := os.Args
 	if len(args) > 1 {
-		if args[1] == "-debug" {
+		switch args[1] {
+		case "-version":
+			version := types.NewVersion("win-sshproxy")
+			fmt.Println(version.String())
+			os.Exit(0)
+		case "-debug":
 			debug = true
 			args = args[2:]
-		} else {
+		default:
 			args = args[1:]
 		}
 	}

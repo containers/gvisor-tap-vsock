@@ -92,8 +92,8 @@ CGO_CFLAGS=$(echo $CGO_CFLAGS | sed 's/-specs=\/usr\/lib\/rpm\/redhat\/redhat-an
 export CGO_CFLAGS+=" -m64 -mtune=generic -fcf-protection=full"
 %endif
 
-# reset LDFLAGS for plugins and gvisor binaries
-LDFLAGS=''
+# reset LDFLAGS for plugins and gvisor binaries, but ensure gvproxy --version and such is set
+LDFLAGS="-X github.com/containers/gvisor-tap-vsock/pkg/types.gitVersion=%{version}"
 
 # build gvisor-tap-vsock binaries
 %gobuild -o bin/gvproxy ./cmd/gvproxy

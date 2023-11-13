@@ -56,6 +56,8 @@ const (
 )
 
 func main() {
+	version := types.NewVersion("gvproxy")
+	version.AddFlag()
 	flag.Var(&endpoints, "listen", "control endpoint")
 	flag.BoolVar(&debug, "debug", false, "Print debug info")
 	flag.IntVar(&mtu, "mtu", 1500, "Set the MTU")
@@ -72,6 +74,12 @@ func main() {
 	flag.StringVar(&pidFile, "pid-file", "", "Generate a file with the PID in it")
 	flag.Parse()
 
+	if version.ShowVersion() {
+		fmt.Println(version.String())
+		os.Exit(0)
+	}
+
+	log.Infof(version.String())
 	ctx, cancel := context.WithCancel(context.Background())
 	// Make this the last defer statement in the stack
 	defer os.Exit(exitCode)
