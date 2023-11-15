@@ -3,6 +3,7 @@ package types
 import (
 	"flag"
 	"fmt"
+	"runtime/debug"
 )
 
 var (
@@ -22,7 +23,7 @@ func NewVersion(binaryName string) *version { //nolint:revive
 }
 
 func (ver *version) String() string {
-	return fmt.Sprintf("%s version %s", ver.binaryName, gitVersion)
+	return fmt.Sprintf("%s version %s", ver.binaryName, moduleVersion())
 }
 
 func (ver *version) AddFlag() {
@@ -31,4 +32,26 @@ func (ver *version) AddFlag() {
 
 func (ver *version) ShowVersion() bool {
 	return ver.showVersion
+}
+
+func moduleVersion() string {
+	switch {
+	// This will be set when building from git using make
+	case gitVersion != "":
+		return gitVersion
+	// moduleVersionFromBuildInfo() will be set when using `go install`
+	default:
+		return moduleVersionFromBuildInfo()
+	}
+}
+
+func moduleVersionFromBuildInfo() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	if info.Main.Version == "(devel)" {
+		return ""
+	}
+	return info.Main.Version
 }
