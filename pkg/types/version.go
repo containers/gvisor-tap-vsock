@@ -4,11 +4,15 @@ import (
 	"flag"
 	"fmt"
 	"runtime/debug"
+	"strings"
 )
 
 var (
 	// set using the '-X github.com/containers/gvisor-tap-vsock/pkg/types.gitVersion' linker flag
 	gitVersion = ""
+	// set through .gitattributes when `git archive` is used
+	// see https://icinga.com/blog/2022/05/25/embedding-git-commit-information-in-go-binaries/
+	gitArchiveVersion = "$Format:%(describe)$"
 )
 
 type version struct {
@@ -36,6 +40,9 @@ func (ver *version) ShowVersion() bool {
 
 func moduleVersion() string {
 	switch {
+	// This will be substituted when building from a GitHub tarball
+	case !strings.HasPrefix(gitArchiveVersion, "$Format:"):
+		return gitArchiveVersion
 	// This will be set when building from git using make
 	case gitVersion != "":
 		return gitVersion
