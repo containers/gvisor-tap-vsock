@@ -22,9 +22,9 @@ require (
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/stretchr/testify v1.8.4
 	github.com/vishvananda/netlink v1.2.1-beta.2
-	golang.org/x/crypto v0.15.0
+	golang.org/x/crypto v0.16.0
 	golang.org/x/sync v0.5.0
-	golang.org/x/sys v0.14.0
+	golang.org/x/sys v0.15.0
 	gvisor.dev/gvisor v0.0.0-20230715022000-fd277b20b8db
 	inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0
 )
