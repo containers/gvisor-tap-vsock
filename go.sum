@@ -5,8 +5,8 @@ github.com/apparentlymart/go-cidr v1.1.0/go.mod h1:EBcsNrHc3zQeuaeCeCtQruQm+n9/Y
 github.com/armon/go-proxyproto v0.0.0-20210323213023-7e956b284f0a/go.mod h1:QmP9hvJ91BbJmGVGSbutW19IC0Q9phDCLGaomwTJbgU=
 github.com/containers/winquit v1.1.0 h1:jArun04BNDQvt2W0Y78kh9TazN2EIEMG5Im6/JY7+pE=
 github.com/containers/winquit v1.1.0/go.mod h1:PsPeZlnbkmGGIToMPHF1zhWjBUkd8aHjMOr/vFcPxw8=
-github.com/coreos/stream-metadata-go v0.4.3 h1:5GykJ8dtZSx1rdlzEAiDVzA73cwmUF3ceTuIP293L6E=
-github.com/coreos/stream-metadata-go v0.4.3/go.mod h1:fMObQqQm8Ku91G04btKzEH3AsdP1mrAb986z9aaK0tE=
+github.com/coreos/stream-metadata-go v0.4.4 h1:PM/6iNhofKGydsatiY1zdnMMHBT34skb5P7nfEFR4GU=
+github.com/coreos/stream-metadata-go v0.4.4/go.mod h1:fMObQqQm8Ku91G04btKzEH3AsdP1mrAb986z9aaK0tE=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
