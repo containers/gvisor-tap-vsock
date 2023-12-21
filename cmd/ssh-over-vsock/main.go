@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"os"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -19,12 +21,19 @@ var (
 )
 
 func main() {
+	version := types.NewVersion("ssh-over-vsock")
+	version.AddFlag()
 	flag.StringVar(&ip, "ip", "192.168.127.2", "ip of the host")
 	flag.IntVar(&port, "port", 22, "port of the host")
 	flag.StringVar(&user, "user", "", "ssh user")
 	flag.StringVar(&key, "key", "", "ssh key")
 	flag.StringVar(&endpoint, "url", "/tmp/network.sock", "url of the daemon")
 	flag.Parse()
+
+	if version.ShowVersion() {
+		fmt.Println(version.String())
+		os.Exit(0)
+	}
 
 	if err := run(); err != nil {
 		logrus.Fatal(err)

@@ -35,6 +35,8 @@ var (
 )
 
 func main() {
+	version := types.NewVersion("gvforwarder")
+	version.AddFlag()
 	flag.StringVar(&endpoint, "url", fmt.Sprintf("vsock://2:1024%s", types.ConnectPath), "url where the tap send packets")
 	flag.StringVar(&iface, "iface", "tap0", "tap interface name")
 	flag.StringVar(&stopIfIfaceExist, "stop-if-exist", "eth0,ens3,enp0s1", "stop if one of these interfaces exists at startup")
@@ -43,6 +45,11 @@ func main() {
 	flag.IntVar(&mtu, "mtu", 4000, "mtu")
 	flag.BoolVar(&tapPreexists, "preexisting", false, "use preexisting/preconfigured TAP interface")
 	flag.Parse()
+
+	if version.ShowVersion() {
+		fmt.Println(version.String())
+		os.Exit(0)
+	}
 
 	expected := strings.Split(stopIfIfaceExist, ",")
 	links, err := netlink.LinkList()
