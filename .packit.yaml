@@ -17,14 +17,10 @@ jobs:
     trigger: pull_request
     enable_net: true
     targets:
-      - fedora-rawhide-aarch64
-      - fedora-rawhide-x86_64
+      - fedora-all-aarch64
+      - fedora-all-x86_64
       - fedora-eln-aarch64
       - fedora-eln-x86_64
-      - fedora-39-aarch64
-      - fedora-39-x86_64
-      - fedora-38-aarch64
-      - fedora-38-x86_64
       - centos-stream+epel-next-8-x86_64
       - centos-stream+epel-next-8-aarch64
       - centos-stream+epel-next-9-x86_64
@@ -40,40 +36,27 @@ jobs:
     owner: rhcontainerbot
     project: podman-next
     targets:
-      - fedora-rawhide-aarch64
-      - fedora-rawhide-ppc64le
-      - fedora-rawhide-s390x
-      - fedora-rawhide-x86_64
+      - fedora-all-aarch64
+      - fedora-all-ppc64le
+      - fedora-all-s390x
+      - fedora-all-x86_64
       - fedora-eln-aarch64
       - fedora-eln-ppc64le
       - fedora-eln-s390x
       - fedora-eln-x86_64
-      - fedora-39-aarch64
-      - fedora-39-ppc64le
-      - fedora-39-s390x
-      - fedora-39-x86_64
-      - fedora-38-aarch64
-      - fedora-38-ppc64le
-      - fedora-38-s390x
-      - fedora-38-x86_64
 
   - job: propose_downstream
     trigger: release
     update_release: false
     dist_git_branches:
-      - fedora-rawhide
-      - fedora-39
-      - fedora-38
+      - fedora-all
 
   - job: koji_build
     trigger: commit
     dist_git_branches:
-      - fedora-rawhide
-      - fedora-39
-      - fedora-38
+      - fedora-all
 
   - job: bodhi_update
     trigger: commit
     dist_git_branches:
-      - fedora-38 # rawhide updates are created automatically
-      - fedora-39
+      - fedora-branched # rawhide updates are created automatically
