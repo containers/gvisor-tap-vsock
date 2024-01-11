@@ -171,14 +171,17 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 		return &SSHForward{}, err
 	}
 
-	bastion, err := CreateBastion(dest, passphrase, identity, conn, connectFunc)
+	createBastion := func() (*Bastion, error) {
+		return CreateBastion(dest, passphrase, identity, conn, connectFunc)
+	}
+	bastion, err := retry(ctx, createBastion, "Waiting for sshd")
 	if err != nil {
-		return &SSHForward{}, err
+		return &SSHForward{}, fmt.Errorf("setupProxy failed: %w", err)
 	}
 
 	logrus.Debugf("Socket forward established: %s -> %s\n", socketURI.Path, dest.Path)
 
-	return &SSHForward{listener, &bastion, socketURI}, nil
+	return &SSHForward{listener, bastion, socketURI}, nil
 }
 
 const maxRetries = 60
