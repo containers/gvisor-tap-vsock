@@ -166,12 +166,11 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 		return conn, err
 	}
 
-	conn, err := initialConnection(ctx, connectFunc)
-	if err != nil {
-		return &SSHForward{}, err
-	}
-
 	createBastion := func() (*Bastion, error) {
+		conn, err := connectFunc(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
 		return CreateBastion(dest, passphrase, identity, conn, connectFunc)
 	}
 	bastion, err := retry(ctx, createBastion, "Waiting for sshd")
@@ -213,13 +212,6 @@ loop:
 		backoff = backOff(backoff)
 	}
 	return returnVal, fmt.Errorf("timeout: %w", err)
-}
-
-func initialConnection(ctx context.Context, connectFunc ConnectCallback) (net.Conn, error) {
-	retryFunc := func() (net.Conn, error) {
-		return connectFunc(ctx, nil)
-	}
-	return retry(ctx, retryFunc, "Waiting for sshd socket")
 }
 
 func acceptConnection(ctx context.Context, listener net.Listener, bastion *Bastion, socketURI *url.URL) error {
