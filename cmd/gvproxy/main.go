@@ -45,6 +45,7 @@ var (
 	sshPort         int
 	pidFile         string
 	exitCode        int
+	logFile         string
 )
 
 const (
@@ -72,11 +73,28 @@ func main() {
 	flag.Var(&forwardUser, "forward-user", "SSH user to use for unix socket forward")
 	flag.Var(&forwardIdentify, "forward-identity", "Path to SSH identity key for forwarding")
 	flag.StringVar(&pidFile, "pid-file", "", "Generate a file with the PID in it")
+	flag.StringVar(&logFile, "log-file", "", "Output log messages (logrus) to a given file path")
 	flag.Parse()
 
 	if version.ShowVersion() {
 		fmt.Println(version.String())
 		os.Exit(0)
+	}
+
+	// If the user provides a log-file, we re-direct log messages
+	// from logrus to the file
+	if logFile != "" {
+		lf, err := os.Create(logFile)
+		if err != nil {
+			fmt.Printf("unable to open log file %s, exiting...\n", logFile)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := lf.Close(); err != nil {
+				fmt.Printf("unable to close log-file: %q\n", err)
+			}
+		}()
+		log.SetOutput(lf)
 	}
 
 	log.Infof(version.String())
