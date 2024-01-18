@@ -1,0 +1,37 @@
+name: Release build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04 # explicitly use 20.04, see commit 428c40018a
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+
+    - name: >-
+        WORKAROUND: Fetch tags that points to the revisions
+        checked-out(actions/checkout#1467)
+      run: |-
+        git fetch --tags --force
+
+    - name: Set up Go
+      uses: actions/setup-go@v3
+
+    - name: Build
+      run: |
+        make cross qemu-wrapper vm win-gvproxy win-sshproxy
+        mv bin/gvproxy.exe bin/gvproxy-windowsgui.exe
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: gvisor-tap-vsock-binaries
+        path: bin/*
