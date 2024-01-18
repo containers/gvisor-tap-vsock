@@ -95,6 +95,12 @@ func main() {
 			}
 		}()
 		log.SetOutput(lf)
+
+		// If debug is set, lets seed the log file with some basic information
+		// about the environment and how it was called
+		log.Debugf("gvproxy version: %q", version.String())
+		log.Debugf("os: %q arch: %q", runtime.GOOS, runtime.GOARCH)
+		log.Debugf("command line: %q", os.Args)
 	}
 
 	log.Infof(version.String())
