@@ -204,6 +204,7 @@ var _ = ginkgo.Describe("command-line format", func() {
 		command.Debug = true
 		command.AddQemuSocket("tcp://0.0.0.0:1234")
 		command.PidFile = "~/gv-pidfile.txt"
+		command.LogFile = "~/gv.log"
 		command.AddForwardUser("demouser")
 
 		cmd := command.ToCmdline()
@@ -215,6 +216,7 @@ var _ = ginkgo.Describe("command-line format", func() {
 			"-listen-qemu", "tcp://0.0.0.0:1234",
 			"-forward-user", "demouser",
 			"-pid-file", "~/gv-pidfile.txt",
+			"-log-file", "~/gv.log",
 		}))
 	})
 })
