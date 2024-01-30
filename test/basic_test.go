@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 
@@ -71,6 +72,14 @@ var _ = ginkgo.Describe("dns", func() {
 	})
 	ginkgo.It("should resolve LDAP SRV record for google.com", func() {
 		out, err := sshExec("nslookup -query=srv _ldap._tcp.google.com")
+		fmt.Println("---debug---")
+		fmt.Println(string(out))
+		if err != nil {
+			fmt.Println("---error---")
+			fmt.Print(err.Error())
+			fmt.Println("---end error---")
+		}
+		fmt.Println("---debug end---")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		gomega.Expect(string(out)).To(gomega.ContainSubstring(`_ldap._tcp.google.com	service = 5 0 389 ldap.google.com.`))
 	})

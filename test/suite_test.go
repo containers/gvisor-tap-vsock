@@ -187,6 +187,7 @@ func scp(src, dst string) error {
 	sshCmd := exec.Command("scp",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
+		"-o", "IdentitiesOnly=yes",
 		"-i", privateKeyFile,
 		"-P", strconv.Itoa(sshPort),
 		src,
@@ -204,6 +205,7 @@ func sshCommand(cmd ...string) *exec.Cmd {
 	sshCmd := exec.Command("ssh",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
+		"-o", "IdentitiesOnly=yes",
 		"-i", privateKeyFile,
 		"-p", strconv.Itoa(sshPort),
 		fmt.Sprintf("%s@127.0.0.1", ignitionUser), "--", strings.Join(cmd, " ")) // #nosec G204
