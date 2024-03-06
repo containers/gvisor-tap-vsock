@@ -70,7 +70,7 @@ var _ = ginkgo.Describe("dns", func() {
 		gomega.Expect(string(out)).To(gomega.ContainSubstring("wikipedia.org	nameserver = ns0.wikimedia.org."))
 	})
 	ginkgo.It("should resolve LDAP SRV record for google.com", func() {
-		out, err := sshExec("nslookup -query=srv _ldap._tcp.google.com")
+		out, err := sshExec("nslookup -query=srv _ldap._tcp.google.com 8.8.8.8")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		gomega.Expect(string(out)).To(gomega.ContainSubstring(`_ldap._tcp.google.com	service = 5 0 389 ldap.google.com.`))
 	})
