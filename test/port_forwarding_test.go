@@ -23,7 +23,7 @@ import (
 var _ = ginkgo.Describe("port forwarding", func() {
 	client := gvproxyclient.New(&http.Client{
 		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 				return net.Dial("unix", sock)
 			},
 		},
@@ -35,7 +35,7 @@ var _ = ginkgo.Describe("port forwarding", func() {
 		defer ln.Close()
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		mux.HandleFunc("/", func(writer http.ResponseWriter, _ *http.Request) {
 			_, _ = writer.Write([]byte("Hello from the host"))
 		})
 		go func() {
@@ -109,7 +109,7 @@ var _ = ginkgo.Describe("port forwarding", func() {
 	ginkgo.It("should reach a http server in the VM using the tunneling of the daemon", func() {
 		httpClient := &http.Client{
 			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 					conn, err := net.Dial("unix", sock)
 					if err != nil {
 						return nil, err
@@ -153,7 +153,7 @@ var _ = ginkgo.Describe("port forwarding", func() {
 	ginkgo.It("should reach rootless podman API using unix socket forwarding over ssh", func() {
 		httpClient := &http.Client{
 			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 					return net.Dial("unix", forwardSock)
 				},
 			},
@@ -176,7 +176,7 @@ var _ = ginkgo.Describe("port forwarding", func() {
 	ginkgo.It("should reach rootful podman API using unix socket forwarding over ssh", func() {
 		httpClient := &http.Client{
 			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 					return net.Dial("unix", forwardRootSock)
 				},
 			},
@@ -215,7 +215,7 @@ var _ = ginkgo.Describe("port forwarding", func() {
 
 		httpClient := &http.Client{
 			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 					return net.Dial("unix", unix2tcpfwdsock)
 				},
 			},
@@ -247,7 +247,7 @@ var _ = ginkgo.Describe("port forwarding", func() {
 
 		httpClient := &http.Client{
 			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 					return net.Dial("unix", unix2unixfwdsock)
 				},
 			},

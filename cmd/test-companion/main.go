@@ -39,7 +39,7 @@ func main() {
 	}()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("/", func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = writer.Write([]byte(`Hello world!`))
 	})
 
