@@ -18,14 +18,14 @@
 //
 // Typical usage:
 //
-//     var p tcpproxy.Proxy
-//     p.AddHTTPHostRoute(":80", "foo.com", tcpproxy.To("10.0.0.1:8081"))
-//     p.AddHTTPHostRoute(":80", "bar.com", tcpproxy.To("10.0.0.2:8082"))
-//     p.AddRoute(":80", tcpproxy.To("10.0.0.1:8081")) // fallback
-//     p.AddSNIRoute(":443", "foo.com", tcpproxy.To("10.0.0.1:4431"))
-//     p.AddSNIRoute(":443", "bar.com", tcpproxy.To("10.0.0.2:4432"))
-//     p.AddRoute(":443", tcpproxy.To("10.0.0.1:4431")) // fallback
-//     log.Fatal(p.Run())
+//	var p tcpproxy.Proxy
+//	p.AddHTTPHostRoute(":80", "foo.com", tcpproxy.To("10.0.0.1:8081"))
+//	p.AddHTTPHostRoute(":80", "bar.com", tcpproxy.To("10.0.0.2:8082"))
+//	p.AddRoute(":80", tcpproxy.To("10.0.0.1:8081")) // fallback
+//	p.AddSNIRoute(":443", "foo.com", tcpproxy.To("10.0.0.1:4431"))
+//	p.AddSNIRoute(":443", "bar.com", tcpproxy.To("10.0.0.2:4432"))
+//	p.AddRoute(":443", tcpproxy.To("10.0.0.1:4431")) // fallback
+//	log.Fatal(p.Run())
 //
 // Calling Run (or Start) on a proxy also starts all the necessary
 // listeners.
@@ -93,9 +93,7 @@ func equals(want string) Matcher {
 
 // config contains the proxying state for one listener.
 type config struct {
-	routes      []route
-	acmeTargets []Target // accumulates targets that should be probed for acme.
-	stopACME    bool     // if true, AddSNIRoute doesn't add targets to acmeTargets.
+	routes []route
 }
 
 // A route matches a connection to a target.
@@ -347,7 +345,29 @@ func UnderlyingConn(c net.Conn) net.Conn {
 	return c
 }
 
+func tcpConn(c net.Conn) (t *net.TCPConn, ok bool) {
+	if c, ok := UnderlyingConn(c).(*net.TCPConn); ok {
+		return c, ok
+	}
+	if c, ok := c.(*net.TCPConn); ok {
+		return c, ok
+	}
+	return nil, false
+}
+
 func goCloseConn(c net.Conn) { go c.Close() }
+
+func closeRead(c net.Conn) {
+	if c, ok := tcpConn(c); ok {
+		c.CloseRead()
+	}
+}
+
+func closeWrite(c net.Conn) {
+	if c, ok := tcpConn(c); ok {
+		c.CloseWrite()
+	}
+}
 
 // HandleConn implements the Target interface.
 func (dp *DialProxy) HandleConn(src net.Conn) {
@@ -373,19 +393,18 @@ func (dp *DialProxy) HandleConn(src net.Conn) {
 	defer goCloseConn(src)
 
 	if ka := dp.keepAlivePeriod(); ka > 0 {
-		if c, ok := UnderlyingConn(src).(*net.TCPConn); ok {
-			c.SetKeepAlive(true)
-			c.SetKeepAlivePeriod(ka)
-		}
-		if c, ok := dst.(*net.TCPConn); ok {
-			c.SetKeepAlive(true)
-			c.SetKeepAlivePeriod(ka)
+		for _, c := range []net.Conn{src, dst} {
+			if c, ok := tcpConn(c); ok {
+				c.SetKeepAlive(true)
+				c.SetKeepAlivePeriod(ka)
+			}
 		}
 	}
 
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
 	go proxyCopy(errc, src, dst)
 	go proxyCopy(errc, dst, src)
+	<-errc
 	<-errc
 }
 
@@ -422,6 +441,9 @@ func (dp *DialProxy) sendProxyHeader(w io.Writer, src net.Conn) error {
 // It's a named function instead of a func literal so users get
 // named goroutines in debug goroutine stack dumps.
 func proxyCopy(errc chan<- error, dst, src net.Conn) {
+	defer closeRead(src)
+	defer closeWrite(dst)
+
 	// Before we unwrap src and/or dst, copy any buffered data.
 	if wc, ok := src.(*Conn); ok && len(wc.Peeked) > 0 {
 		if _, err := dst.Write(wc.Peeked); err != nil {

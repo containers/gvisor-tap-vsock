@@ -9,6 +9,7 @@ require (
 	github.com/coreos/stream-metadata-go v0.4.4
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/gopacket v1.1.19
+	github.com/inetaf/tcpproxy v0.0.0-20240214030015-3ce58045626c
 	github.com/insomniacslk/dhcp v0.0.0-20220504074936-1ca156eafb9f
 	github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
 	github.com/mdlayher/vsock v1.2.1
@@ -26,7 +27,6 @@ require (
 	golang.org/x/sync v0.6.0
 	golang.org/x/sys v0.18.0
 	gvisor.dev/gvisor v0.0.0-20231023213702-2691a8f9b1cf
-	inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0
 )
 
 require (
