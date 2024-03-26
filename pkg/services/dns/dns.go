@@ -22,7 +22,7 @@ type dnsHandler struct {
 	nameserver string
 }
 
-func newDnsHandler(zones []types.Zone) *dnsHandler {
+func newDNSHandler(zones []types.Zone) *dnsHandler {
 
 	dnsClient, nameserver := readAndCreateClient()
 
@@ -35,23 +35,16 @@ func newDnsHandler(zones []types.Zone) *dnsHandler {
 }
 
 func readAndCreateClient() (*dns.Client, string) {
-	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
+
+	nameserver, port, err := GetDNSHostAndPort()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	nameserver := conf.Servers[0]
 
-	// if the nameserver is from /etc/resolv.conf the [ and ] are already
-	// added, thereby breaking net.ParseIP. Check for this and don't
-	// fully qualify such a name
-	if nameserver[0] == '[' && nameserver[len(nameserver)-1] == ']' {
-		nameserver = nameserver[1 : len(nameserver)-1]
-	}
 	if i := net.ParseIP(nameserver); i != nil {
-		nameserver = net.JoinHostPort(nameserver, conf.Port)
+		nameserver = net.JoinHostPort(nameserver, port)
 	} else {
-		nameserver = dns.Fqdn(nameserver) + ":" + conf.Port
+		nameserver = dns.Fqdn(nameserver) + ":" + port
 	}
 	client := new(dns.Client)
 	client.Net = "udp"
@@ -163,7 +156,7 @@ type Server struct {
 }
 
 func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Server, error) {
-	handler := newDnsHandler(zones)
+	handler := newDNSHandler(zones)
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
 }
 
