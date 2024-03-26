@@ -35,23 +35,16 @@ func newDnsHandler(zones []types.Zone) *dnsHandler {
 }
 
 func readAndCreateClient() (*dns.Client, string) {
-	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
+
+	nameserver, port, err := GetDnsHostAndPort()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	nameserver := conf.Servers[0]
 
-	// if the nameserver is from /etc/resolv.conf the [ and ] are already
-	// added, thereby breaking net.ParseIP. Check for this and don't
-	// fully qualify such a name
-	if nameserver[0] == '[' && nameserver[len(nameserver)-1] == ']' {
-		nameserver = nameserver[1 : len(nameserver)-1]
-	}
 	if i := net.ParseIP(nameserver); i != nil {
-		nameserver = net.JoinHostPort(nameserver, conf.Port)
+		nameserver = net.JoinHostPort(nameserver, port)
 	} else {
-		nameserver = dns.Fqdn(nameserver) + ":" + conf.Port
+		nameserver = dns.Fqdn(nameserver) + ":" + port
 	}
 	client := new(dns.Client)
 	client.Net = "udp"
