@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
+	"github.com/miekg/dns"
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
 )
@@ -190,5 +191,29 @@ var _ = ginkgo.Describe("dns add test", func() {
 				},
 			},
 		}))
+	})
+
+	ginkgo.It("Should pass DNS requests to default system DNS server", func() {
+		m := &dns.Msg{
+			MsgHdr: dns.MsgHdr{
+				Authoritative:     false,
+				AuthenticatedData: false,
+				CheckingDisabled:  false,
+				RecursionDesired:  true,
+				Opcode:            0,
+			},
+			Question: make([]dns.Question, 1),
+		}
+
+		m.Question[0] = dns.Question{
+			Name:   "redhat.com.",
+			Qtype:  1,
+			Qclass: 1,
+		}
+
+		server.handler.addAnswers(m)
+
+		gomega.Expect(m.Answer[0].Header().Name).To(gomega.Equal("redhat.com."))
+		gomega.Expect(m.Answer[0].String()).To(gomega.SatisfyAny(gomega.ContainSubstring("34.235.198.240"), gomega.ContainSubstring("52.200.142.250")))
 	})
 })
