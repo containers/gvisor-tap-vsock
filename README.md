@@ -112,9 +112,12 @@ With the executable:
 
 ### API
 
-The executable running on the host, `gvproxy`, exposes a HTTP API. It can be used with curl.
+When `gvproxy` is started with the `--listen` option, it exposes a HTTP API on the host.
+This API can be used with curl.
 
 ```
+$ gvproxy --listen unix:///tmp/network.sock .... &
+
 $ curl  --unix-socket /tmp/network.sock http:/unix/stats
 {
   "BytesSent": 0,
@@ -140,7 +143,8 @@ nameserver 192.168.127.1
 
 ### Port forwarding
 
-Dynamic port forwarding is supported.
+Dynamic port forwarding is supported over the host HTTP API when `gvproxy` was
+started with `--listen`, but also in the VM over http://192.168.127.1:80.
 
 Expose a port:
 ```
