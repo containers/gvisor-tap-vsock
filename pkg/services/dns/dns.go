@@ -42,33 +42,20 @@ func (h *dnsHandler) handleUDP(w dns.ResponseWriter, r *dns.Msg) {
 	h.handle(w, r, dns.MinMsgSize)
 }
 
-func (h *dnsHandler) addAnswers(m *dns.Msg) {
+func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
 	h.zonesLock.RLock()
 	defer h.zonesLock.RUnlock()
-	for _, q := range m.Question {
-		for _, zone := range h.zones {
-			zoneSuffix := fmt.Sprintf(".%s", zone.Name)
-			if strings.HasSuffix(q.Name, zoneSuffix) {
-				if q.Qtype != dns.TypeA {
-					return
-				}
-				for _, record := range zone.Records {
-					withoutZone := strings.TrimSuffix(q.Name, zoneSuffix)
-					if (record.Name != "" && record.Name == withoutZone) ||
-						(record.Regexp != nil && record.Regexp.MatchString(withoutZone)) {
-						m.Answer = append(m.Answer, &dns.A{
-							Hdr: dns.RR_Header{
-								Name:   q.Name,
-								Rrtype: dns.TypeA,
-								Class:  dns.ClassINET,
-								Ttl:    0,
-							},
-							A: record.IP,
-						})
-						return
-					}
-				}
-				if !zone.DefaultIP.Equal(net.IP("")) {
+
+	for _, zone := range h.zones {
+		zoneSuffix := fmt.Sprintf(".%s", zone.Name)
+		if strings.HasSuffix(q.Name, zoneSuffix) {
+			if q.Qtype != dns.TypeA {
+				return false
+			}
+			for _, record := range zone.Records {
+				withoutZone := strings.TrimSuffix(q.Name, zoneSuffix)
+				if (record.Name != "" && record.Name == withoutZone) ||
+					(record.Regexp != nil && record.Regexp.MatchString(withoutZone)) {
 					m.Answer = append(m.Answer, &dns.A{
 						Hdr: dns.RR_Header{
 							Name:   q.Name,
@@ -76,13 +63,34 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 							Class:  dns.ClassINET,
 							Ttl:    0,
 						},
-						A: zone.DefaultIP,
+						A: record.IP,
 					})
-					return
+					return true
 				}
-				m.Rcode = dns.RcodeNameError
-				return
 			}
+			if !zone.DefaultIP.Equal(net.IP("")) {
+				m.Answer = append(m.Answer, &dns.A{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeA,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					A: zone.DefaultIP,
+				})
+				return true
+			}
+			m.Rcode = dns.RcodeNameError
+			return true
+		}
+	}
+	return false
+}
+
+func (h *dnsHandler) addAnswers(m *dns.Msg) {
+	for _, q := range m.Question {
+		if done := h.addLocalAnswers(m, q); done {
+			return
 		}
 
 		resolver := net.Resolver{
