@@ -1,6 +1,8 @@
 module github.com/containers/gvisor-tap-vsock
 
-go 1.20
+go 1.21
+
+toolchain go1.22.2
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
@@ -36,8 +38,9 @@ require (
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
+	github.com/pierrec/lz4/v4 v4.1.14 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/u-root/uio v0.0.0-20210528114334-82958018845c // indirect
+	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/vishvananda/netns v0.0.0-20211101163701-50045581ed74 // indirect
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.24.0 // indirect
