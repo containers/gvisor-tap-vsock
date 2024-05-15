@@ -3,7 +3,7 @@ module github.com/containers/gvisor-tap-vsock
 go 1.20
 
 require (
-	github.com/Microsoft/go-winio v0.6.1
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/containers/winquit v1.1.0
 	github.com/coreos/stream-metadata-go v0.4.4
