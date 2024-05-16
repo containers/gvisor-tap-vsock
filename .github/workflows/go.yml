@@ -38,16 +38,16 @@ jobs:
         path: bin/*
 
   tests:
-    runs-on: macos-latest # Only Mac runners support nested virt
+    runs-on: ubuntu-latest # The runner must support nested virt
     needs: build # Don't bother testing if cross arch build fails
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install
+    - name: Install qemu
       run: |
-        brew install qemu
-        touch continue
+        sudo apt install qemu-kvm
+        sudo usermod -a -G kvm $USER
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -55,7 +55,8 @@ jobs:
         go-version-file: 'go.mod'
 
     - name: Test
-      run: make test
+      run: |
+        sudo -s -u ${USER} bash -c 'make test'
 
     - uses: actions/upload-artifact@v4
       if: always()
