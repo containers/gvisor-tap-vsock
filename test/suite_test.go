@@ -150,10 +150,15 @@ outer:
 })
 
 func qemuExecutable() string {
-	if runtime.GOOS == "darwin" {
-		return "qemu-system-x86_64"
+	qemuBinaries := []string{"qemu-kvm", "qemu-system-x86_64"}
+	for _, binary := range qemuBinaries {
+		path, err := exec.LookPath(binary)
+		if err == nil && path != "" {
+			return path
+		}
 	}
-	return "qemu-kvm"
+
+	return ""
 }
 
 func qemuArgs() string {
