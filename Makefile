@@ -26,12 +26,14 @@ vm:
 # win-sshproxy is compiled as a windows GUI to support backgrounding
 .PHONY: win-sshproxy
 win-sshproxy:
-	GOOS=windows go build -ldflags "$(LDFLAGS) -H=windowsgui" -o bin/win-sshproxy.exe ./cmd/win-sshproxy
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS) -H=windowsgui" -o bin/win-sshproxy.exe ./cmd/win-sshproxy
+	GOOS=windows GOARCH=arm64 go build -ldflags "$(LDFLAGS) -H=windowsgui" -o bin/win-sshproxy-arm64.exe ./cmd/win-sshproxy
 
 # gvproxy for windows is compiled as a windows GUI to support backgrounding
 .PHONY: win-gvproxy
 win-gvproxy:
-	GOOS=windows go build -ldflags "$(LDFLAGS) -H=windowsgui" -o bin/gvproxy.exe ./cmd/gvproxy
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS) -H=windowsgui" -o bin/gvproxy.exe ./cmd/gvproxy
+	GOOS=windows GOARCH=arm64 go build -ldflags "$(LDFLAGS) -H=windowsgui" -o bin/gvproxy-arm64.exe ./cmd/gvproxy
 
 .PHONY: clean
 clean:
@@ -54,6 +56,7 @@ image:
 cross: $(TOOLS_BINDIR)/makefat
 	GOARCH=amd64 GOOS=freebsd  go build -ldflags "$(LDFLAGS)" -o bin/gvproxy-freebsd-amd64 ./cmd/gvproxy
 	GOARCH=amd64 GOOS=windows go build -ldflags "$(LDFLAGS)" -o bin/gvproxy-windows.exe ./cmd/gvproxy
+	GOARCH=arm64 GOOS=windows  go build -ldflags "$(LDFLAGS)" -o bin/gvproxy-windows-arm64.exe ./cmd/gvproxy
 	GOARCH=amd64 GOOS=linux   go build -ldflags "$(LDFLAGS)" -o bin/gvproxy-linux-amd64 ./cmd/gvproxy
 	GOARCH=arm64 GOOS=linux   go build -ldflags "$(LDFLAGS)" -o bin/gvproxy-linux-arm64 ./cmd/gvproxy
 	GOARCH=amd64 GOOS=darwin  go build -ldflags "$(LDFLAGS)" -o bin/gvproxy-darwin-amd64 ./cmd/gvproxy
