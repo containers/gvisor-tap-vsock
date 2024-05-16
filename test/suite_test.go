@@ -162,10 +162,11 @@ func qemuExecutable() string {
 }
 
 func qemuArgs() string {
+	accel := "kvm"
 	if runtime.GOOS == "darwin" {
-		return "-machine q35,accel=hvf:tcg -smp 4 -cpu host"
+		accel = "hvf"
 	}
-	return "-cpu host"
+	return fmt.Sprintf("-machine q35,accel=%s:tcg -smp 4 -cpu host", accel)
 }
 
 func createSSHKeys() (string, error) {
