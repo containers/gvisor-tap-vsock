@@ -2,12 +2,19 @@
 # See the documentation for more information:
 # https://packit.dev/docs/configuration/
 
-# Build targets can be found at:
-# On PR: https://copr.fedorainfracloud.org/coprs/rhcontainerbot/packit-builds/
-# On commit: https://copr.fedorainfracloud.org/coprs/rhcontainerbot/podman-next/
+# podman-next COPR build targets can be found at:
+# On commit: https://copr.fedorainfracloud.org/coprs/rhcontainerbot/gvisor-tap-vsock-next/
 
 specfile_path: rpm/gvisor-tap-vsock.spec
 upstream_tag_template: v{version}
+
+packages:
+  gvisor-tap-vsock-fedora:
+    pkg_tool: fedpkg
+    specfile_path: rpm/gvisor-tap-vsock.spec
+  gvisor-tap-vsock-centos:
+    pkg_tool: centpkg
+    specfile_path: rpm/gvisor-tap-vsock.spec
 
 srpm_build_deps:
   - make
@@ -15,48 +22,55 @@ srpm_build_deps:
 jobs:
   - job: copr_build
     trigger: pull_request
+    packages: [gvisor-tap-vsock-fedora]
     enable_net: true
     targets:
       - fedora-all-aarch64
       - fedora-all-x86_64
       - fedora-eln-aarch64
       - fedora-eln-x86_64
-      - centos-stream+epel-next-8-x86_64
-      - centos-stream+epel-next-8-aarch64
-      - centos-stream+epel-next-9-x86_64
-      - centos-stream+epel-next-9-aarch64
-    additional_repos:
-      - "copr://rhcontainerbot/podman-next"
+
+  - job: copr_build
+    trigger: pull_request
+    packages: [gvisor-tap-vsock-centos]
+    enable_net: true
+    targets:
+      - centos-stream-10-x86_64
+      - centos-stream-10-aarch64
+      - centos-stream-9-x86_64
+      - centos-stream-9-aarch64
 
   # Run on commit to main branch
   - job: copr_build
     trigger: commit
+    packages: [gvisor-tap-vsock-fedora]
     enable_net: true
     branch: main
     owner: rhcontainerbot
     project: podman-next
-    targets:
-      - fedora-all-aarch64
-      - fedora-all-ppc64le
-      - fedora-all-s390x
-      - fedora-all-x86_64
-      - fedora-eln-aarch64
-      - fedora-eln-ppc64le
-      - fedora-eln-s390x
-      - fedora-eln-x86_64
 
   - job: propose_downstream
     trigger: release
+    packages: [gvisor-tap-vsock-fedora]
     update_release: false
     dist_git_branches:
       - fedora-all
 
+  - job: propose_downstream
+    trigger: release
+    packages: [gvisor-tap-vsock-centos]
+    update_release: false
+    dist_git_branches:
+      - c10s
+
   - job: koji_build
     trigger: commit
+    packages: [gvisor-tap-vsock-fedora]
     dist_git_branches:
       - fedora-all
 
   - job: bodhi_update
     trigger: commit
+    packages: [gvisor-tap-vsock-fedora]
     dist_git_branches:
       - fedora-branched # rawhide updates are created automatically
