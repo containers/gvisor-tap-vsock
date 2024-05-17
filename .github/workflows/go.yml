@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ["1.20.x", "1.21.x", "1.22.0-rc.1"]
+        go-version: ["1.20.x", "1.21.x", "1.22.x"]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -38,24 +38,25 @@ jobs:
         path: bin/*
 
   tests:
-    runs-on: macos-latest # Only Mac runners support nested virt
+    runs-on: ubuntu-latest # The runner must support nested virt
     needs: build # Don't bother testing if cross arch build fails
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install
+    - name: Install qemu
       run: |
-        brew install qemu
-        touch continue
+        sudo apt install qemu-kvm
+        sudo usermod -a -G kvm $USER
 
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.20.x
+        go-version-file: 'go.mod'
 
     - name: Test
-      run: make test
+      run: |
+        sudo -s -u ${USER} bash -c 'make test'
 
     - uses: actions/upload-artifact@v4
       if: always()
@@ -72,12 +73,12 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.20.x
+        go-version-file: 'go.mod'
 
-    - name: Build 
+    - name: Build
       run: make win-sshproxy
 
-    - name: Test 
+    - name: Test
       run: go test -v .\test-win-sshproxy
 
 

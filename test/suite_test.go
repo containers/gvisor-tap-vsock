@@ -150,17 +150,23 @@ outer:
 })
 
 func qemuExecutable() string {
-	if runtime.GOOS == "darwin" {
-		return "qemu-system-x86_64"
+	qemuBinaries := []string{"qemu-kvm", "qemu-system-x86_64"}
+	for _, binary := range qemuBinaries {
+		path, err := exec.LookPath(binary)
+		if err == nil && path != "" {
+			return path
+		}
 	}
-	return "qemu-kvm"
+
+	return ""
 }
 
 func qemuArgs() string {
+	accel := "kvm"
 	if runtime.GOOS == "darwin" {
-		return "-machine q35,accel=hvf:tcg -smp 4 -cpu host"
+		accel = "hvf"
 	}
-	return "-cpu host"
+	return fmt.Sprintf("-machine q35,accel=%s:tcg -smp 4 -cpu host", accel)
 }
 
 func createSSHKeys() (string, error) {
