@@ -166,7 +166,16 @@ func qemuArgs() string {
 	if runtime.GOOS == "darwin" {
 		accel = "hvf"
 	}
-	return fmt.Sprintf("-machine q35,accel=%s:tcg -smp 4 -cpu host", accel)
+	machine := "q35"
+	switch runtime.GOARCH {
+	case "amd64":
+		machine = "q35"
+	case "arm64":
+		machine = "virt"
+	default:
+		panic(fmt.Sprintf("unsupported arch: %s", runtime.GOARCH))
+	}
+	return fmt.Sprintf("-machine %s,accel=%s:tcg -smp 4 -cpu host", machine, accel)
 }
 
 func createSSHKeys() (string, error) {
