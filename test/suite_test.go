@@ -150,7 +150,7 @@ outer:
 })
 
 func qemuExecutable() string {
-	qemuBinaries := []string{"qemu-kvm", "qemu-system-x86_64"}
+	qemuBinaries := []string{"qemu-kvm", fmt.Sprintf("qemu-system-%s", coreosArch())}
 	for _, binary := range qemuBinaries {
 		path, err := exec.LookPath(binary)
 		if err == nil && path != "" {
