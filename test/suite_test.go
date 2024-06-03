@@ -104,9 +104,13 @@ outer:
 			break
 		}
 
-		template := `%s -m 2048 -nographic -serial file:%s -snapshot -drive if=virtio,file=%s -fw_cfg name=opt/com.coreos/config,file=%s -netdev socket,id=vlan,connect=127.0.0.1:%d -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee`
+		efiArgs, err := efiArgs()
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+		template := `%s%s-m 2048 -nographic -serial file:%s -drive if=virtio,file=%s,snapshot=on -fw_cfg name=opt/com.coreos/config,file=%s -netdev socket,id=vlan,connect=127.0.0.1:%d -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee`
+
 		// #nosec
-		client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), qconLog, qemuImage, ignFile, qemuPort), " ")...)
+		client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), efiArgs, qconLog, qemuImage, ignFile, qemuPort), " ")...)
 		client.Stderr = os.Stderr
 		client.Stdout = os.Stdout
 		gomega.Expect(client.Start()).Should(gomega.Succeed())
@@ -175,7 +179,7 @@ func qemuArgs() string {
 	default:
 		panic(fmt.Sprintf("unsupported arch: %s", runtime.GOARCH))
 	}
-	return fmt.Sprintf("-machine %s,accel=%s:tcg -smp 4 -cpu host", machine, accel)
+	return fmt.Sprintf("-machine %s,accel=%s:tcg -smp 4 -cpu host ", machine, accel)
 }
 
 func createSSHKeys() (string, error) {
