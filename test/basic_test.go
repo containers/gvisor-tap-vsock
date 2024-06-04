@@ -77,7 +77,7 @@ var _ = ginkgo.Describe("dns", func() {
 	ginkgo.It("should resolve TXT for wikipedia.org", func() {
 		out, err := sshExec("nslookup -query=txt wikipedia.org")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		gomega.Expect(string(out)).To(gomega.ContainSubstring(`"v=spf1 include:wikimedia.org ~all"`))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring(`"v=spf1 -all"`))
 	})
 
 	ginkgo.It("should resolve gateway.containers.internal", func() {
