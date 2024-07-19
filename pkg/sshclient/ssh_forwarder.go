@@ -7,8 +7,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -111,18 +109,13 @@ func connectForward(ctx context.Context, bastion *Bastion) (CloseWriteConn, erro
 }
 
 func listenUnix(socketURI *url.URL) (net.Listener, error) {
-	path := socketURI.Path
-	if runtime.GOOS == "windows" {
-		path = strings.TrimPrefix(path, "/")
-	}
-
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(socketURI.Path); err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
 	oldmask := fs.Umask(0177)
 	defer fs.Umask(oldmask)
-	listener, err := net.Listen("unix", path)
+	listener, err := net.Listen("unix", socketURI.Path)
 	if err != nil {
 		return listener, errors.Wrapf(err, "Error listening on socket: %s", socketURI.Path)
 	}
