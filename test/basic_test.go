@@ -74,10 +74,10 @@ var _ = ginkgo.Describe("dns", func() {
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		gomega.Expect(string(out)).To(gomega.ContainSubstring(`_ldap._tcp.google.com	service = 5 0 389 ldap.google.com.`))
 	})
-	ginkgo.It("should resolve TXT for wikipedia.org", func() {
-		out, err := sshExec("nslookup -query=txt wikipedia.org")
+	ginkgo.It("should resolve TXT for crc.dev", func() {
+		out, err := sshExec("nslookup -query=txt crc.dev")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		gomega.Expect(string(out)).To(gomega.ContainSubstring(`"v=spf1 -all"`))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring(`text = "v=spf1`))
 	})
 
 	ginkgo.It("should resolve gateway.containers.internal", func() {
