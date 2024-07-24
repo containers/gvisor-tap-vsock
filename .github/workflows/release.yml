@@ -37,3 +37,12 @@ jobs:
       with:
         name: gvisor-tap-vsock-binaries
         path: bin/*
+
+    - name: Create release on github
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+          gh release create --draft --generate-notes --verify-tag ${{github.ref_name}}
+          cd bin
+          sha256sum * >> sha256sums
+          gh release upload ${{github.ref_name}} *
