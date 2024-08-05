@@ -1,7 +1,6 @@
 package dns
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -15,15 +14,29 @@ import (
 )
 
 type dnsHandler struct {
-	zones     []types.Zone
-	zonesLock sync.RWMutex
+	zones      []types.Zone
+	zonesLock  sync.RWMutex
+	dnsClient  *dns.Client
+	nameserver string
+}
+
+func newDNSHandler(zones []types.Zone) (*dnsHandler, error) {
+
+	nameserver, port, err := getDNSHostAndPort()
+	if err != nil {
+		return nil, err
+	}
+
+	return &dnsHandler{
+		zones:      zones,
+		dnsClient:  new(dns.Client),
+		nameserver: net.JoinHostPort(nameserver, port),
+	}, nil
+
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
-	m := new(dns.Msg)
-	m.SetReply(r)
-	m.RecursionAvailable = true
-	h.addAnswers(m)
+	m := h.addAnswers(r)
 	edns0 := r.IsEdns0()
 	if edns0 != nil {
 		responseMessageSize = int(edns0.UDPSize())
@@ -35,10 +48,14 @@ func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSiz
 }
 
 func (h *dnsHandler) handleTCP(w dns.ResponseWriter, r *dns.Msg) {
+	// needs to be handled in a better way, handleTCP/handleUDP can run concurrently so this change is racy
+	// h.dnsClient.Net = "tcp"
 	h.handle(w, r, dns.MaxMsgSize)
 }
 
 func (h *dnsHandler) handleUDP(w dns.ResponseWriter, r *dns.Msg) {
+	// needs to be handled in a better way, handleTCP/handleUDP can run concurrently so this change is racy
+	// h.dnsClient.Net = "udp"
 	h.handle(w, r, dns.MinMsgSize)
 }
 
@@ -87,123 +104,28 @@ func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
 	return false
 }
 
-func (h *dnsHandler) addAnswers(m *dns.Msg) {
+func (h *dnsHandler) addAnswers(r *dns.Msg) *dns.Msg {
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.RecursionAvailable = true
 	for _, q := range m.Question {
 		if done := h.addLocalAnswers(m, q); done {
-			return
-		}
+			return m
 
-		resolver := net.Resolver{
-			PreferGo: false,
-		}
-		switch q.Qtype {
-		case dns.TypeA:
-			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
-			if err != nil {
-				m.Rcode = dns.RcodeNameError
-				return
-			}
-			for _, ip := range ips {
-				if len(ip.IP.To4()) != net.IPv4len {
-					continue
-				}
-				m.Answer = append(m.Answer, &dns.A{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeA,
-						Class:  dns.ClassINET,
-						Ttl:    0,
-					},
-					A: ip.IP.To4(),
-				})
-			}
-		case dns.TypeCNAME:
-			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
-			if err != nil {
-				m.Rcode = dns.RcodeNameError
-				return
-			}
-			m.Answer = append(m.Answer, &dns.CNAME{
-				Hdr: dns.RR_Header{
-					Name:   q.Name,
-					Rrtype: dns.TypeCNAME,
-					Class:  dns.ClassINET,
-					Ttl:    0,
-				},
-				Target: cname,
-			})
-		case dns.TypeMX:
-			records, err := resolver.LookupMX(context.TODO(), q.Name)
-			if err != nil {
-				m.Rcode = dns.RcodeNameError
-				return
-			}
-			for _, mx := range records {
-				m.Answer = append(m.Answer, &dns.MX{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeMX,
-						Class:  dns.ClassINET,
-						Ttl:    0,
-					},
-					Mx:         mx.Host,
-					Preference: mx.Pref,
-				})
-			}
-		case dns.TypeNS:
-			records, err := resolver.LookupNS(context.TODO(), q.Name)
-			if err != nil {
-				m.Rcode = dns.RcodeNameError
-				return
-			}
-			for _, ns := range records {
-				m.Answer = append(m.Answer, &dns.NS{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeNS,
-						Class:  dns.ClassINET,
-						Ttl:    0,
-					},
-					Ns: ns.Host,
-				})
-			}
-		case dns.TypeSRV:
-			_, records, err := resolver.LookupSRV(context.TODO(), "", "", q.Name)
-			if err != nil {
-				m.Rcode = dns.RcodeNameError
-				return
-			}
-			for _, srv := range records {
-				m.Answer = append(m.Answer, &dns.SRV{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeSRV,
-						Class:  dns.ClassINET,
-						Ttl:    0,
-					},
-					Port:     srv.Port,
-					Priority: srv.Priority,
-					Target:   srv.Target,
-					Weight:   srv.Weight,
-				})
-			}
-		case dns.TypeTXT:
-			records, err := resolver.LookupTXT(context.TODO(), q.Name)
-			if err != nil {
-				m.Rcode = dns.RcodeNameError
-				return
-			}
-			m.Answer = append(m.Answer, &dns.TXT{
-				Hdr: dns.RR_Header{
-					Name:   q.Name,
-					Rrtype: dns.TypeTXT,
-					Class:  dns.ClassINET,
-					Ttl:    0,
-				},
-				Txt: records,
-			})
+			// ignore IPv6 request, we support only IPv4 requests for now
+		} else if q.Qtype == dns.TypeAAAA {
+			return m
 		}
 	}
+
+	r, _, err := h.dnsClient.Exchange(r, h.nameserver)
+	if err != nil {
+		log.Errorf("Error during DNS Exchange: %s", err)
+		m.Rcode = dns.RcodeNameError
+		return m
+	}
+
+	return r
 }
 
 type Server struct {
@@ -213,7 +135,10 @@ type Server struct {
 }
 
 func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Server, error) {
-	handler := &dnsHandler{zones: zones}
+	handler, err := newDNSHandler(zones)
+	if err != nil {
+		return nil, err
+	}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
 }
 

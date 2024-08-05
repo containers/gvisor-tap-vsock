@@ -215,10 +215,10 @@ var _ = ginkgo.Describe("dns add test", func() {
 			Qclass: 1,
 		}
 
-		server.handler.addAnswers(m)
+		r := server.handler.addAnswers(m)
 
-		gomega.Expect(m.Answer[0].Header().Name).To(gomega.Equal("redhat.com."))
-		gomega.Expect(m.Answer[0].String()).To(gomega.SatisfyAny(gomega.ContainSubstring("34.235.198.240"), gomega.ContainSubstring("52.200.142.250")))
+		gomega.Expect(r.Answer[0].Header().Name).To(gomega.Equal("redhat.com."))
+		gomega.Expect(r.Answer[0].String()).To(gomega.SatisfyAny(gomega.ContainSubstring("34.235.198.240"), gomega.ContainSubstring("52.200.142.250")))
 	})
 })
 
