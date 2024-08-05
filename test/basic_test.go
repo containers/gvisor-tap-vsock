@@ -61,7 +61,8 @@ var _ = ginkgo.Describe("dns", func() {
 	ginkgo.It("should resolve MX record for wikipedia.org", func() {
 		out, err := sshExec("nslookup -query=mx wikipedia.org")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		gomega.Expect(string(out)).To(gomega.ContainSubstring("wikipedia.org	mail exchanger = 10 mx1001.wikimedia.org."))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("wikipedia.org	mail exchanger = 10 mx-in1001.wikimedia.org."))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("mail exchanger = 10 mx-in1001.wikimedia.org."))
 	})
 
 	ginkgo.It("should resolve NS record for wikipedia.org", func() {
