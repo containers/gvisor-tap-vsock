@@ -117,6 +117,12 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 ## explicit
 github.com/pmezard/go-difflib/difflib
+# github.com/qdm12/dns/v2 v2.0.0-rc6
+## explicit; go 1.21
+github.com/qdm12/dns/v2/pkg/nameserver
+# github.com/qdm12/gosettings v0.4.1
+## explicit; go 1.21
+github.com/qdm12/gosettings
 # github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
