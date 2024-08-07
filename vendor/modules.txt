@@ -203,8 +203,8 @@ golang.org/x/text/internal/utf8internal
 golang.org/x/text/language
 golang.org/x/text/runes
 golang.org/x/text/transform
-# golang.org/x/time v0.3.0
-## explicit
+# golang.org/x/time v0.5.0
+## explicit; go 1.18
 golang.org/x/time/rate
 # golang.org/x/tools v0.24.0
 ## explicit; go 1.19
@@ -230,8 +230,8 @@ gopkg.in/tomb.v1
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
-# gvisor.dev/gvisor v0.0.0-20231023213702-2691a8f9b1cf
-## explicit; go 1.20
+# gvisor.dev/gvisor v0.0.0-20240726212243-a2b0498dbe7d
+## explicit; go 1.22.0
 gvisor.dev/gvisor/pkg/atomicbitops
 gvisor.dev/gvisor/pkg/bits
 gvisor.dev/gvisor/pkg/buffer

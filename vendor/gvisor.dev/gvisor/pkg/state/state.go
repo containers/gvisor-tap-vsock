@@ -50,6 +50,7 @@ package state
 import (
 	"context"
 	"fmt"
+	"io"
 	"reflect"
 	"runtime"
 
@@ -87,7 +88,7 @@ func (e *ErrState) Unwrap() error {
 }
 
 // Save saves the given object state.
-func Save(ctx context.Context, w wire.Writer, rootPtr any) (Stats, error) {
+func Save(ctx context.Context, w io.Writer, rootPtr any) (Stats, error) {
 	// Create the encoding state.
 	es := encodeState{
 		ctx:            ctx,
@@ -106,7 +107,7 @@ func Save(ctx context.Context, w wire.Writer, rootPtr any) (Stats, error) {
 }
 
 // Load loads a checkpoint.
-func Load(ctx context.Context, r wire.Reader, rootPtr any) (Stats, error) {
+func Load(ctx context.Context, r io.Reader, rootPtr any) (Stats, error) {
 	// Create the decoding state.
 	ds := decodeState{
 		ctx:      ctx,
@@ -211,7 +212,7 @@ type SaverLoader interface {
 	StateSave(Sink)
 
 	// StateLoad loads the state of the object.
-	StateLoad(Source)
+	StateLoad(context.Context, Source)
 }
 
 // Source is used for Type.StateLoad.
