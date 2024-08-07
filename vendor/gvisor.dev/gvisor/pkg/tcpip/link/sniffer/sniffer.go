@@ -44,6 +44,7 @@ var LogPackets atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 // sniffer was created for this flag to have effect.
 var LogPacketsToPCAP atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 
+// +stateify savable
 type endpoint struct {
 	nested.Endpoint
 	writer     io.Writer
@@ -133,14 +134,14 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
-func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.dumpPacket(DirectionRecv, protocol, pkt)
 	e.Endpoint.DeliverNetworkPacket(protocol, pkt)
 }
 
-func (e *endpoint) dumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+func (e *endpoint) dumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	writer := e.writer
-	if writer == nil && LogPackets.Load() == 1 {
+	if LogPackets.Load() == 1 {
 		LogPacket(e.logPrefix, dir, protocol, pkt)
 	}
 	if writer != nil && LogPacketsToPCAP.Load() == 1 {
@@ -170,7 +171,7 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 }
 
 // LogPacket logs a packet to stdout.
-func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	// Figure out the network layer info.
 	var transProto uint8
 	var src tcpip.Address
@@ -190,15 +191,15 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 		panic(fmt.Sprintf("unrecognized direction: %d", dir))
 	}
 
-	pkt = trimmedClone(pkt)
-	defer pkt.DecRef()
+	clone := trimmedClone(pkt)
+	defer clone.DecRef()
 	switch protocol {
 	case header.IPv4ProtocolNumber:
-		if ok := parse.IPv4(pkt); !ok {
+		if ok := parse.IPv4(clone); !ok {
 			return
 		}
 
-		ipv4 := header.IPv4(pkt.NetworkHeader().Slice())
+		ipv4 := header.IPv4(clone.NetworkHeader().Slice())
 		fragmentOffset = ipv4.FragmentOffset()
 		moreFragments = ipv4.Flags()&header.IPv4FlagMoreFragments == header.IPv4FlagMoreFragments
 		src = ipv4.SourceAddress()
@@ -208,12 +209,12 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 		id = uint32(ipv4.ID())
 
 	case header.IPv6ProtocolNumber:
-		proto, fragID, fragOffset, fragMore, ok := parse.IPv6(pkt)
+		proto, fragID, fragOffset, fragMore, ok := parse.IPv6(clone)
 		if !ok {
 			return
 		}
 
-		ipv6 := header.IPv6(pkt.NetworkHeader().Slice())
+		ipv6 := header.IPv6(clone.NetworkHeader().Slice())
 		src = ipv6.SourceAddress()
 		dst = ipv6.DestinationAddress()
 		transProto = uint8(proto)
@@ -223,11 +224,11 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 		fragmentOffset = fragOffset
 
 	case header.ARPProtocolNumber:
-		if !parse.ARP(pkt) {
+		if !parse.ARP(clone) {
 			return
 		}
 
-		arp := header.ARP(pkt.NetworkHeader().Slice())
+		arp := header.ARP(clone.NetworkHeader().Slice())
 		log.Infof(
 			"%s%s arp %s (%s) -> %s (%s) valid:%t",
 			prefix,
@@ -250,7 +251,7 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 	switch tcpip.TransportProtocolNumber(transProto) {
 	case header.ICMPv4ProtocolNumber:
 		transName = "icmp"
-		hdr, ok := pkt.Data().PullUp(header.ICMPv4MinimumSize)
+		hdr, ok := clone.Data().PullUp(header.ICMPv4MinimumSize)
 		if !ok {
 			break
 		}
@@ -287,7 +288,7 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 
 	case header.ICMPv6ProtocolNumber:
 		transName = "icmp"
-		hdr, ok := pkt.Data().PullUp(header.ICMPv6MinimumSize)
+		hdr, ok := clone.Data().PullUp(header.ICMPv6MinimumSize)
 		if !ok {
 			break
 		}
@@ -322,11 +323,11 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 
 	case header.UDPProtocolNumber:
 		transName = "udp"
-		if ok := parse.UDP(pkt); !ok {
+		if ok := parse.UDP(clone); !ok {
 			break
 		}
 
-		udp := header.UDP(pkt.TransportHeader().Slice())
+		udp := header.UDP(clone.TransportHeader().Slice())
 		if fragmentOffset == 0 {
 			srcPort = udp.SourcePort()
 			dstPort = udp.DestinationPort()
@@ -336,18 +337,18 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 
 	case header.TCPProtocolNumber:
 		transName = "tcp"
-		if ok := parse.TCP(pkt); !ok {
+		if ok := parse.TCP(clone); !ok {
 			break
 		}
 
-		tcp := header.TCP(pkt.TransportHeader().Slice())
+		tcp := header.TCP(clone.TransportHeader().Slice())
 		if fragmentOffset == 0 {
 			offset := int(tcp.DataOffset())
 			if offset < header.TCPMinimumSize {
 				details += fmt.Sprintf("invalid packet: tcp data offset too small %d", offset)
 				break
 			}
-			if size := pkt.Data().Size() + len(tcp); offset > size && !moreFragments {
+			if size := clone.Data().Size() + len(tcp); offset > size && !moreFragments {
 				details += fmt.Sprintf("invalid packet: tcp data offset %d larger than tcp packet length %d", offset, size)
 				break
 			}
@@ -380,7 +381,7 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 
 // trimmedClone clones the packet buffer to not modify the original. It trims
 // anything before the network header.
-func trimmedClone(pkt stack.PacketBufferPtr) stack.PacketBufferPtr {
+func trimmedClone(pkt *stack.PacketBuffer) *stack.PacketBuffer {
 	// We don't clone the original packet buffer so that the new packet buffer
 	// does not have any of its headers set.
 	//

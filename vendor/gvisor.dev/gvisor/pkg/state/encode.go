@@ -16,6 +16,7 @@ package state
 
 import (
 	"context"
+	"io"
 	"reflect"
 	"sort"
 
@@ -31,7 +32,7 @@ type objectEncodeState struct {
 
 	// obj is the object value. Note that this may be replaced if we
 	// encounter an object that contains this object. When this happens (in
-	// resolve), we will update existing references approprately, below,
+	// resolve), we will update existing references appropriately, below,
 	// and defer a re-encoding of the object.
 	obj reflect.Value
 
@@ -61,7 +62,7 @@ type encodeState struct {
 	ctx context.Context
 
 	// w is the output stream.
-	w wire.Writer
+	w io.Writer
 
 	// types is the type database.
 	types typeEncodeDatabase
@@ -417,7 +418,7 @@ func traverse(rootType, targetType reflect.Type, rootAddr, targetAddr uintptr) [
 		Failf("no field in root type %v contains target type %v", rootType, targetType)
 
 	case reflect.Array:
-		// Since arrays have homogenous types, all elements have the
+		// Since arrays have homogeneous types, all elements have the
 		// same size and we can compute where the target lives. This
 		// does not matter for the purpose of typing, but matters for
 		// the purpose of computing the address of the given index.
@@ -432,7 +433,7 @@ func traverse(rootType, targetType reflect.Type, rootAddr, targetAddr uintptr) [
 
 	default:
 		// For any other type, there's no possibility of aliasing so if
-		// the types didn't match earlier then we have an addresss
+		// the types didn't match earlier then we have an address
 		// collision which shouldn't be possible at this point.
 		Failf("traverse failed for root type %v and target type %v", rootType, targetType)
 	}
@@ -771,7 +772,7 @@ func (es *encodeState) Save(obj reflect.Value) {
 		}
 	}); err != nil {
 		// Include the object in the error message.
-		Failf("encoding error at object %#v: %w", oes.obj.Interface(), err)
+		Failf("encoding error: %w\nfor object %#v", err, oes.obj.Interface())
 	}
 
 	// Check that we have objects to serialize.
@@ -824,7 +825,7 @@ const objectFlag uint64 = 1 << 63
 // order to generate statefiles that play nicely with debugging tools, raw
 // writes should be prefixed with a header with object set to false and the
 // appropriate length. This will allow tools to skip these regions.
-func WriteHeader(w wire.Writer, length uint64, object bool) error {
+func WriteHeader(w io.Writer, length uint64, object bool) error {
 	// Sanity check the length.
 	if length&objectFlag != 0 {
 		Failf("impossibly huge length: %d", length)
