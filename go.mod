@@ -25,7 +25,7 @@ require (
 	github.com/vishvananda/netlink v1.2.1-beta.2
 	golang.org/x/crypto v0.25.0
 	golang.org/x/sync v0.7.0
-	golang.org/x/sys v0.22.0
+	golang.org/x/sys v0.24.0
 	gvisor.dev/gvisor v0.0.0-20231023213702-2691a8f9b1cf
 )
 
