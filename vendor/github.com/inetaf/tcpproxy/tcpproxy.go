@@ -401,10 +401,9 @@ func (dp *DialProxy) HandleConn(src net.Conn) {
 		}
 	}
 
-	errc := make(chan error, 2)
+	errc := make(chan error, 1)
 	go proxyCopy(errc, src, dst)
 	go proxyCopy(errc, dst, src)
-	<-errc
 	<-errc
 }
 
