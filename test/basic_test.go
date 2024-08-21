@@ -53,15 +53,15 @@ var _ = ginkgo.Describe("dns", func() {
 		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 52.200.142.250"))
 	})
 
-	ginkgo.It("should resolve CNAME record for www.wikipedia.org", func() {
-		out, err := sshExec("nslookup -query=cname www.wikipedia.org")
+	ginkgo.It("should resolve CNAME record for docs.crc.dev", func() {
+		out, err := sshExec("nslookup -query=cname docs.crc.dev")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		gomega.Expect(string(out)).To(gomega.ContainSubstring("www.wikipedia.org	canonical name = dyna.wikimedia.org."))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("docs.crc.dev	canonical name = webredir.gandi.net."))
 	})
-	ginkgo.It("should resolve MX record for wikipedia.org", func() {
-		out, err := sshExec("nslookup -query=mx wikipedia.org")
+	ginkgo.It("should resolve MX record for crc.dev", func() {
+		out, err := sshExec("nslookup -query=mx crc.dev")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		gomega.Expect(string(out)).To(gomega.ContainSubstring("wikipedia.org	mail exchanger = 10 mx1001.wikimedia.org."))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("crc.dev	mail exchanger = 10 spool.mail.gandi.net."))
 	})
 
 	ginkgo.It("should resolve NS record for wikipedia.org", func() {
@@ -69,10 +69,10 @@ var _ = ginkgo.Describe("dns", func() {
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		gomega.Expect(string(out)).To(gomega.ContainSubstring("wikipedia.org	nameserver = ns0.wikimedia.org."))
 	})
-	ginkgo.It("should resolve LDAP SRV record for google.com", func() {
-		out, err := sshExec("nslookup -query=srv _ldap._tcp.google.com 8.8.8.8")
+	ginkgo.It("should resolve IMAPS SRV record for crc.dev", func() {
+		out, err := sshExec("nslookup -query=srv _imaps._tcp.crc.dev")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		gomega.Expect(string(out)).To(gomega.ContainSubstring(`_ldap._tcp.google.com	service = 5 0 389 ldap.google.com.`))
+		gomega.Expect(string(out)).To(gomega.ContainSubstring(`_imaps._tcp.crc.dev	service = 0 1 993 mail.gandi.net.`))
 	})
 	ginkgo.It("should resolve TXT for crc.dev", func() {
 		out, err := sshExec("nslookup -query=txt crc.dev")
