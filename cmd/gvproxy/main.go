@@ -103,7 +103,7 @@ func main() {
 		log.Debugf("command line: %q", os.Args)
 	}
 
-	log.Infof(version.String())
+	log.Info(version.String())
 	ctx, cancel := context.WithCancel(context.Background())
 	// Make this the last defer statement in the stack
 	defer os.Exit(exitCode)
