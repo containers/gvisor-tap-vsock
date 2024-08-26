@@ -133,7 +133,7 @@ github.com/stretchr/testify/assert
 ## explicit; go 1.21
 github.com/u-root/uio/rand
 github.com/u-root/uio/uio
-# github.com/vishvananda/netlink v1.2.1
+# github.com/vishvananda/netlink v1.3.0
 ## explicit; go 1.12
 github.com/vishvananda/netlink
 github.com/vishvananda/netlink/nl
