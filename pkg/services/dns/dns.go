@@ -16,7 +16,8 @@ import (
 type dnsHandler struct {
 	zones      []types.Zone
 	zonesLock  sync.RWMutex
-	dnsClient  *dns.Client
+	udpClient  *dns.Client
+	tcpClient  *dns.Client
 	nameserver string
 }
 
@@ -29,14 +30,15 @@ func newDNSHandler(zones []types.Zone) (*dnsHandler, error) {
 
 	return &dnsHandler{
 		zones:      zones,
-		dnsClient:  new(dns.Client),
+		tcpClient:  &dns.Client{Net: "tcp"},
+		udpClient:  &dns.Client{Net: "udp"},
 		nameserver: net.JoinHostPort(nameserver, port),
 	}, nil
 
 }
 
-func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
-	m := h.addAnswers(r)
+func (h *dnsHandler) handle(w dns.ResponseWriter, dnsClient *dns.Client, r *dns.Msg, responseMessageSize int) {
+	m := h.addAnswers(dnsClient, r)
 	edns0 := r.IsEdns0()
 	if edns0 != nil {
 		responseMessageSize = int(edns0.UDPSize())
@@ -48,15 +50,11 @@ func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSiz
 }
 
 func (h *dnsHandler) handleTCP(w dns.ResponseWriter, r *dns.Msg) {
-	// needs to be handled in a better way, handleTCP/handleUDP can run concurrently so this change is racy
-	// h.dnsClient.Net = "tcp"
-	h.handle(w, r, dns.MaxMsgSize)
+	h.handle(w, h.tcpClient, r, dns.MaxMsgSize)
 }
 
 func (h *dnsHandler) handleUDP(w dns.ResponseWriter, r *dns.Msg) {
-	// needs to be handled in a better way, handleTCP/handleUDP can run concurrently so this change is racy
-	// h.dnsClient.Net = "udp"
-	h.handle(w, r, dns.MinMsgSize)
+	h.handle(w, h.udpClient, r, dns.MinMsgSize)
 }
 
 func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
@@ -104,7 +102,7 @@ func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
 	return false
 }
 
-func (h *dnsHandler) addAnswers(r *dns.Msg) *dns.Msg {
+func (h *dnsHandler) addAnswers(dnsClient *dns.Client, r *dns.Msg) *dns.Msg {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.RecursionAvailable = true
@@ -118,7 +116,7 @@ func (h *dnsHandler) addAnswers(r *dns.Msg) *dns.Msg {
 		}
 	}
 
-	r, _, err := h.dnsClient.Exchange(r, h.nameserver)
+	r, _, err := dnsClient.Exchange(r, h.nameserver)
 	if err != nil {
 		log.Errorf("Error during DNS Exchange: %s", err)
 		m.Rcode = dns.RcodeNameError
