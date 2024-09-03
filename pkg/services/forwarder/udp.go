@@ -38,6 +38,13 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 		p, _ := NewUDPProxy(&autoStoppingListener{underlying: gonet.NewUDPConn(s, &wq, ep)}, func() (net.Conn, error) {
 			return net.Dial("udp", fmt.Sprintf("%s:%d", localAddress, r.ID().LocalPort))
 		})
-		go p.Run()
+		go func() {
+			p.Run()
+
+			// note that at this point packets that are sent to the current forwarder session
+			// will be dropped. We will start processing the packets again when we get a new
+			// forwarder request.
+			ep.Close()
+		}()
 	})
 }
