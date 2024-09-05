@@ -24,7 +24,7 @@ require (
 	github.com/vishvananda/netlink v1.3.0
 	golang.org/x/crypto v0.26.0
 	golang.org/x/sync v0.8.0
-	golang.org/x/sys v0.24.0
+	golang.org/x/sys v0.25.0
 	gvisor.dev/gvisor v0.0.0-20231023213702-2691a8f9b1cf
 	inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0
 )
