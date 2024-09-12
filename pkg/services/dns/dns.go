@@ -2,12 +2,14 @@ package dns
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 
+	"github.com/areYouLazy/libhosty"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -18,6 +20,7 @@ type dnsHandler struct {
 	zonesLock  sync.RWMutex
 	udpClient  *dns.Client
 	tcpClient  *dns.Client
+	hostsFile  *HostsFile
 	nameserver string
 }
 
@@ -28,11 +31,17 @@ func newDNSHandler(zones []types.Zone) (*dnsHandler, error) {
 		return nil, err
 	}
 
+	hostsFile, err := NewHostsFile("")
+	if err != nil {
+		return nil, err
+	}
+
 	return &dnsHandler{
 		zones:      zones,
 		tcpClient:  &dns.Client{Net: "tcp"},
 		udpClient:  &dns.Client{Net: "udp"},
 		nameserver: net.JoinHostPort(nameserver, port),
+		hostsFile:  hostsFile,
 	}, nil
 
 }
@@ -58,15 +67,17 @@ func (h *dnsHandler) handleUDP(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
+	// resolve only ipv4 requests
+	if q.Qtype != dns.TypeA {
+		return false
+	}
+
 	h.zonesLock.RLock()
 	defer h.zonesLock.RUnlock()
 
 	for _, zone := range h.zones {
 		zoneSuffix := fmt.Sprintf(".%s", zone.Name)
 		if strings.HasSuffix(q.Name, zoneSuffix) {
-			if q.Qtype != dns.TypeA {
-				return false
-			}
 			for _, record := range zone.Records {
 				withoutZone := strings.TrimSuffix(q.Name, zoneSuffix)
 				if (record.Name != "" && record.Name == withoutZone) ||
@@ -98,6 +109,24 @@ func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
 			m.Rcode = dns.RcodeNameError
 			return true
 		}
+		ip, err := h.hostsFile.LookupByHostname(q.Name)
+		if err != nil {
+			// ignore only ErrHostnameNotFound error
+			if !errors.Is(err, libhosty.ErrHostnameNotFound) {
+				log.Errorf("Error during looking in hosts file records: %v", err)
+			}
+		} else {
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    0,
+				},
+				A: ip,
+			})
+			return true
+		}
 	}
 	return false
 }
@@ -106,6 +135,7 @@ func (h *dnsHandler) addAnswers(dnsClient *dns.Client, r *dns.Msg) *dns.Msg {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.RecursionAvailable = true
+
 	for _, q := range m.Question {
 		if done := h.addLocalAnswers(m, q); done {
 			return m
