@@ -230,7 +230,7 @@ gopkg.in/tomb.v1
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
-# gvisor.dev/gvisor v0.0.0-20240726212243-a2b0498dbe7d
+# gvisor.dev/gvisor v0.0.0-20240826182512-9f3309e5b121
 ## explicit; go 1.22.0
 gvisor.dev/gvisor/pkg/atomicbitops
 gvisor.dev/gvisor/pkg/bits
