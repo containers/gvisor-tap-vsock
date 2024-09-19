@@ -25,8 +25,12 @@ jobs:
     packages: [gvisor-tap-vsock-fedora]
     enable_net: true
     targets:
-      - fedora-all-aarch64
-      - fedora-all-x86_64
+      - fedora-development-x86_64
+      - fedora-development-aarch64
+      - fedora-latest-stable-x86_64
+      - fedora-latest-stable-aarch64
+      - fedora-40-x86_64
+      - fedora-40-aarch64
       - fedora-eln-aarch64
       - fedora-eln-x86_64
 
@@ -54,7 +58,9 @@ jobs:
     packages: [gvisor-tap-vsock-fedora]
     update_release: false
     dist_git_branches:
-      - fedora-all
+      - fedora-development
+      - fedora-latest-stable
+      - fedora-40
 
   - job: propose_downstream
     trigger: release
@@ -67,10 +73,14 @@ jobs:
     trigger: commit
     packages: [gvisor-tap-vsock-fedora]
     dist_git_branches:
-      - fedora-all
+      - fedora-development
+      - fedora-latest-stable
+      - fedora-40
 
   - job: bodhi_update
     trigger: commit
     packages: [gvisor-tap-vsock-fedora]
     dist_git_branches:
-      - fedora-branched # rawhide updates are created automatically
+      - fedora-latest # rawhide updates are created automatically
+      - fedora-latest-stable
+      - fedora-40
