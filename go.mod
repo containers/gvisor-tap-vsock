@@ -1,6 +1,6 @@
 module github.com/containers/gvisor-tap-vsock
 
-go 1.22
+go 1.22.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
@@ -26,7 +26,7 @@ require (
 	golang.org/x/crypto v0.27.0
 	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.25.0
-	gvisor.dev/gvisor v0.0.0-20231023213702-2691a8f9b1cf
+	gvisor.dev/gvisor v0.0.0-20240826182512-9f3309e5b121
 	inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0
 )
 
@@ -46,7 +46,7 @@ require (
 	golang.org/x/mod v0.20.0 // indirect
 	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/text v0.18.0 // indirect
-	golang.org/x/time v0.3.0 // indirect
+	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.24.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
