@@ -9,6 +9,7 @@ require (
 	github.com/containers/winquit v1.1.0
 	github.com/coreos/stream-metadata-go v0.4.4
 	github.com/dustin/go-humanize v1.0.1
+	github.com/fsnotify/fsnotify v1.4.9
 	github.com/google/gopacket v1.1.19
 	github.com/insomniacslk/dhcp v0.0.0-20240710054256-ddd8a41251c9
 	github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
@@ -24,16 +25,15 @@ require (
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/stretchr/testify v1.9.0
 	github.com/vishvananda/netlink v1.3.0
-	golang.org/x/crypto v0.27.0
+	golang.org/x/crypto v0.28.0
 	golang.org/x/sync v0.8.0
-	golang.org/x/sys v0.25.0
+	golang.org/x/sys v0.26.0
 	gvisor.dev/gvisor v0.0.0-20240826182512-9f3309e5b121
 	inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0
 )
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
@@ -46,7 +46,7 @@ require (
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 	golang.org/x/mod v0.20.0 // indirect
 	golang.org/x/net v0.28.0 // indirect
-	golang.org/x/text v0.18.0 // indirect
+	golang.org/x/text v0.19.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.24.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
