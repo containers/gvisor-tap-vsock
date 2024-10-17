@@ -29,7 +29,6 @@ require (
 	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.26.0
 	gvisor.dev/gvisor v0.0.0-20240826182512-9f3309e5b121
-	inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0
 )
 
 require (
@@ -52,5 +51,3 @@ require (
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace inet.af/tcpproxy => github.com/inetaf/tcpproxy v0.0.0-20221017015627-91f861402626

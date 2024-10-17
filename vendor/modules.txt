@@ -279,7 +279,3 @@ gvisor.dev/gvisor/pkg/tcpip/transport/tcp
 gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack
 gvisor.dev/gvisor/pkg/tcpip/transport/udp
 gvisor.dev/gvisor/pkg/waiter
-# inet.af/tcpproxy v0.0.0-20220326234310-be3ee21c9fa0 => github.com/inetaf/tcpproxy v0.0.0-20221017015627-91f861402626
-## explicit; go 1.16
-inet.af/tcpproxy
-# inet.af/tcpproxy => github.com/inetaf/tcpproxy v0.0.0-20221017015627-91f861402626

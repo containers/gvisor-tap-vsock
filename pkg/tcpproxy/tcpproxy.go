@@ -1,3 +1,5 @@
+// Copied from https://github.com/inetaf/tcpproxy/blob/91f861402626c6ba93eaa57ee257109c4f07bd00/tcpproxy.go
+
 // Copyright 2017 Google Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
