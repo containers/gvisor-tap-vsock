@@ -31,7 +31,12 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 		var wq waiter.Queue
 		ep, tcpErr := r.CreateEndpoint(&wq)
 		if tcpErr != nil {
-			log.Errorf("r.CreateEndpoint() = %v", tcpErr)
+			if _, ok := tcpErr.(*tcpip.ErrConnectionRefused); ok {
+				// transient error
+				log.Debugf("r.CreateEndpoint() = %v", tcpErr)
+			} else {
+				log.Errorf("r.CreateEndpoint() = %v", tcpErr)
+			}
 			return
 		}
 

@@ -80,7 +80,7 @@ func (e *Switch) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.
 
 func (e *Switch) Accept(ctx context.Context, rawConn net.Conn, protocol types.Protocol) error {
 	conn := protocolConn{Conn: rawConn, protocolImpl: protocolImplementation(protocol)}
-	log.Infof("new connection from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
+	log.Debugf("new connection from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 	id, failed := e.connect(conn)
 	if failed {
 		log.Error("connection failed")
