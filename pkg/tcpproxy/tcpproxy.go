@@ -374,11 +374,15 @@ func (dp *DialProxy) HandleConn(src net.Conn) {
 
 	if ka := dp.keepAlivePeriod(); ka > 0 {
 		if c, ok := UnderlyingConn(src).(*net.TCPConn); ok {
+			//nolint:errcheck
 			c.SetKeepAlive(true)
+			//nolint:errcheck
 			c.SetKeepAlivePeriod(ka)
 		}
 		if c, ok := dst.(*net.TCPConn); ok {
+			//nolint:errcheck
 			c.SetKeepAlive(true)
+			//nolint:errcheck
 			c.SetKeepAlivePeriod(ka)
 		}
 	}
