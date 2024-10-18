@@ -28,7 +28,7 @@ require (
 	golang.org/x/crypto v0.28.0
 	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.26.0
-	gvisor.dev/gvisor v0.0.0-20240826182512-9f3309e5b121
+	gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f
 )
 
 require (
