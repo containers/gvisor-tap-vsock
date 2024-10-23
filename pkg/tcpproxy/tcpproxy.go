@@ -1,3 +1,5 @@
+// Copied from https://github.com/inetaf/tcpproxy/blob/91f861402626c6ba93eaa57ee257109c4f07bd00/tcpproxy.go
+
 // Copyright 2017 Google Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -79,16 +81,6 @@ type Proxy struct {
 	// function. If nil, net.Dial is used.
 	// The provided net is always "tcp".
 	ListenFunc func(net, laddr string) (net.Listener, error)
-}
-
-// Matcher reports whether hostname matches the Matcher's criteria.
-type Matcher func(ctx context.Context, hostname string) bool
-
-// equals is a trivial Matcher that implements string equality.
-func equals(want string) Matcher {
-	return func(_ context.Context, got string) bool {
-		return want == got
-	}
 }
 
 // config contains the proxying state for one listener.
@@ -372,11 +364,15 @@ func (dp *DialProxy) HandleConn(src net.Conn) {
 
 	if ka := dp.keepAlivePeriod(); ka > 0 {
 		if c, ok := UnderlyingConn(src).(*net.TCPConn); ok {
+			//nolint:errcheck
 			c.SetKeepAlive(true)
+			//nolint:errcheck
 			c.SetKeepAlivePeriod(ka)
 		}
 		if c, ok := dst.(*net.TCPConn); ok {
+			//nolint:errcheck
 			c.SetKeepAlive(true)
+			//nolint:errcheck
 			c.SetKeepAlivePeriod(ka)
 		}
 	}
