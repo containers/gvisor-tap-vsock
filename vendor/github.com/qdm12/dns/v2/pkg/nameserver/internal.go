@@ -41,7 +41,7 @@ func UseDNSInternally(settings SettingsInternalDNS) {
 	}
 
 	net.DefaultResolver.PreferGo = true
-	net.DefaultResolver.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
+	net.DefaultResolver.Dial = func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return dialer.DialContext(ctx, "udp", net.JoinHostPort(settings.IP.String(), fmt.Sprint(settings.Port)))
 	}
 }
