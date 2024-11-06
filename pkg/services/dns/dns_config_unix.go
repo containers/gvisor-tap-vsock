@@ -3,12 +3,15 @@
 package dns
 
 import (
+	"errors"
 	"net"
 	"net/netip"
 
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
 )
+
+var errEmptyResolvConf = errors.New("no DNS servers configured in /etc/resolv.conf")
 
 func getDNSHostAndPort() ([]string, error) {
 	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
@@ -26,6 +29,10 @@ func getDNSHostAndPort() ([]string, error) {
 		if dnsIP.Is4() {
 			hosts = append(hosts, net.JoinHostPort(server, conf.Port))
 		}
+	}
+
+	if len(hosts) == 0 {
+		return []string{}, errEmptyResolvConf
 	}
 	return hosts, nil
 }
