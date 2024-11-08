@@ -7,7 +7,7 @@ require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/areYouLazy/libhosty v1.1.0
 	github.com/containers/winquit v1.1.0
-	github.com/coreos/stream-metadata-go v0.4.4
+	github.com/coreos/stream-metadata-go v0.4.5
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/google/gopacket v1.1.19
