@@ -70,3 +70,7 @@ test-companion:
 .PHONY: test-linux
 test-linux: gvproxy test-companion
 	go test -timeout 20m  -v ./test-qemu
+
+.PHONY: test-mac
+test-mac: gvproxy
+	go test -timeout 20m  -v ./test-vfkit
