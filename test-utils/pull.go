@@ -1,4 +1,4 @@
-package e2e
+package e2eutils
 
 import (
 	"fmt"
@@ -48,18 +48,32 @@ func DownloadVMImage(downloadURL string, localImagePath string) error {
 	return nil
 }
 
-func Decompress(localPath, uncompressedPath string) error {
-	uncompressedFileWriter, err := os.OpenFile(uncompressedPath, os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return err
+func Decompress(localPath string) (string, error) {
+	uncompressedPath := ""
+	if strings.HasSuffix(localPath, ".xz") {
+		uncompressedPath = strings.TrimSuffix(localPath, ".xz")
 	}
 
-	if !strings.HasSuffix(localPath, ".xz") {
-		return fmt.Errorf("unsupported compression for %s", localPath)
+	if uncompressedPath == "" {
+		return "", fmt.Errorf("unsupported compression for %s", localPath)
+	}
+
+	// we remove the uncompressed file if already exists. Maybe it has been used earlier and can affect the tests result
+	os.Remove(uncompressedPath)
+
+	uncompressedFileWriter, err := os.OpenFile(uncompressedPath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return "", err
 	}
 
 	fmt.Printf("Extracting %s\n", localPath)
-	return decompressXZ(localPath, uncompressedFileWriter)
+
+	err = decompressXZ(localPath, uncompressedFileWriter)
+
+	if err != nil {
+		return "", err
+	}
+	return uncompressedPath, nil
 }
 
 // Will error out if file without .xz already exists
