@@ -1,6 +1,7 @@
 package e2eutils
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,6 +53,8 @@ func Decompress(localPath string) (string, error) {
 	uncompressedPath := ""
 	if strings.HasSuffix(localPath, ".xz") {
 		uncompressedPath = strings.TrimSuffix(localPath, ".xz")
+	} else if strings.HasSuffix(localPath, ".gz") {
+		uncompressedPath = strings.TrimSuffix(localPath, ".gz")
 	}
 
 	if uncompressedPath == "" {
@@ -67,8 +70,11 @@ func Decompress(localPath string) (string, error) {
 	}
 
 	fmt.Printf("Extracting %s\n", localPath)
-
-	err = decompressXZ(localPath, uncompressedFileWriter)
+	if strings.HasSuffix(localPath, ".xz") {
+		err = decompressXZ(localPath, uncompressedFileWriter)
+	} else {
+		err = decompressGZ(localPath, uncompressedFileWriter)
+	}
 
 	if err != nil {
 		return "", err
@@ -92,4 +98,31 @@ func decompressXZ(src string, output io.Writer) error {
 		}
 	}()
 	return cmd.Run()
+}
+
+func decompressGZ(src string, output io.Writer) error {
+	file, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Create a gzip reader
+	reader, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	for {
+		_, err := io.CopyN(output, reader, 1024)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+	}
+
+	return nil
 }
