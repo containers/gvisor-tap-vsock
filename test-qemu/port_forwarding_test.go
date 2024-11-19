@@ -1,4 +1,4 @@
-package e2e
+package e2eqemu
 
 import (
 	"context"
@@ -28,6 +28,36 @@ var _ = ginkgo.Describe("port forwarding", func() {
 			},
 		},
 	}, "http://base")
+
+	ginkgo.It("should reach a http server on the host", func() {
+		ln, err := net.Listen("tcp", "127.0.0.1:9090")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		defer ln.Close()
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(writer http.ResponseWriter, _ *http.Request) {
+			_, _ = writer.Write([]byte("Hello from the host"))
+		})
+		go func() {
+			s := &http.Server{
+				Handler:      mux,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			}
+			err := s.Serve(ln)
+			if err != nil {
+				log.Error(err)
+			}
+		}()
+
+		out, err := sshExec("curl http://host.containers.internal:9090")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Hello from the host"))
+
+		out, err = sshExec("curl http://host.docker.internal:9090")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Hello from the host"))
+	})
 
 	ginkgo.It("should reach a http server on the host", func() {
 		ln, err := net.Listen("tcp", "127.0.0.1:9090")
