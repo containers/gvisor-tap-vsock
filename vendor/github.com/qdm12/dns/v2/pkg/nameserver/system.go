@@ -25,9 +25,7 @@ func (s *SettingsSystemDNS) SetDefaults() {
 	s.ResolvPath = gosettings.DefaultComparable(s.ResolvPath, "/etc/resolv.conf")
 }
 
-var (
-	ErrResolvPathIsDirectory = errors.New("resolv path is a directory")
-)
+var ErrResolvPathIsDirectory = errors.New("resolv path is a directory")
 
 func (s *SettingsSystemDNS) Validate() (err error) {
 	stat, err := os.Stat(s.ResolvPath)
@@ -67,7 +65,7 @@ func createResolvFile(resolvPath string, ip netip.Addr) (err error) {
 		return fmt.Errorf("creating resolv path parent directory: %w", err)
 	}
 
-	const filePermissions os.FileMode = 0600
+	const filePermissions os.FileMode = 0o600
 	data := []byte("nameserver " + ip.String() + "\n")
 	err = os.WriteFile(resolvPath, data, filePermissions)
 	if err != nil {
@@ -99,7 +97,7 @@ func patchResolvFile(resolvPath string, ip netip.Addr) (err error) {
 	}
 
 	patchedData := []byte(patchedString)
-	const permissions os.FileMode = 0600
+	const permissions os.FileMode = 0o600
 	err = os.WriteFile(resolvPath, patchedData, permissions)
 	if err != nil {
 		return fmt.Errorf("writing resolv file: %w", err)

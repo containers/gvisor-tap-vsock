@@ -56,12 +56,11 @@ func GetDNSServers() (nameservers []netip.AddrPort) {
 	return nameservers
 }
 
-var (
-	errBufferOverflowUnexpected = errors.New("unexpected buffer overflowed because buffer was large enough")
-)
+var errBufferOverflowUnexpected = errors.New("unexpected buffer overflowed because buffer was large enough")
 
 func getAdapterAddresses() (
-	adapterAddresses []*ipAdapterAddresses, err error) {
+	adapterAddresses []*ipAdapterAddresses, err error,
+) {
 	var buffer []byte
 	const initialBufferLength uint32 = 15000
 	sizeVar := initialBufferLength
@@ -99,13 +98,12 @@ func getAdapterAddresses() (
 	return adapterAddresses, nil
 }
 
-var (
-	procGetAdaptersAddresses = syscall.NewLazyDLL("iphlpapi.dll").
-		NewProc("GetAdaptersAddresses")
-)
+var procGetAdaptersAddresses = syscall.NewLazyDLL("iphlpapi.dll").
+	NewProc("GetAdaptersAddresses")
 
 func runProcGetAdaptersAddresses(adapterAddresses *ipAdapterAddresses,
-	sizePointer *uint32) (errcode error) {
+	sizePointer *uint32,
+) (errcode error) {
 	const family = syscall.AF_UNSPEC
 	const GAA_FLAG_SKIP_UNICAST = 0x0001
 	const GAA_FLAG_SKIP_ANYCAST = 0x0002
@@ -144,14 +142,16 @@ func sockAddressToIP(rawSockAddress *syscall.RawSockaddrAny) (ip netip.Addr, ok 
 	switch sockAddress := sockAddress.(type) {
 	case *syscall.SockaddrInet4:
 		return netip.AddrFrom4([4]byte{
-				sockAddress.Addr[0], sockAddress.Addr[1], sockAddress.Addr[2], sockAddress.Addr[3]}),
+				sockAddress.Addr[0], sockAddress.Addr[1], sockAddress.Addr[2], sockAddress.Addr[3],
+			}),
 			true
 	case *syscall.SockaddrInet6:
 		return netip.AddrFrom16([16]byte{
 				sockAddress.Addr[0], sockAddress.Addr[1], sockAddress.Addr[2], sockAddress.Addr[3],
 				sockAddress.Addr[4], sockAddress.Addr[5], sockAddress.Addr[6], sockAddress.Addr[7],
 				sockAddress.Addr[8], sockAddress.Addr[9], sockAddress.Addr[10], sockAddress.Addr[11],
-				sockAddress.Addr[12], sockAddress.Addr[13], sockAddress.Addr[14], sockAddress.Addr[15]}),
+				sockAddress.Addr[12], sockAddress.Addr[13], sockAddress.Addr[14], sockAddress.Addr[15],
+			}),
 			true
 	default:
 		return netip.Addr{}, false
