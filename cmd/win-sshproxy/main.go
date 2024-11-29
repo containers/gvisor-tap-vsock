@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
+	"github.com/containers/gvisor-tap-vsock/pkg/utils"
 	"github.com/containers/winquit/pkg/winquit"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -173,9 +175,29 @@ func saveThreadId() (uint32, error) {
 		return 0, err
 	}
 	defer file.Close()
-	tid := winquit.GetCurrentMessageLoopThreadId()
+
+	tid, err := getThreadId()
+	if err != nil {
+		return 0, err
+	}
+
 	fmt.Fprintf(file, "%d:%d\n", os.Getpid(), tid)
 	return tid, nil
+}
+
+func getThreadId() (uint32, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	getTid := func() (uint32, error) {
+		tid := winquit.GetCurrentMessageLoopThreadId()
+		if tid != 0 {
+			return tid, nil
+		}
+		return 0, fmt.Errorf("failed to get thread ID")
+	}
+
+	return utils.Retry(ctx, getTid, "Waiting for message loop thread id")
 }
 
 // Creates an "error" style pop-up window
