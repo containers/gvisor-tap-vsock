@@ -68,7 +68,7 @@ func NewPortsForwarder(s *stack.Stack) *PortsForwarder {
 func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote string) error {
 	f.proxiesLock.Lock()
 	defer f.proxiesLock.Unlock()
-	if _, ok := f.proxies[local]; ok {
+	if _, ok := f.proxies[key(protocol, local)]; ok {
 		return errors.New("proxy already running")
 	}
 
