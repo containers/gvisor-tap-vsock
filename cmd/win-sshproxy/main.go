@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -24,8 +25,9 @@ import (
 )
 
 const (
-	ERR_BAD_ARGS = 0x000A
-	WM_QUIT      = 0x12
+	ERR_BAD_ARGS                           = 0x000A
+	WM_QUIT                                = 0x12
+	RPC_S_SERVER_UNAVAILABLE syscall.Errno = 1722
 )
 
 var (
@@ -54,11 +56,23 @@ func main() {
 		os.Exit(ERR_BAD_ARGS)
 	}
 
+	// Attempt to set up logging with the event log service.
+	// If it fails because the Windows Event Log Service is not running, show a warning
+	// and continue execution. There could be a reason why user disabled the Event Log.
 	log, err := setupLogging(args[0])
 	if err != nil {
-		os.Exit(1)
+		if errors.Is(err, syscall.Errno(RPC_S_SERVER_UNAVAILABLE)) {
+			logrus.Warn("RPC server is unavailable, continuing without event log")
+		} else {
+			logrus.Errorf("Error setting up logging: %v", err)
+			os.Exit(1)
+		}
 	}
-	defer log.Close()
+
+	// Defer closing the log if setup was successful
+	if log != nil {
+		defer log.Close()
+	}
 
 	stateDir = args[1]
 
