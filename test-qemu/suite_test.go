@@ -1,4 +1,4 @@
-package e2e
+package e2eqemu
 
 import (
 	"flag"
@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
+	e2e_utils "github.com/containers/gvisor-tap-vsock/test-utils"
+
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -63,15 +64,15 @@ func init() {
 var _ = ginkgo.BeforeSuite(func() {
 	gomega.Expect(os.MkdirAll(filepath.Join(tmpDir, "disks"), os.ModePerm)).Should(gomega.Succeed())
 
-	downloader, err := NewFcosDownloader(filepath.Join(tmpDir, "disks"))
+	downloader, err := e2e_utils.NewFcosDownloader(filepath.Join(tmpDir, "disks"))
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-	qemuImage, err := downloader.DownloadImage()
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-
-	publicKey, err := createSSHKeys()
+	qemuImage, err := downloader.DownloadImage("qemu", "qcow2.xz")
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-	err = CreateIgnition(ignFile, publicKey, ignitionUser, ignitionPasswordHash)
+	publicKey, err := e2e_utils.CreateSSHKeys(publicKeyFile, privateKeyFile)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+	err = e2e_utils.CreateIgnition(ignFile, publicKey, ignitionUser, ignitionPasswordHash)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 outer:
@@ -154,7 +155,7 @@ outer:
 })
 
 func qemuExecutable() string {
-	qemuBinaries := []string{"qemu-kvm", fmt.Sprintf("qemu-system-%s", coreosArch())}
+	qemuBinaries := []string{"qemu-kvm", fmt.Sprintf("qemu-system-%s", e2e_utils.CoreosArch())}
 	for _, binary := range qemuBinaries {
 		path, err := exec.LookPath(binary)
 		if err == nil && path != "" {
@@ -180,26 +181,6 @@ func qemuArgs() string {
 		panic(fmt.Sprintf("unsupported arch: %s", runtime.GOARCH))
 	}
 	return fmt.Sprintf("-machine %s,accel=%s:tcg -smp 4 -cpu host ", machine, accel)
-}
-
-func createSSHKeys() (string, error) {
-	_ = os.Remove(publicKeyFile)
-	_ = os.Remove(privateKeyFile)
-	err := exec.Command("ssh-keygen", "-N", "", "-t", "ed25519", "-f", privateKeyFile).Run()
-	if err != nil {
-		return "", errors.Wrap(err, "Could not generate ssh keys")
-	}
-
-	return readPublicKey()
-}
-
-func readPublicKey() (string, error) {
-	publicKey, err := os.ReadFile(publicKeyFile)
-	if err != nil {
-		return "", nil
-	}
-
-	return strings.TrimSpace(string(publicKey)), nil
 }
 
 func scp(src, dst string) error {

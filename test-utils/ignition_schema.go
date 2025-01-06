@@ -1,4 +1,4 @@
-package e2e
+package e2eutils
 
 // Taken from https://github.com/coreos/ignition/blob/master/config/v3_2/types/schema.go 
 

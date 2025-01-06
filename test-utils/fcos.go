@@ -1,4 +1,4 @@
-package e2e
+package e2eutils
 
 import (
 	"os"
@@ -27,6 +27,11 @@ type fcosDownloadInfo struct {
 	Sha256Sum string
 }
 
+type ArtifactFormat struct {
+	Artifact string
+	Format   string
+}
+
 func NewFcosDownloader(dataDir string) (*FcosDownload, error) {
 	return &FcosDownload{
 		DataDir: dataDir,
@@ -38,14 +43,13 @@ func imageName(info *fcosDownloadInfo) string {
 	return urlSplit[len(urlSplit)-1]
 }
 
-func (downloader *FcosDownload) DownloadImage() (string, error) {
-	info, err := getFCOSDownload()
+func (downloader *FcosDownload) DownloadImage(artifactType string, formatType string) (string, error) {
+	info, err := getFCOSDownload(artifactType, formatType)
 	if err != nil {
 		return "", err
 	}
 
 	compressedImage := filepath.Join(downloader.DataDir, imageName(info))
-	uncompressedImage := strings.TrimSuffix(filepath.Join(filepath.Dir(compressedImage), imageName(info)), ".xz")
 
 	// check if the latest image is already present
 	ok, err := downloader.updateAvailable(info, compressedImage)
@@ -58,11 +62,12 @@ func (downloader *FcosDownload) DownloadImage() (string, error) {
 		}
 	}
 
+	uncompressedImage := ""
+	if uncompressedImage, err = Decompress(compressedImage); err != nil {
+		return "", err
+	}
 	if _, err := os.Stat(uncompressedImage); err == nil {
 		return uncompressedImage, nil
-	}
-	if err := Decompress(compressedImage, uncompressedImage); err != nil {
-		return "", err
 	}
 	return uncompressedImage, nil
 }
@@ -91,7 +96,7 @@ func (downloader *FcosDownload) updateAvailable(info *fcosDownloadInfo, compress
 
 // as of 2024-05-28, these are the 4 architectures available in
 // curl https://builds.coreos.fedoraproject.org/streams/next.json
-func coreosArch() string {
+func CoreosArch() string {
 	switch runtime.GOARCH {
 	case "amd64":
 		return "x86_64"
@@ -107,7 +112,7 @@ func coreosArch() string {
 
 // This should get Exported and stay put as it will apply to all fcos downloads
 // getFCOS parses fedoraCoreOS's stream and returns the image download URL and the release version
-func getFCOSDownload() (*fcosDownloadInfo, error) {
+func getFCOSDownload(artifactType string, formatType string) (*fcosDownloadInfo, error) {
 	streamurl := fedoracoreos.GetStreamURL(fedoracoreos.StreamNext)
 	resp, err := http.Get(streamurl.String())
 	if err != nil {
@@ -127,7 +132,7 @@ func getFCOSDownload() (*fcosDownloadInfo, error) {
 	if err := json.Unmarshal(body, &fcosstable); err != nil {
 		return nil, err
 	}
-	arch, ok := fcosstable.Architectures[coreosArch()]
+	arch, ok := fcosstable.Architectures[CoreosArch()]
 	if !ok {
 		return nil, fmt.Errorf("unable to pull VM image: no targetArch in stream")
 	}
@@ -135,19 +140,19 @@ func getFCOSDownload() (*fcosDownloadInfo, error) {
 	if artifacts == nil {
 		return nil, fmt.Errorf("unable to pull VM image: no artifact in stream")
 	}
-	qemu, ok := artifacts["qemu"]
+	artifact, ok := artifacts[artifactType]
 	if !ok {
 		return nil, fmt.Errorf("unable to pull VM image: no qemu artifact in stream")
 	}
-	formats := qemu.Formats
+	formats := artifact.Formats
 	if formats == nil {
 		return nil, fmt.Errorf("unable to pull VM image: no formats in stream")
 	}
-	qcow, ok := formats["qcow2.xz"]
+	format, ok := formats[formatType]
 	if !ok {
 		return nil, fmt.Errorf("unable to pull VM image: no qcow2.xz format in stream")
 	}
-	disk := qcow.Disk
+	disk := format.Disk
 	if disk == nil {
 		return nil, fmt.Errorf("unable to pull VM image: no disk in stream")
 	}
