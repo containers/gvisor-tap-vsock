@@ -46,6 +46,8 @@ var (
 	ignFile        string
 )
 
+var debugEnabled = flag.Bool("debug", false, "enable debugger")
+
 func init() {
 	flag.StringVar(&tmpDir, "tmpDir", "../tmp", "temporary working directory")
 	flag.StringVar(&binDir, "bin", "../bin", "directory with compiled binaries")
@@ -84,9 +86,17 @@ var _ = ginkgo.BeforeSuite(func() {
 outer:
 	for panics := 0; ; panics++ {
 		_ = os.Remove(sock)
+		_ = os.Remove(vfkitSock)
 
-		// #nosec
-		host = exec.Command(filepath.Join(binDir, "gvproxy"), fmt.Sprintf("--ssh-port=%d", sshPort), fmt.Sprintf("--listen=unix://%s", sock), fmt.Sprintf("--listen-vfkit=unixgram://%s", vfkitSock))
+		gvproxyArgs := []string{fmt.Sprintf("--ssh-port=%d", sshPort), fmt.Sprintf("--listen=unix://%s", sock), fmt.Sprintf("--listen-vfkit=unixgram://%s", vfkitSock)}
+		if *debugEnabled {
+			dlvArgs := []string{"debug", "--headless", "--listen=:2345", "--continue", "--api-version=2", "--accept-multiclient", "../cmd/gvproxy", "--"}
+			dlvArgs = append(dlvArgs, gvproxyArgs...)
+			host = exec.Command("dlv", dlvArgs...)
+		} else {
+			// #nosec
+			host = exec.Command(filepath.Join(binDir, "gvproxy"), gvproxyArgs...)
+		}
 
 		host.Stderr = os.Stderr
 		host.Stdout = os.Stdout
@@ -101,7 +111,7 @@ outer:
 		for {
 			_, err := os.Stat(sock)
 			if os.IsNotExist(err) {
-				log.Info("waiting for socket")
+				log.Info("waiting for vfkit-api socket")
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
