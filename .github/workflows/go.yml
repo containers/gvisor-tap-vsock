@@ -46,6 +46,7 @@ jobs:
 
     - name: Install qemu
       run: |
+        sudo apt update
         sudo apt install qemu-kvm
         sudo usermod -a -G kvm $USER
 
