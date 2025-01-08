@@ -1,16 +1,21 @@
 package e2eutils
 
 import (
+	"bufio"
 	"compress/gzip"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/sirupsen/logrus"
+	"github.com/ulikunitz/xz"
 )
+
+const XZCAT_TOOL = "xzcat"
 
 // DownloadVMImage downloads a VM image from url to given path
 // with download status
@@ -82,11 +87,21 @@ func Decompress(localPath string) (string, error) {
 	return uncompressedPath, nil
 }
 
+// it uses the xz dependency so it can be used on any OS
+func decompressXZ(src string, output io.Writer) error {
+	_, err := exec.LookPath(XZCAT_TOOL)
+	if err != nil {
+		return decompressXZWithReader(src, output)
+	}
+
+	return decompressXZWithExternalTool(src, output)
+}
+
 // Will error out if file without .xz already exists
 // Maybe extracting then renameing is a good idea here..
 // depends on xz: not pre-installed on mac, so it becomes a brew dependency
-func decompressXZ(src string, output io.Writer) error {
-	cmd := exec.Command("xzcat", "-T0", "-k", src)
+func decompressXZWithExternalTool(src string, output io.Writer) error {
+	cmd := exec.Command(XZCAT_TOOL, "-T0", "-k", src)
 	stdOut, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -98,6 +113,33 @@ func decompressXZ(src string, output io.Writer) error {
 		}
 	}()
 	return cmd.Run()
+}
+
+// it supports decompression without any external tool
+// Known issue about slowness https://github.com/ulikunitz/xz/issues/23
+func decompressXZWithReader(src string, output io.Writer) error {
+	file, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// using bufio.NewReader speeds up the decompressions -> https://github.com/ulikunitz/xz/issues/23
+	reader, err := xz.NewReader(bufio.NewReader(file))
+	if err != nil {
+		log.Fatalf("NewReader error %s", err)
+	}
+	for {
+		_, err := io.CopyN(output, reader, 10000)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+	}
+
+	return nil
 }
 
 func decompressGZ(src string, output io.Writer) error {
