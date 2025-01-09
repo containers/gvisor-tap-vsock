@@ -68,7 +68,6 @@ func (h *HostsFile) updateHostsFile() {
 	defer h.hostsReadLock.Unlock()
 
 	h.hostsFile = newHosts
-	return
 }
 
 func readHostsFile(hostsFilePath string) (*libhosty.HostsFile, error) {
