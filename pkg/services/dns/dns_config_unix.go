@@ -50,7 +50,7 @@ func getDNSHostAndPort(path string) ([]string, error) {
 	if err != nil {
 		return []string{}, err
 	}
-	hosts := make([]string, len(conf.Servers))
+	hosts := make([]string, 0, len(conf.Servers))
 	for _, server := range conf.Servers {
 		dnsIP, err := netip.ParseAddr(server)
 		if err != nil {
