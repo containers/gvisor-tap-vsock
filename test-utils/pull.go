@@ -1,6 +1,7 @@
-package e2e
+package e2eutils
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,18 +49,37 @@ func DownloadVMImage(downloadURL string, localImagePath string) error {
 	return nil
 }
 
-func Decompress(localPath, uncompressedPath string) error {
-	uncompressedFileWriter, err := os.OpenFile(uncompressedPath, os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return err
+func Decompress(localPath string) (string, error) {
+	uncompressedPath := ""
+	if strings.HasSuffix(localPath, ".xz") {
+		uncompressedPath = strings.TrimSuffix(localPath, ".xz")
+	} else if strings.HasSuffix(localPath, ".gz") {
+		uncompressedPath = strings.TrimSuffix(localPath, ".gz")
 	}
 
-	if !strings.HasSuffix(localPath, ".xz") {
-		return fmt.Errorf("unsupported compression for %s", localPath)
+	if uncompressedPath == "" {
+		return "", fmt.Errorf("unsupported compression for %s", localPath)
+	}
+
+	// we remove the uncompressed file if already exists. Maybe it has been used earlier and can affect the tests result
+	os.Remove(uncompressedPath)
+
+	uncompressedFileWriter, err := os.OpenFile(uncompressedPath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return "", err
 	}
 
 	fmt.Printf("Extracting %s\n", localPath)
-	return decompressXZ(localPath, uncompressedFileWriter)
+	if strings.HasSuffix(localPath, ".xz") {
+		err = decompressXZ(localPath, uncompressedFileWriter)
+	} else {
+		err = decompressGZ(localPath, uncompressedFileWriter)
+	}
+
+	if err != nil {
+		return "", err
+	}
+	return uncompressedPath, nil
 }
 
 // Will error out if file without .xz already exists
@@ -78,4 +98,31 @@ func decompressXZ(src string, output io.Writer) error {
 		}
 	}()
 	return cmd.Run()
+}
+
+func decompressGZ(src string, output io.Writer) error {
+	file, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Create a gzip reader
+	reader, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	for {
+		_, err := io.CopyN(output, reader, 1024)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+	}
+
+	return nil
 }
