@@ -32,8 +32,11 @@ func (r *dnsConfig) init() error {
 func (r *dnsConfig) refreshNameservers() error {
 	nsList, err := getDNSHostAndPort(etcResolvConfPath)
 	if err != nil {
+		log.Errorf("can't load dns nameservers: %v", err)
 		return err
 	}
+
+	log.Infof("reloading dns nameservers to %v", nsList)
 
 	r.mu.Lock()
 	r.nameservers = nsList
