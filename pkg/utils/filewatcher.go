@@ -27,11 +27,17 @@ func NewFileWatcher(path string) (*FileWatcher, error) {
 }
 
 func (fw *FileWatcher) Start(changeHandler func()) error {
+	// Ensure that the target that we're watching is not a symlink as we won't get any events when we're watching
+	// a symlink.
+	fileRealPath, err := filepath.EvalSymlinks(fw.path)
+	if err != nil {
+		return fmt.Errorf("adding watcher failed: %s", err)
+	}
+
 	// watch the directory instead of the individual file to ensure the notification still works when the file is modified
 	// through moving/renaming rather than writing into it directly (like what most modern editor does by default).
 	// ref: https://github.com/fsnotify/fsnotify/blob/a9bc2e01792f868516acf80817f7d7d7b3315409/README.md#watching-a-file-doesnt-work-well
-	err := fw.w.Add(filepath.Dir(fw.path))
-	if err != nil {
+	if err = fw.w.Add(filepath.Dir(fileRealPath)); err != nil {
 		return fmt.Errorf("adding watcher failed: %s", err)
 	}
 
@@ -47,7 +53,7 @@ func (fw *FileWatcher) Start(changeHandler func()) error {
 					return // watcher is closed.
 				}
 
-				if event.Name != fw.path {
+				if event.Name != fileRealPath {
 					continue // we don't care about this file.
 				}
 
