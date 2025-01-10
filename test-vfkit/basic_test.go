@@ -1,8 +1,19 @@
 package e2evfkit
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"math"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+
 	e2e "github.com/containers/gvisor-tap-vsock/test"
 	"github.com/onsi/ginkgo"
+	"github.com/onsi/gomega"
 )
 
 var _ = ginkgo.Describe("connectivity with vfkit", func() {
@@ -16,4 +27,60 @@ var _ = ginkgo.Describe("dns with vfkit", func() {
 		SSHExec: sshExec,
 		Sock:    sock,
 	})
+})
+
+var _ = ginkgo.It("should upload and download 10M, 100M, and 1G files to/from vfkit", func() {
+	tmpDir, err := os.MkdirTemp("", "vfkit")
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+	sumMap := make(map[string]string)
+	for i := range []int{7, 8, 9} {
+		file, err := os.CreateTemp(tmpDir, "testfile")
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+		err = file.Truncate(int64(math.Pow10(i)))
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+		hasher := sha256.New()
+		_, err = io.Copy(hasher, file)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+		srcPath := file.Name()
+		dstDir := "/tmp"
+		dstPath := filepath.Join(dstDir, path.Base(srcPath))
+
+		err = scpToVM(srcPath, dstDir)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+		out, err := sshExec(fmt.Sprintf("sha256sum %s | awk '{print $1}'", dstPath))
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+		localSum := hex.EncodeToString(hasher.Sum(nil))
+		vmSum := strings.TrimSpace(string(out))
+		gomega.Expect(vmSum).To(gomega.Equal(localSum))
+
+		sumMap[dstPath] = vmSum
+	}
+
+	// Download the uploaded files
+	dlTmpDir, err := os.MkdirTemp("", "vfkit-dl")
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+	for filename := range sumMap {
+		err = scpFromVM(filename, dlTmpDir)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	}
+
+	dir, err := os.ReadDir(dlTmpDir)
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	for _, entry := range dir {
+		hasher := sha256.New()
+		file, err := os.Open(filepath.Join(dlTmpDir, entry.Name()))
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+		_, err = io.Copy(hasher, file)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+		gomega.Expect(hasher.Sum(nil)).NotTo(gomega.Equal(sumMap[entry.Name()]))
+	}
 })
