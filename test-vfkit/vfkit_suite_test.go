@@ -204,6 +204,26 @@ func clear() {
 	_ = os.Remove(socketPath)
 }
 
+func scp(src, dst string) error {
+	sshCmd := exec.Command("/usr/bin/scp",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "IdentitiesOnly=yes",
+		"-i", privateKeyFile,
+		"-P", strconv.Itoa(sshPort),
+		src, dst) // #nosec G204
+	sshCmd.Stderr = os.Stderr
+	sshCmd.Stdout = os.Stdout
+	return sshCmd.Run()
+}
+func scpToVM(src, dst string) error {
+	return scp(src, fmt.Sprintf("%s@127.0.0.1:%s", ignitionUser, dst))
+}
+
+func scpFromVM(src, dst string) error {
+	return scp(fmt.Sprintf("%s@127.0.0.1:%s", ignitionUser, src), dst)
+}
+
 var _ = ginkgo.AfterSuite(func() {
 	if host != nil {
 		if err := host.Process.Kill(); err != nil {
