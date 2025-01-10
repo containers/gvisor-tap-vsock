@@ -203,6 +203,33 @@ func clear() {
 	socketPath := filepath.Join(os.TempDir(), "ignition.sock")
 	_ = os.Remove(socketPath)
 }
+func scpToVM(src, dst string) error {
+	sshCmd := exec.Command("/usr/bin/scp",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "IdentitiesOnly=yes",
+		"-i", privateKeyFile,
+		"-P", strconv.Itoa(sshPort),
+		src, fmt.Sprintf("%s@127.0.0.1:%s", ignitionUser, dst)) // #nosec G204
+	sshCmd.Stderr = os.Stderr
+	sshCmd.Stdout = os.Stdout
+	fmt.Println(sshCmd.String())
+	return sshCmd.Run()
+}
+
+func scpFromVM(src, dst string) error {
+	sshCmd := exec.Command("/usr/bin/scp",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "IdentitiesOnly=yes",
+		"-i", privateKeyFile,
+		"-P", strconv.Itoa(sshPort),
+		fmt.Sprintf("%s@127.0.0.1:%s", ignitionUser, src), dst) // #nosec G204
+	sshCmd.Stderr = os.Stderr
+	sshCmd.Stdout = os.Stdout
+	fmt.Println(sshCmd.String())
+	return sshCmd.Run()
+}
 
 var _ = ginkgo.AfterSuite(func() {
 	if host != nil {
