@@ -226,6 +226,17 @@ var _ = ginkgo.Describe("port forwarding", func() {
 			g.Expect(err).ShouldNot(gomega.HaveOccurred())
 			g.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
 		}).Should(gomega.Succeed())
+
+		gomega.Eventually(func(g gomega.Gomega) {
+			// exposing the port again should return an error
+			out, _ = sshExec(`curl http://gateway.containers.internal/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2tcpfwdsock + `","remote":"tcp://192.168.127.2:8080"}'`)
+			g.Expect(string(out)).Should(gomega.ContainSubstring("proxy already running"))
+
+			// unexpose the port
+			out, err = sshExec(`curl http://gateway.containers.internal/services/forwarder/unexpose -X POST -d'{"protocol":"unix","local":"` + unix2tcpfwdsock + `","remote":"tcp://192.168.127.2:8080"}'`)
+			g.Expect(err).ShouldNot(gomega.HaveOccurred())
+			g.Expect(string(out)).Should(gomega.Equal(""))
+		}).Should(gomega.Succeed())
 	})
 
 	ginkgo.It("should expose and reach rootless podman API using unix to unix forwarding over ssh", func() {
