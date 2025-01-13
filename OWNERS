@@ -1,6 +1,8 @@
 approvers:
   - baude
   - cfergeau
+  - evidolob
+  - lstocchi
 
 reviewers:
   - baude
@@ -8,3 +10,4 @@ reviewers:
   - jakecorrenti
   - praveenkumar
   - evidolob
+  - lstocchi
