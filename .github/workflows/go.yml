@@ -57,7 +57,7 @@ jobs:
 
     - name: Test
       run: |
-        sudo -s -u ${USER} bash -c 'make test-linux'
+        sudo -s -u ${USER} bash -c 'make test'
 
     - uses: actions/upload-artifact@v4
       if: always()

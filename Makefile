@@ -67,8 +67,12 @@ cross: $(TOOLS_BINDIR)/makefat
 test-companion:
 	GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/test-companion ./cmd/test-companion
 
-.PHONY: test-linux
-test-linux: gvproxy test-companion
+PHONY: test
+test: gvproxy test-companion
+	go test -timeout 20m -v ./...
+
+.PHONY: test-qemu
+test-qemu: gvproxy test-companion
 	go test -timeout 20m  -v ./test-qemu
 
 .PHONY: test-mac
