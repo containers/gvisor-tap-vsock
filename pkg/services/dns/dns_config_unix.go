@@ -16,14 +16,8 @@ func (r *dnsConfig) init() error {
 		return err
 	}
 
-	w, err := utils.NewFileWatcher(etcResolvConfPath)
-	if err != nil {
-		return err
-	}
-
-	if err := w.Start(func() { _ = r.refreshNameservers() }); err != nil {
-		return err
-	}
+	w := utils.NewFileWatcher(etcResolvConfPath)
+	w.Start(func() { _ = r.refreshNameservers() })
 
 	return nil
 }
