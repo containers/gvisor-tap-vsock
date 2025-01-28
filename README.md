@@ -207,3 +207,6 @@ This is the same behaviour as [slirp](https://wiki.qemu.org/index.php/Documentat
 2. Each time, a client sends a http request, the process creates and sends the appropriate Ethernet packets to the VM.
 3. The tap device receives the packets and injects them in the kernel.
 4. The http server receives the request and send back the response.
+
+### Development
+Developers who want to work on gvisor-tap-vsock should visit the [Development](./DEVELOPMENT.md) document.
