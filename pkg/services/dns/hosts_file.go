@@ -35,17 +35,8 @@ func NewHostsFile(hostsPath string) (*HostsFile, error) {
 }
 
 func (h *HostsFile) startWatch() error {
-	watcher, err := utils.NewFileWatcher(h.hostsFilePath)
-	if err != nil {
-		log.Errorf("Hosts file adding watcher error: %s", err)
-		return err
-	}
-
-	if err := watcher.Start(h.updateHostsFile); err != nil {
-		log.Errorf("Hosts file adding watcher error: %s", err)
-		return err
-	}
-
+	watcher := utils.NewFileWatcher(h.hostsFilePath)
+	watcher.Start(h.updateHostsFile)
 	return nil
 }
 

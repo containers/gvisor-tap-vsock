@@ -21,18 +21,20 @@ func TestHostsFile(t *testing.T) {
 }
 
 func TestReloadingHostsFile(t *testing.T) {
+	t.Parallel()
+
 	hostsFile := filepath.Join(t.TempDir(), "hosts")
 	assert.NoError(t, os.WriteFile(hostsFile, []byte(`127.0.0.1   entry1`), 0600))
 
 	hosts, err := NewHostsFile(hostsFile)
-	time.Sleep(time.Second)
+	time.Sleep(6 * time.Second)
 	assert.NoError(t, err)
 	ip, err := hosts.LookupByHostname("entry1")
 	assert.NoError(t, err)
 	assert.Equal(t, "127.0.0.1", ip.String())
 
 	assert.NoError(t, os.WriteFile(hostsFile, []byte(`127.0.0.1   entry2 foobar`), 0600))
-	time.Sleep(time.Second)
+	time.Sleep(6 * time.Second)
 
 	ipBar, err := hosts.LookupByHostname("foobar")
 	assert.NoError(t, err)
