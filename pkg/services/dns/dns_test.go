@@ -215,10 +215,10 @@ var _ = ginkgo.Describe("dns add test", func() {
 			Qclass: 1,
 		}
 
-		r := server.handler.addAnswers(server.handler.tcpClient, m)
+		server.handler.addAnswers(m)
 
-		gomega.Expect(r.Answer[0].Header().Name).To(gomega.Equal("redhat.com."))
-		gomega.Expect(r.Answer[0].String()).To(gomega.SatisfyAny(gomega.ContainSubstring("34.235.198.240"), gomega.ContainSubstring("52.200.142.250")))
+		gomega.Expect(m.Answer[0].Header().Name).To(gomega.Equal("redhat.com."))
+		gomega.Expect(m.Answer[0].String()).To(gomega.SatisfyAny(gomega.ContainSubstring("34.235.198.240"), gomega.ContainSubstring("52.200.142.250")))
 	})
 })
 
@@ -231,9 +231,6 @@ func TestDNS(t *testing.T) {
 	log.Infof("starting test DNS servers")
 	nameserver, cleanup, err := startDNSServer()
 	require.NoError(t, err)
-	if len(nameserver) == 0 {
-		t.Skip("Failed to setup start DNS server, skipping test")
-	}
 	defer cleanup()
 	time.Sleep(100 * time.Millisecond)
 	log.Infof("test DNS servers started")
