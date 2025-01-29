@@ -5,7 +5,6 @@ go 1.22.0
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/apparentlymart/go-cidr v1.1.0
-	github.com/areYouLazy/libhosty v1.1.0
 	github.com/containers/winquit v1.1.0
 	github.com/coreos/stream-metadata-go v0.4.5
 	github.com/dustin/go-humanize v1.0.1
@@ -18,7 +17,6 @@ require (
 	github.com/onsi/gomega v1.36.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/pkg/errors v0.9.1
-	github.com/qdm12/dns/v2 v2.0.0-rc6
 	github.com/sirupsen/logrus v1.9.3
 	github.com/songgao/packets v0.0.0-20160404182456-549a10cd4091
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
