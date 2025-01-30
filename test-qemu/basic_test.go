@@ -24,6 +24,7 @@ var _ = ginkgo.Describe("command-line format", func() {
 	ginkgo.It("should convert Command to command line format", func() {
 		command := types.NewGvproxyCommand()
 		command.AddEndpoint("unix:///tmp/network.sock")
+		command.AddServiceEndpoint("unix:///tmp/services.sock")
 		command.Debug = true
 		command.AddQemuSocket("tcp://0.0.0.0:1234")
 		command.PidFile = "~/gv-pidfile.txt"
@@ -33,6 +34,7 @@ var _ = ginkgo.Describe("command-line format", func() {
 		cmd := command.ToCmdline()
 		gomega.Expect(cmd).To(gomega.Equal([]string{
 			"-listen", "unix:///tmp/network.sock",
+			"-services", "unix:///tmp/services.sock",
 			"-debug",
 			"-mtu", "1500",
 			"-ssh-port", "2222",
