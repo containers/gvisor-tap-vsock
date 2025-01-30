@@ -30,22 +30,23 @@ import (
 )
 
 var (
-	debug           bool
-	mtu             int
-	endpoints       arrayFlags
-	vpnkitSocket    string
-	qemuSocket      string
-	bessSocket      string
-	stdioSocket     string
-	vfkitSocket     string
-	forwardSocket   arrayFlags
-	forwardDest     arrayFlags
-	forwardUser     arrayFlags
-	forwardIdentify arrayFlags
-	sshPort         int
-	pidFile         string
-	exitCode        int
-	logFile         string
+	debug            bool
+	mtu              int
+	endpoints        arrayFlags
+	vpnkitSocket     string
+	qemuSocket       string
+	bessSocket       string
+	stdioSocket      string
+	vfkitSocket      string
+	forwardSocket    arrayFlags
+	forwardDest      arrayFlags
+	forwardUser      arrayFlags
+	forwardIdentify  arrayFlags
+	sshPort          int
+	pidFile          string
+	exitCode         int
+	logFile          string
+	servicesEndpoint string
 )
 
 const (
@@ -74,6 +75,7 @@ func main() {
 	flag.Var(&forwardIdentify, "forward-identity", "Path to SSH identity key for forwarding")
 	flag.StringVar(&pidFile, "pid-file", "", "Generate a file with the PID in it")
 	flag.StringVar(&logFile, "log-file", "", "Output log messages (logrus) to a given file path")
+	flag.StringVar(&servicesEndpoint, "services", "", "Exposes the same HTTP API as the --listen flag, without the /connect endpoint")
 	flag.Parse()
 
 	if version.ShowVersion() {
@@ -262,7 +264,7 @@ func main() {
 	}
 
 	groupErrs.Go(func() error {
-		return run(ctx, groupErrs, &config, endpoints)
+		return run(ctx, groupErrs, &config, endpoints, servicesEndpoint)
 	})
 
 	// Wait for something to happen
@@ -310,7 +312,7 @@ func captureFile() string {
 	return "capture.pcap"
 }
 
-func run(ctx context.Context, g *errgroup.Group, configuration *types.Configuration, endpoints []string) error {
+func run(ctx context.Context, g *errgroup.Group, configuration *types.Configuration, endpoints []string, servicesEndpoint string) error {
 	vn, err := virtualnetwork.New(configuration)
 	if err != nil {
 		return err
@@ -324,6 +326,15 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 			return errors.Wrap(err, "cannot listen")
 		}
 		httpServe(ctx, g, ln, withProfiler(vn))
+	}
+
+	if servicesEndpoint != "" {
+		log.Infof("enabling services API. Listening %s", servicesEndpoint)
+		ln, err := transport.Listen(servicesEndpoint)
+		if err != nil {
+			return errors.Wrap(err, "cannot listen")
+		}
+		httpServe(ctx, g, ln, vn.ServicesMux())
 	}
 
 	ln, err := vn.Listen("tcp", fmt.Sprintf("%s:80", gatewayIP))
