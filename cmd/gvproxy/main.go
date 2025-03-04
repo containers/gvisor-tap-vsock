@@ -571,9 +571,7 @@ func searchDomains() []string {
 		searchPrefix := "search "
 		for sc.Scan() {
 			if strings.HasPrefix(sc.Text(), searchPrefix) {
-				searchDomains := strings.Split(strings.TrimPrefix(sc.Text(), searchPrefix), " ")
-				log.Debugf("Using search domains: %v", searchDomains)
-				return searchDomains
+				return parseSearchString(sc.Text(), searchPrefix)
 			}
 		}
 		if err := sc.Err(); err != nil {
@@ -582,4 +580,30 @@ func searchDomains() []string {
 		}
 	}
 	return nil
+}
+
+// Parse and sanitize search list
+// macOS has limitation on number of domains (6) and general string length (256 characters)
+// since glibc 2.26 Linux has no limitation on 'search' field
+func parseSearchString(text, searchPrefix string) []string {
+	// macOS allow only 265 characters in search list
+	if runtime.GOOS == "darwin" && len(text) > 256 {
+		log.Errorf("Search domains list is too long, it should not exceed 256 chars on macOS: %d", len(text))
+		text = text[:256]
+		lastSpace := strings.LastIndex(text, " ")
+		if lastSpace != -1 {
+			text = text[:lastSpace]
+		}
+	}
+
+	searchDomains := strings.Split(strings.TrimPrefix(text, searchPrefix), " ")
+	log.Debugf("Using search domains: %v", searchDomains)
+
+	// macOS allow only 6 domains in search list
+	if runtime.GOOS == "darwin" && len(searchDomains) > 6 {
+		log.Errorf("Search domains list is too long, it should not exceed 6 domains on macOS: %d", len(searchDomains))
+		searchDomains = searchDomains[:6]
+	}
+
+	return searchDomains
 }
