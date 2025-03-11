@@ -33,7 +33,7 @@ var (
 )
 
 func main() {
-	// Use config or fallback to original bechavior
+	// Use config or fallback to original behavior
 	_, errInit := GVProxyInit()
 	if errInit != nil {
 		log.Fatal(errInit.Error())

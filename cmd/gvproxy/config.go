@@ -319,9 +319,7 @@ func GVProxyConfigure(config *GVProxyConfig, args *GVProxyArgs, version string) 
 			return config, errors.New("ssh-port value must be between 1024 and 65535")
 		}
 
-		if config.Stack.CaptureFile == "" {
-			config.Stack.CaptureFile = captureFile()
-		}
+		config.Stack.CaptureFile = captureFile()
 
 		config.Stack.DNS = []types.Zone{
 			{
