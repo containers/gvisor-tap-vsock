@@ -276,7 +276,8 @@ func run(ctx context.Context, g *errgroup.Group) error {
 			if err := conn.Close(); err != nil {
 				log.Errorf("error closing %s: %q", config.Interfaces.Vfkit, err)
 			}
-			return os.Remove(config.Interfaces.Vfkit)
+			vfkitSocketURI, _ := url.Parse(config.Interfaces.Vfkit)
+			return os.Remove(vfkitSocketURI.Path)
 		})
 
 		g.Go(func() error {
