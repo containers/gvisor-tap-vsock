@@ -447,7 +447,8 @@ func run(ctx context.Context, g *errgroup.Group, configuration *types.Configurat
 			if err := conn.Close(); err != nil {
 				log.Errorf("error closing %s: %q", vfkitSocket, err)
 			}
-			return os.Remove(vfkitSocket)
+			vfkitSocketURI, _ := url.Parse(vfkitSocket)
+			return os.Remove(vfkitSocketURI.Path)
 		})
 
 		g.Go(func() error {
