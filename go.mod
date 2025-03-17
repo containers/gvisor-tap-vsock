@@ -2,7 +2,6 @@ module github.com/containers/gvisor-tap-vsock
 
 go 1.23.0
 
-
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/apparentlymart/go-cidr v1.1.0
@@ -24,7 +23,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/vishvananda/netlink v1.3.0
 	golang.org/x/crypto v0.36.0
-	golang.org/x/mod v0.22.0
+	golang.org/x/mod v0.24.0
 	golang.org/x/sync v0.12.0
 	golang.org/x/sys v0.31.0
 	gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f
