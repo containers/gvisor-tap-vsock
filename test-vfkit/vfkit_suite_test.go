@@ -57,7 +57,7 @@ func init() {
 	privateKeyFile = filepath.Join(tmpDir, "id_test")
 	publicKeyFile = privateKeyFile + ".pub"
 	ignFile = filepath.Join(tmpDir, "test.ign")
-	cmdDir = filepath.Join("../cmd")
+	cmdDir = "../cmd"
 }
 
 var _ = ginkgo.BeforeSuite(func() {
