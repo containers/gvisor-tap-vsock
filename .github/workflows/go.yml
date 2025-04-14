@@ -28,7 +28,7 @@ jobs:
 
     - name: Build
       run: |
-        make cross qemu-wrapper vm win-gvproxy win-sshproxy image
+        make cross qemu-wrapper vm win-gvproxy win-sshproxy
         mv bin/gvproxy.exe bin/gvproxy-windowsgui.exe
 
     - uses: actions/upload-artifact@v4
