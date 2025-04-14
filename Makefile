@@ -52,6 +52,10 @@ lint: $(TOOLS_BINDIR)/golangci-lint
 image:
 	${CONTAINER_RUNTIME} build -t quay.io/crcont/gvisor-tap-vsock:$(TAG) -f images/Dockerfile .
 
+.PHONY: push
+push:
+	${CONTAINER_RUNTIME} push quay.io/crcont/gvisor-tap-vsock:$(TAG)
+
 .PHONY: cross
 cross: $(TOOLS_BINDIR)/makefat
 	GOARCH=amd64 GOOS=freebsd  go build -ldflags "$(LDFLAGS)" -o bin/gvproxy-freebsd-amd64 ./cmd/gvproxy
