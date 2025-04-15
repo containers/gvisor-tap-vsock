@@ -33,6 +33,10 @@ jobs:
         make cross qemu-wrapper vm win-gvproxy win-sshproxy
         mv bin/gvproxy.exe bin/gvproxy-windowsgui.exe
 
+    - name: Image
+      run: |
+        make image
+
     - uses: actions/upload-artifact@v4
       with:
         name: gvisor-tap-vsock-binaries
