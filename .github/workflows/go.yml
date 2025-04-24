@@ -9,7 +9,7 @@ on:
 jobs:
 
   build:
-    runs-on: ubuntu-20.04 # explicitly use 20.04, see commit 428c40018f
+    runs-on: ubuntu-22.04 # explicitly use older ubuntu, see commit 428c40018f
     timeout-minutes: 30
     strategy:
       fail-fast: false
