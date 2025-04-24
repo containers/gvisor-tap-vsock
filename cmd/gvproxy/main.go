@@ -44,6 +44,7 @@ var (
 	forwardIdentify  arrayFlags
 	sshPort          int
 	pidFile          string
+	pcapFile         string
 	exitCode         int
 	logFile          string
 	servicesEndpoint string
@@ -62,6 +63,7 @@ func main() {
 	version.AddFlag()
 	flag.Var(&endpoints, "listen", "control endpoint")
 	flag.BoolVar(&debug, "debug", false, "Print debug info")
+	flag.StringVar(&pcapFile, "pcap", "", "Capture network traffic to a pcap file")
 	flag.IntVar(&mtu, "mtu", 1500, "Set the MTU")
 	flag.IntVar(&sshPort, "ssh-port", 2222, "Port to access the guest virtual machine. Must be between 1024 and 65535")
 	flag.StringVar(&vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
@@ -215,7 +217,7 @@ func main() {
 
 	config := types.Configuration{
 		Debug:             debug,
-		CaptureFile:       captureFile(),
+		CaptureFile:       pcapFile,
 		MTU:               mtu,
 		Subnet:            "192.168.127.0/24",
 		GatewayIP:         gatewayIP,
@@ -303,13 +305,6 @@ func (i *arrayFlags) String() string {
 func (i *arrayFlags) Set(value string) error {
 	*i = append(*i, value)
 	return nil
-}
-
-func captureFile() string {
-	if !debug {
-		return ""
-	}
-	return "capture.pcap"
 }
 
 func run(ctx context.Context, g *errgroup.Group, configuration *types.Configuration, endpoints []string, servicesEndpoint string) error {
