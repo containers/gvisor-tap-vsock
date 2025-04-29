@@ -2,6 +2,7 @@ package rhcos
 
 // Extensions is data specific to Red Hat Enterprise Linux CoreOS
 type Extensions struct {
+	AwsWinLi  *AwsWinLi  `json:"aws-winli,omitempty"`
 	AzureDisk *AzureDisk `json:"azure-disk,omitempty"`
 }
 
@@ -15,4 +16,23 @@ type AzureDisk struct {
 	// that can be copied into an image gallery.  Avoid creating VMs directly
 	// from this URL as that may lead to performance limitations.
 	URL string `json:"url,omitempty"`
+}
+
+// AwsWinLi represents prebuilt AWS Windows License Included Images.
+type AwsWinLi = ReplicatedImage
+
+// ReplicatedImage represents an image in all regions of an AWS-like cloud
+// This struct was copied from the release package to avoid an import cycle,
+// and is used to describe all AWS WinLI Images in all regions.
+type ReplicatedImage struct {
+	Regions map[string]SingleImage `json:"regions,omitempty"`
+}
+
+// SingleImage represents a globally-accessible image or an image in a
+// single region of an AWS-like cloud
+// This struct was copied from the release package to avoid an import cycle,
+// and is used to describe individual AWS WinLI Images.
+type SingleImage struct {
+	Release string `json:"release"`
+	Image   string `json:"image"`
 }
