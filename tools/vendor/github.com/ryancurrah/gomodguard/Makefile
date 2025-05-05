@@ -26,11 +26,11 @@ dockerrun: dockerbuild
 
 .PHONY: snapshot
 snapshot:
-	goreleaser --rm-dist --snapshot
+	goreleaser --clean --snapshot
 
 .PHONY: release
 release:
-	goreleaser --rm-dist
+	goreleaser --clean
 
 .PHONY: clean
 clean:
