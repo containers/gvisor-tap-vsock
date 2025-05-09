@@ -11,6 +11,8 @@ include tools/tools.mk
 VERSION_LDFLAGS=-X github.com/containers/gvisor-tap-vsock/pkg/types.gitVersion=$(GIT_VERSION)
 LDFLAGS = -s -w $(VERSION_LDFLAGS)
 
+IMAGE = quay.io/crcont/gvisor-tap-vsock:${TAG}
+
 .PHONY: gvproxy
 gvproxy:
 	go build -ldflags "$(LDFLAGS)" -o bin/gvproxy ./cmd/gvproxy
@@ -50,11 +52,19 @@ lint: $(TOOLS_BINDIR)/golangci-lint
 
 .PHONY: image
 image:
-	${CONTAINER_RUNTIME} build -t quay.io/crcont/gvisor-tap-vsock:$(TAG) -f images/Dockerfile .
+	${CONTAINER_RUNTIME} build --arch amd64 -t $(IMAGE)-amd64 -f images/Dockerfile .
+	${CONTAINER_RUNTIME} build --platform linux/arm64 -t $(IMAGE)-arm64 -f images/Dockerfile .
+	@if $(CONTAINER_RUNTIME) manifest inspect $(IMAGE) >/dev/null 2>&1; then \
+  		$(CONTAINER_RUNTIME) manifest rm $(IMAGE); \
+    fi
+	${CONTAINER_RUNTIME} manifest create $(IMAGE)
+	${CONTAINER_RUNTIME} manifest add $(IMAGE) $(IMAGE)-amd64
+	${CONTAINER_RUNTIME} manifest add $(IMAGE) $(IMAGE)-arm64
+
 
 .PHONY: push
 push:
-	${CONTAINER_RUNTIME} push quay.io/crcont/gvisor-tap-vsock:$(TAG)
+	${CONTAINER_RUNTIME} manifest push --all ${IMAGE}
 
 .PHONY: cross
 cross: $(TOOLS_BINDIR)/makefat
