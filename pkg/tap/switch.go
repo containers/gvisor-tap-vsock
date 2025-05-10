@@ -3,6 +3,7 @@ package tap
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -144,7 +145,10 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 				return err
 			}
 
-			atomic.AddUint64(&e.Sent, uint64(pkt.Size()))
+			if pkt.Size() < 0 {
+				return fmt.Errorf("packet size out of range")
+			}
+			atomic.AddUint64(&e.Sent, uint64(pkt.Size())) //#nosec: G115
 		}
 	} else {
 		e.camLock.RLock()
@@ -159,7 +163,10 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 		if err != nil {
 			return err
 		}
-		atomic.AddUint64(&e.Sent, uint64(pkt.Size()))
+		if pkt.Size() < 0 {
+			return fmt.Errorf("packet size out of range")
+		}
+		atomic.AddUint64(&e.Sent, uint64(pkt.Size())) //#nosec:G115. Safely checked
 	}
 	return nil
 }

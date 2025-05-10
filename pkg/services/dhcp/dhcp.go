@@ -3,6 +3,7 @@ package dhcp
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net"
 	"net/http"
 	"time"
@@ -50,7 +51,12 @@ func handler(configuration *types.Configuration, ipPool *tap.IPPool) server4.Han
 		reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionSubnetMask, Value: dhcpv4.IP(parsedSubnet.Mask)})
 		reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionRouter, Value: dhcpv4.IP(net.ParseIP(configuration.GatewayIP))})
 		reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionDomainNameServer, Value: dhcpv4.IPs([]net.IP{net.ParseIP(configuration.GatewayIP)})})
-		reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionInterfaceMTU, Value: dhcpv4.Uint16(configuration.MTU)})
+
+		if configuration.MTU < 0 || configuration.MTU > math.MaxUint16 {
+			log.Errorf("dhcp: invalid MTU %d", configuration.MTU)
+			return
+		}
+		reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionInterfaceMTU, Value: dhcpv4.Uint16(configuration.MTU)}) //#nosec: G115. Safely checked
 		reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionDNSDomainSearchList, Value: &rfc1035label.Labels{
 			Labels: configuration.DNSSearchDomains,
 		}})
@@ -71,7 +77,7 @@ func handler(configuration *types.Configuration, ipPool *tap.IPPool) server4.Han
 	}
 }
 
-func dial(s *stack.Stack, nic int) (*gonet.UDPConn, error) {
+func dial(s *stack.Stack, nic tcpip.NICID) (*gonet.UDPConn, error) {
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
 	if err != nil {
@@ -98,7 +104,7 @@ type Server struct {
 }
 
 func New(configuration *types.Configuration, stack *stack.Stack, ipPool *tap.IPPool) (*Server, error) {
-	ln, err := dial(stack, 1)
+	ln, err := dial(stack, tcpip.NICID(1))
 	if err != nil {
 		return nil, err
 	}

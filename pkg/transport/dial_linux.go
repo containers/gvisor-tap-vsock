@@ -2,6 +2,7 @@ package transport
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"strconv"
@@ -18,13 +19,20 @@ func Dial(endpoint string) (net.Conn, string, error) {
 	}
 	switch parsed.Scheme {
 	case "vsock":
-		contextID, err := strconv.Atoi(parsed.Hostname())
+		contextID, err := strconv.ParseUint(parsed.Hostname(), 10, 32)
 		if err != nil {
 			return nil, "", err
 		}
-		port, err := strconv.Atoi(parsed.Port())
+		if contextID > math.MaxUint32 {
+			return nil, "", fmt.Errorf("invalid contextID")
+		}
+
+		port, err := strconv.ParseUint(parsed.Port(), 10, 32)
 		if err != nil {
 			return nil, "", err
+		}
+		if port > math.MaxUint32 {
+			return nil, "", fmt.Errorf("invalid port")
 		}
 		conn, err := mdlayhervsock.Dial(uint32(contextID), uint32(port), nil)
 		return conn, parsed.Path, err
