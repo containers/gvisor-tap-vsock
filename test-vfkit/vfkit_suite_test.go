@@ -62,7 +62,7 @@ func init() {
 
 var _ = ginkgo.BeforeSuite(func() {
 	// clear the environment before running the tests. It may happen the tests were abruptly stopped earlier leaving a dirty env
-	clear()
+	cleanup()
 
 	// check if vfkit version is greater than v0.5 (ignition support is available starting from v0.6)
 	version, err := vfkitVersion()
@@ -207,7 +207,7 @@ func sshCommand(cmd ...string) *exec.Cmd {
 	return sshCmd
 }
 
-func clear() {
+func cleanup() {
 	_ = os.Remove(efiStore)
 	_ = os.Remove(sock)
 	_ = os.Remove(vfkitSock)
@@ -249,5 +249,5 @@ var _ = ginkgo.AfterSuite(func() {
 			log.Error(err)
 		}
 	}
-	clear()
+	cleanup()
 })
