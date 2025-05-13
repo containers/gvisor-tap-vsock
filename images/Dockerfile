@@ -5,6 +5,5 @@ RUN make
 
 FROM busybox
 COPY images/udhcpc.sh /usr/share/udhcpc/default.script
-RUN chmod +x /usr/share/udhcpc/default.script
 COPY --from=build /opt/app-root/src/bin/gvforwarder .
 ENTRYPOINT ["/gvforwarder"]
