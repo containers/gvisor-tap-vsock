@@ -17,7 +17,7 @@ type client struct {
 func newClient(conn net.Conn, user string, key string) (*client, error) {
 	config, err := newConfig(user, key)
 	if err != nil {
-		return nil, fmt.Errorf("Error getting config for native Go SSH: %s", err)
+		return nil, fmt.Errorf("error getting config for native Go SSH: %s", err)
 	}
 
 	return &client{

@@ -1,6 +1,7 @@
 package tap
 
 import (
+	"math"
 	"net"
 
 	"github.com/google/gopacket"
@@ -82,6 +83,9 @@ func (e *LinkEndpoint) MaxHeaderLength() uint16 {
 }
 
 func (e *LinkEndpoint) MTU() uint32 {
+	if e.mtu < 0 || e.mtu > math.MaxUint32 {
+		e.mtu = math.MaxUint32
+	}
 	return uint32(e.mtu)
 }
 

@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"strconv"
@@ -13,15 +15,21 @@ const DefaultURL = "vsock://:1024"
 func listenURL(parsed *url.URL) (net.Listener, error) {
 	switch parsed.Scheme {
 	case "vsock":
-		port, err := strconv.Atoi(parsed.Port())
+		port, err := strconv.ParseUint(parsed.Port(), 10, 32)
 		if err != nil {
 			return nil, err
 		}
 
+		if port > math.MaxUint32 {
+			return nil, fmt.Errorf("invalid port")
+		}
 		if parsed.Hostname() != "" {
-			cid, err := strconv.Atoi(parsed.Hostname())
+			cid, err := strconv.ParseUint(parsed.Hostname(), 10, 32)
 			if err != nil {
 				return nil, err
+			}
+			if cid > math.MaxUint32 {
+				return nil, fmt.Errorf("invalid cid")
 			}
 			return mdlayhervsock.ListenContextID(uint32(cid), uint32(port), nil)
 		}

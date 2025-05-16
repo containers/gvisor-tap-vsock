@@ -2,6 +2,7 @@ package tap
 
 import (
 	"errors"
+	"math"
 	"net"
 	"sync"
 
@@ -50,6 +51,9 @@ func (p *IPPool) GetOrAssign(mac string) (net.IP, error) {
 
 	var i uint64
 	for i = 1; i < p.count; i++ {
+		if i > math.MaxInt32 {
+			return nil, errors.New("IP pool exceeds maximum number of IP addresses")
+		}
 		candidate, err := cidr.Host(p.base, int(i))
 		if err != nil {
 			continue
