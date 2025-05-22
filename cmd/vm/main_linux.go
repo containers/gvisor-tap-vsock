@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -175,6 +176,10 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 			log.Info(packet.String())
 		}
 
+		if n < 0 || n > math.MaxUint16 {
+			log.Errorf("invalid frame length")
+			return
+		}
 		binary.LittleEndian.PutUint16(size, uint16(n))
 		if _, err := conn.Write(append(size, frame...)); err != nil {
 			errCh <- errors.Wrap(err, "cannot write size and packet to socket")

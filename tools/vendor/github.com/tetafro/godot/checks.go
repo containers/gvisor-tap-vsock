@@ -92,10 +92,18 @@ func checkPeriod(c comment) *Issue {
 		strings.Split(c.text, "\n")[pos.line-1],
 	)
 
+	// Get the offset of the first symbol in the last line of the comment.
+	// This value is used only in golangci-lint to point to the problem, and
+	// to replace the problem when running in auto-fix mode.
+	offset := c.start.Offset
+	for i := 0; i < pos.line-1; i++ {
+		offset += len(c.lines[i]) + 1
+	}
+
 	iss := Issue{
 		Pos: token.Position{
 			Filename: c.start.Filename,
-			Offset:   c.start.Offset,
+			Offset:   offset,
 			Line:     pos.line + c.start.Line - 1,
 			Column:   pos.column,
 		},
@@ -171,7 +179,7 @@ func checkCapital(c comment) []Issue {
 		if state == endOfSentence && unicode.IsLower(r) {
 			pp = append(pp, position{
 				line:   pos.line,
-				column: runeToByteColumn(c.text, pos.column),
+				column: runeToByteColumn(c.lines[pos.line-1], pos.column),
 			})
 		}
 		state = empty
@@ -230,7 +238,10 @@ func isSpecialBlock(comment string) bool {
 		strings.Contains(comment, "#define")) {
 		return true
 	}
-	if strings.HasPrefix(comment, "// Output: ") {
+	// This should only be skipped in test files, but we don't have this
+	// information here, so - always skip
+	if strings.HasPrefix(comment, "// Output:") ||
+		strings.HasPrefix(comment, "// Unordered output:") {
 		return true
 	}
 	return false

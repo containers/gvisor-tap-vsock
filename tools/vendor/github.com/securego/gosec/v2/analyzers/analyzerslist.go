@@ -51,7 +51,7 @@ func (al *AnalyzerList) AnalyzersInfo() (map[string]AnalyzerDefinition, map[stri
 type AnalyzerFilter func(string) bool
 
 // NewAnalyzerFilter is a closure that will include/exclude the analyzer ID's based on
-// the supplied boolean value.
+// the supplied boolean value (false means don't remove, true means exclude).
 func NewAnalyzerFilter(action bool, analyzerIDs ...string) AnalyzerFilter {
 	analyzerlist := make(map[string]bool)
 	for _, analyzer := range analyzerIDs {
@@ -68,6 +68,7 @@ func NewAnalyzerFilter(action bool, analyzerIDs ...string) AnalyzerFilter {
 var defaultAnalyzers = []AnalyzerDefinition{
 	{"G115", "Type conversion which leads to integer overflow", newConversionOverflowAnalyzer},
 	{"G602", "Possible slice bounds out of range", newSliceBoundsAnalyzer},
+	{"G407", "Use of hardcoded IV/nonce for encryption", newHardCodedNonce},
 }
 
 // Generate the list of analyzers to use
