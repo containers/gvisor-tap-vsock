@@ -30,24 +30,25 @@ import (
 )
 
 var (
-	debug            bool
-	mtu              int
-	endpoints        arrayFlags
-	vpnkitSocket     string
-	qemuSocket       string
-	bessSocket       string
-	stdioSocket      string
-	vfkitSocket      string
-	forwardSocket    arrayFlags
-	forwardDest      arrayFlags
-	forwardUser      arrayFlags
-	forwardIdentify  arrayFlags
-	sshPort          int
-	pidFile          string
-	pcapFile         string
-	exitCode         int
-	logFile          string
-	servicesEndpoint string
+	debug             bool
+	mtu               int
+	endpoints         arrayFlags
+	vpnkitSocket      string
+	qemuSocket        string
+	bessSocket        string
+	stdioSocket       string
+	vfkitSocket       string
+	forwardSocket     arrayFlags
+	forwardDest       arrayFlags
+	forwardUser       arrayFlags
+	forwardIdentify   arrayFlags
+	sshPort           int
+	pidFile           string
+	pcapFile          string
+	exitCode          int
+	logFile           string
+	servicesEndpoint  string
+	ec2MetadataAccess bool
 )
 
 const (
@@ -78,6 +79,7 @@ func main() {
 	flag.StringVar(&pidFile, "pid-file", "", "Generate a file with the PID in it")
 	flag.StringVar(&logFile, "log-file", "", "Output log messages (logrus) to a given file path")
 	flag.StringVar(&servicesEndpoint, "services", "", "Exposes the same HTTP API as the --listen flag, without the /connect endpoint")
+	flag.BoolVar(&ec2MetadataAccess, "ec2-metadata-access", false, "Permits access to EC2 Metadata Service (TCP only)")
 	flag.Parse()
 
 	if version.ShowVersion() {
@@ -262,7 +264,8 @@ func main() {
 		VpnKitUUIDMacAddresses: map[string]string{
 			"c3d68012-0208-11ea-9fd7-f2189899ab08": "5a:94:ef:e4:0c:ee",
 		},
-		Protocol: protocol,
+		Protocol:          protocol,
+		Ec2MetadataAccess: ec2MetadataAccess,
 	}
 
 	groupErrs.Go(func() error {
