@@ -22,7 +22,7 @@ require (
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/stretchr/testify v1.10.0
 	github.com/vishvananda/netlink v1.3.1
-	golang.org/x/crypto v0.38.0
+	golang.org/x/crypto v0.39.0
 	golang.org/x/mod v0.25.0
 	golang.org/x/sync v0.15.0
 	golang.org/x/sys v0.33.0
@@ -40,10 +40,10 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
-	golang.org/x/net v0.39.0 // indirect
-	golang.org/x/text v0.25.0 // indirect
+	golang.org/x/net v0.40.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
-	golang.org/x/tools v0.32.0 // indirect
+	golang.org/x/tools v0.33.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
