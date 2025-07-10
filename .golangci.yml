@@ -16,6 +16,11 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
+  settings:
+    revive:
+      rules:
+      - name: var-naming
+        disabled: true
 formatters:
   enable:
     - gofmt
