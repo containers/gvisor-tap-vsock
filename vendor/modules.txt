@@ -90,7 +90,7 @@ github.com/onsi/ginkgo/reporters/stenographer
 github.com/onsi/ginkgo/reporters/stenographer/support/go-colorable
 github.com/onsi/ginkgo/reporters/stenographer/support/go-isatty
 github.com/onsi/ginkgo/types
-# github.com/onsi/gomega v1.37.0
+# github.com/onsi/gomega v1.38.0
 ## explicit; go 1.23.0
 github.com/onsi/gomega
 github.com/onsi/gomega/format
