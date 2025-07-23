@@ -12,7 +12,7 @@ github.com/apparentlymart/go-cidr/cidr
 ## explicit; go 1.19
 github.com/containers/winquit/pkg/winquit
 github.com/containers/winquit/pkg/winquit/win32
-# github.com/coreos/stream-metadata-go v0.4.8
+# github.com/coreos/stream-metadata-go v0.4.9
 ## explicit; go 1.18
 github.com/coreos/stream-metadata-go/fedoracoreos
 github.com/coreos/stream-metadata-go/fedoracoreos/internals
