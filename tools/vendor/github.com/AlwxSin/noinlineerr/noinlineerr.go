@@ -57,15 +57,17 @@ func inlineErrorInspector(pass *analysis.Pass) func(n ast.Node) {
 				continue
 			}
 
-			// confirm type is error
+			// confirm type is error and it is used in condition
 			obj := pass.TypesInfo.ObjectOf(ident)
-			if !isError(obj) || ident.Name == "_" {
+			if !isError(obj) || ident.Name == "_" || !errorUsedInCondition(ifStmt.Cond, ident.Name) {
 				continue
 			}
 
-			if len(assignStmt.Lhs) != 1 {
-				// if there are more than 1 assignment then we can make a shadow conflict with other variables
-				// so don't do anything beside simple error message
+			// if there are more than 1 assignment
+			// or there are any variables with same name
+			// then we can make a shadow conflict with other variables
+			// so don't do anything beside simple error message
+			if len(assignStmt.Lhs) != 1 || shadowVarsExists(ident.Name, pass.TypesInfo.Scopes[ifStmt]) {
 				pass.Reportf(ident.Pos(), errMessage)
 				return
 			}
@@ -75,6 +77,7 @@ func inlineErrorInspector(pass *analysis.Pass) func(n ast.Node) {
 			// and we can autofix that
 
 			var buf bytes.Buffer
+
 			_ = printer.Fprint(&buf, pass.Fset, assignStmt)
 			assignText := buf.String()
 
@@ -115,4 +118,37 @@ func isError(obj types.Object) bool {
 	errorType := types.Universe.Lookup("error").Type()
 
 	return types.AssignableTo(obj.Type(), errorType)
+}
+
+func shadowVarsExists(name string, scope *types.Scope) bool {
+	if scope == nil {
+		return false
+	}
+
+	parentScope := scope.Parent()
+	if parentScope == nil {
+		return false
+	}
+
+	return parentScope.Lookup(name) != nil
+}
+
+func errorUsedInCondition(cond ast.Expr, errIdentName string) bool {
+	used := false
+
+	ast.Inspect(cond, func(n ast.Node) bool {
+		ident, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+
+		if ident.Name == errIdentName {
+			used = true
+			return false
+		}
+
+		return true
+	})
+
+	return used
 }
