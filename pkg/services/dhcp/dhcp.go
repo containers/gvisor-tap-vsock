@@ -67,6 +67,9 @@ func handler(configuration *types.Configuration, ipPool *tap.IPPool) server4.Han
 			reply.UpdateOption(dhcpv4.OptMessageType(dhcpv4.MessageTypeOffer))
 		case dhcpv4.MessageTypeRequest:
 			reply.UpdateOption(dhcpv4.OptMessageType(dhcpv4.MessageTypeAck))
+		case dhcpv4.MessageTypeRelease:
+			log.Debugf("dhcp: unhandled message type: %v", mt)
+			return
 		default:
 			log.Errorf("dhcp: unhandled message type: %v", mt)
 			return
