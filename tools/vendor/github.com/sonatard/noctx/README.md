@@ -4,8 +4,9 @@
 
 `noctx` finds function calls without context.Context.
 
-If you are using net/http package and sql/database package, you should use noctx.
 Passing `context.Context` enables library user to cancel request, getting trace information and so on.
+
+`noctx` helps you to identify code that could be rewritten to use the context.Context.
 
 ## Usage
 
@@ -56,23 +57,59 @@ golangci-lint run --enable-only noctx
 
 ## net/http package
 ### Rules
-https://github.com/sonatard/noctx/blob/e9e23da29379b87a39ce50fd1ef7b273fee2461a/noctx.go#L28-L36
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L41-L50
 
 ### Sample
-https://github.com/sonatard/noctx/blob/9a514098df3f8a88e0fd6949320c4e0aa51b520c/testdata/src/http_client/http_client.go#L11
-https://github.com/sonatard/noctx/blob/9a514098df3f8a88e0fd6949320c4e0aa51b520c/testdata/src/http_request/http_request.go#L17
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/http_client/http_client.go#L11
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/http_request/http_request.go#L17
 
 ### Reference
 - [net/http - NewRequest](https://pkg.go.dev/net/http#NewRequest)
 - [net/http - NewRequestWithContext](https://pkg.go.dev/net/http#NewRequestWithContext)
 - [net/http - Request.WithContext](https://pkg.go.dev/net/http#Request.WithContext)
- 
-## database/sql package
+
+## net package
+
 ### Rules
-https://github.com/sonatard/noctx/blob/a00128b6a4087639ed0d13a123d0f9960309824f/noctx.go#L40-L48
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L26-L39
 
 ### Sample
-https://github.com/sonatard/noctx/blob/6e0f6bb8de1bd8a3c6e73439614927fd59aa0a8a/testdata/src/sql/sql.go#L13
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/network/net.go#L17
+
+### References
+- [net - ListenConfig](https://pkg.go.dev/net#ListenConfig)
+- [net - Dialer.DialContext](https://pkg.go.dev/net#Dialer.DialContext)
+- [net - Resolver](https://pkg.go.dev/net#Resolver)
+- [net - DefaultResolver](https://pkg.go.dev/net#DefaultResolver)
+
+## database/sql package
+### Rules
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L52-L66
+
+### Sample
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/sql/sql.go#L18
 
 ### Reference
 - [database/sql](https://pkg.go.dev/database/sql)
+
+## crypt/tls package
+### Rules
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L71-L74
+
+### Sample
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/crypto_tls/tls.go#L17
+
+### Reference
+- [crypto/tls - Dialer.DialContext](https://pkg.go.dev/crypto/tls#Dialer.DialContext)
+- [crypto/tls - Conn.HandshakeContext](https://pkg.go.dev/crypto/tls#Conn.HandshakeContext)
+
+## exec package
+### Rules
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L68-L69
+
+### Sample
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/exec_cmd/exec.go#L11
+
+### Reference
+- [exec - exec.CommandContext](https://pkg.go.dev/exec#CommandContext)
+
