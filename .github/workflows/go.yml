@@ -16,7 +16,7 @@ jobs:
       matrix:
         go-version: ["1.23.x", "1.24.x"]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         fetch-depth: 0 # history/tags are needed for automatic version generation
         fetch-tags: true
@@ -42,7 +42,7 @@ jobs:
     needs: build # Don't bother testing if cross arch build fails
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install qemu
       run: |
@@ -69,7 +69,7 @@ jobs:
     runs-on: windows-latest # Only builds/runs on windows
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Go
       uses: actions/setup-go@v5
