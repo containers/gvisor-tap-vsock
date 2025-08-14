@@ -17,6 +17,7 @@ package stack
 import (
 	"fmt"
 	"reflect"
+	"sort"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -90,6 +91,10 @@ type nic struct {
 
 	// Primary is the main controlling interface in a bonded setup.
 	Primary *nic
+
+	// experimentIPOptionEnabled indicates whether the NIC supports the
+	// experiment IP option.
+	experimentIPOptionEnabled bool
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
@@ -188,6 +193,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
 		qDisc:                     qDisc,
 		deliverLinkPackets:        opts.DeliverLinkPackets,
+		experimentIPOptionEnabled: opts.EnableExperimentIPOption,
 	}
 	nic.linkResQueue.init(nic)
 
@@ -569,12 +575,22 @@ func (n *nic) allPermanentAddresses() []tcpip.ProtocolAddress {
 // primaryAddresses returns the primary addresses associated with this NIC.
 func (n *nic) primaryAddresses() []tcpip.ProtocolAddress {
 	var addrs []tcpip.ProtocolAddress
-	for p, ep := range n.networkEndpoints {
-		addressableEndpoint, ok := ep.(AddressableEndpoint)
+
+	protocolNumbers := make([]tcpip.NetworkProtocolNumber, 0, len(n.networkEndpoints))
+	for p := range n.networkEndpoints {
+		protocolNumbers = append(protocolNumbers, p)
+	}
+	// Sort the network protocol numbers so that IPv4 address is always
+	// added to the list before IPv6 address.
+	sort.Slice(protocolNumbers, func(i, j int) bool {
+		return protocolNumbers[i] < protocolNumbers[j]
+	})
+
+	for _, p := range protocolNumbers {
+		addressableEndpoint, ok := n.networkEndpoints[p].(AddressableEndpoint)
 		if !ok {
 			continue
 		}
-
 		for _, a := range addressableEndpoint.PrimaryAddresses() {
 			addrs = append(addrs, tcpip.ProtocolAddress{Protocol: p, AddressWithPrefix: a})
 		}
@@ -1093,6 +1109,12 @@ func (n *nic) multicastForwarding(protocol tcpip.NetworkProtocolNumber) (bool, t
 	}
 
 	return ep.MulticastForwarding(), nil
+}
+
+// GetExperimentIPOptionEnabled returns whether the NIC is responsible for
+// passing the experiment IP option.
+func (n *nic) GetExperimentIPOptionEnabled() bool {
+	return n.experimentIPOptionEnabled
 }
 
 // CoordinatorNIC represents NetworkLinkEndpoint that can join multiple network devices.
