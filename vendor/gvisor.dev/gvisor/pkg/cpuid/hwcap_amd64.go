@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2024 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build go1.23 && !go1.25
+//go:build amd64
+// +build amd64
 
-#include "textflag.h"
+package cpuid
 
-#define GOID_OFFSET 160 // +checkoffset runtime g.goid
-
-// func goid() int64
-TEXT ·goid(SB),NOSPLIT|NOFRAME,$0-8
-  MOVQ (TLS), R14
-  MOVQ GOID_OFFSET(R14), R14
-  MOVQ R14, ret+0(FP)
-  RET
+// See arch/x86/include/uapi/asm/hwcap2.h
+const (
+	HWCAP2_RING3MWAIT = 1 << 0
+	HWCAP2_FSGSBASE   = 1 << 1
+)

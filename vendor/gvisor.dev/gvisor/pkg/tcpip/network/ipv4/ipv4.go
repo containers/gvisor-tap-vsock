@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -68,6 +69,8 @@ const (
 	forwardingDisabled = 0
 	forwardingEnabled  = 1
 )
+
+var martianPacketLogger = log.BasicRateLimitedLogger(time.Minute)
 
 var ipv4BroadcastAddr = header.IPv4Broadcast.WithPrefix()
 
@@ -446,6 +449,9 @@ func (e *endpoint) getID() uint16 {
 }
 
 func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params stack.NetworkHeaderParams, options header.IPv4OptionsSerializer) tcpip.Error {
+	if expVal := params.ExperimentOptionValue; expVal != 0 {
+		options = append(options, &header.IPv4SerializableExperimentOption{Tag: expVal})
+	}
 	hdrLen := header.IPv4MinimumSize
 	var optLen int
 	if options != nil {
@@ -839,11 +845,13 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	if !e.nic.IsLoopback() {
 		if !e.protocol.options.AllowExternalLoopbackTraffic {
 			if header.IsV4LoopbackAddress(h.SourceAddress()) {
+				martianPacketLogger.Infof("Martian packet dropped with loopback source address. If your traffic is unexpectedly dropped, you may want to allow martian packets.")
 				stats.InvalidSourceAddressesReceived.Increment()
 				return
 			}
 
 			if header.IsV4LoopbackAddress(h.DestinationAddress()) {
+				martianPacketLogger.Infof("Martian packet dropped with loopback destination address. If your traffic is unexpectedly dropped, you may want to allow martian packets.")
 				stats.InvalidDestinationAddressesReceived.Increment()
 				return
 			}
@@ -868,7 +876,9 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			return
 		}
 	}
-
+	// CheckPrerouting can modify the backing storage of the packet, so refresh
+	// the header.
+	h = header.IPv4(pkt.NetworkHeader().Slice())
 	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
 
@@ -1198,6 +1208,13 @@ func (e *endpoint) handleForwardingError(err ip.ForwardingError) {
 		stats.Forwarding.UnknownOutputEndpoint.Increment()
 	case *ip.ErrOutgoingDeviceNoBufferSpace:
 		stats.Forwarding.OutgoingDeviceNoBufferSpace.Increment()
+	case *ip.ErrOther:
+		switch err := err.Err.(type) {
+		case *tcpip.ErrClosedForSend:
+			stats.Forwarding.OutgoingDeviceClosedForSend.Increment()
+		default:
+			panic(fmt.Sprintf("unrecognized tcpip forwarding error: %s", err))
+		}
 	default:
 		panic(fmt.Sprintf("unrecognized forwarding error: %s", err))
 	}
