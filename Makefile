@@ -48,6 +48,12 @@ vendor:
 lint: $(TOOLS_BINDIR)/golangci-lint
 	"$(TOOLS_BINDIR)"/golangci-lint run
 
+.PHONY: cross-lint
+cross-lint: $(TOOLS_BINDIR)/golangci-lint
+	GOOS=linux $(MAKE) lint
+	GOOS=darwin $(MAKE) lint
+	GOOS=windows $(MAKE) lint
+
 .PHONY: image
 image:
 	${CONTAINER_RUNTIME} build -t quay.io/crcont/gvisor-tap-vsock:$(TAG) -f images/Dockerfile .
