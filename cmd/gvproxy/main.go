@@ -49,12 +49,17 @@ var (
 	logFile           string
 	servicesEndpoint  string
 	ec2MetadataAccess bool
+	gatewayIP         string
+	hostIP            string
+	sshHostPort       string
+	deviceIP          string
+	subnetIP	  string
 )
 
 const (
-	gatewayIP   = "192.168.127.1"
-	sshHostPort = "192.168.127.2:22"
-	hostIP      = "192.168.127.254"
+	//gatewayIP   = "192.168.127.1"
+	//sshHostPort = "192.168.127.2:22"
+	//hostIP      = "192.168.127.254"
 	host        = "host"
 	gateway     = "gateway"
 )
@@ -65,6 +70,10 @@ func main() {
 	flag.Var(&endpoints, "listen", "control endpoint")
 	flag.BoolVar(&debug, "debug", false, "Print debug info")
 	flag.StringVar(&pcapFile, "pcap", "", "Capture network traffic to a pcap file")
+	flag.StringVar(&gatewayIP, "gatewayIP", "192.168.127.1", "Gateway IP")
+	flag.StringVar(&hostIP, "hostIP", "192.168.127.254", "Host IP")
+	flag.StringVar(&deviceIP, "deviceIP", "192.168.127.2", "Device IP")
+	flag.StringVar(&subnetIP, "subnetIP", "192.168.127.0/24", "subnet IP")
 	flag.IntVar(&mtu, "mtu", 1500, "Set the MTU")
 	flag.IntVar(&sshPort, "ssh-port", 2222, "Port to access the guest virtual machine. Must be between 1024 and 65535")
 	flag.StringVar(&vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
@@ -81,6 +90,8 @@ func main() {
 	flag.StringVar(&servicesEndpoint, "services", "", "Exposes the same HTTP API as the --listen flag, without the /connect endpoint")
 	flag.BoolVar(&ec2MetadataAccess, "ec2-metadata-access", false, "Permits access to EC2 Metadata Service (TCP only)")
 	flag.Parse()
+
+	sshHostPort := deviceIP + ":22"
 
 	if version.ShowVersion() {
 		fmt.Println(version.String())
@@ -221,11 +232,11 @@ func main() {
 		Debug:             debug,
 		CaptureFile:       pcapFile,
 		MTU:               mtu,
-		Subnet:            "192.168.127.0/24",
+		Subnet:            subnetIP,
 		GatewayIP:         gatewayIP,
 		GatewayMacAddress: "5a:94:ef:e4:0c:dd",
 		DHCPStaticLeases: map[string]string{
-			"192.168.127.2": "5a:94:ef:e4:0c:ee",
+			deviceIP: "5a:94:ef:e4:0c:ee",
 		},
 		DNS: []types.Zone{
 			{
