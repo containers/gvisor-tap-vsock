@@ -17,4 +17,4 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: golangci-lint
-        run: make lint
+        run: make cross-lint
