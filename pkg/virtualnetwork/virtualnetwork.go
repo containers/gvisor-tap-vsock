@@ -42,7 +42,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 	}
 
 	mtu := configuration.MTU
-	if mtu < 0 || mtu > math.MaxUint32 {
+	if mtu < 0 || mtu > math.MaxInt32 {
 		return nil, errors.New("mtu is out of range")
 	}
 	tapEndpoint, err := tap.NewLinkEndpoint(configuration.Debug, uint32(mtu), configuration.GatewayMacAddress, configuration.GatewayIP, configuration.GatewayVirtualIPs)
