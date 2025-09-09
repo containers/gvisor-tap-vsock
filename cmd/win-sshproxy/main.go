@@ -100,12 +100,16 @@ func main() {
 	}
 
 	logrus.Debug("Setting up proxies")
-	setupProxies(ctx, group, sources, dests, identities)
+	err = setupProxies(ctx, group, sources, dests, identities)
+	if err != nil {
+		logrus.Errorf("Error setting up proxies: %v", err)
+		return
+	}
 
-	// Wait for cmopletion (cancellation) or error
+	// Wait for completion (cancellation) or error
 	if err := group.Wait(); err != nil {
-		logrus.Errorf("Error occured in execution group: " + err.Error())
-		os.Exit(1)
+		logrus.Errorf("Error occurred in execution group: " + err.Error())
+		return
 	}
 }
 

@@ -30,7 +30,7 @@ func ListenNpipe(socketURI *url.URL) (net.Listener, error) {
 		InputBufferSize:    65536,
 		OutputBufferSize:   65536,
 	}
-	path := strings.Replace(socketURI.Path, "/", "\\", -1)
+	path := strings.ReplaceAll(socketURI.Path, "/", "\\")
 
 	listener, err := winio.ListenPipe(path, &config)
 	if err != nil {
