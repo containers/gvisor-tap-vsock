@@ -73,6 +73,7 @@ func main() {
 }
 
 func run() error {
+	log.Infof("Dialing to %s…", endpoint)
 	conn, path, err := transport.Dial(endpoint)
 	if err != nil {
 		return errors.Wrap(err, "cannot connect to host")
@@ -80,6 +81,7 @@ func run() error {
 	defer conn.Close()
 
 	if path != "" {
+		log.Infof("Sending post request to %s", path)
 		req, err := http.NewRequest("POST", path, nil)
 		if err != nil {
 			return err
@@ -89,6 +91,7 @@ func run() error {
 		}
 	}
 
+	log.Infof("Configuring tap device %s", iface)
 	tap, err := water.New(water.Config{
 		DeviceType: water.TAP,
 		PlatformSpecificParams: water.PlatformSpecificParams{
@@ -101,10 +104,13 @@ func run() error {
 	defer tap.Close()
 
 	if !tapPreexists {
+		log.Infof("Enabling tap device %s", iface)
 		if err := linkUp(); err != nil {
 			return errors.Wrap(err, "cannot set mac address")
 		}
 	}
+
+	log.Infof("Starting rx/tx loops")
 
 	errCh := make(chan error, 1)
 	go tx(conn, tap, errCh, mtu)
