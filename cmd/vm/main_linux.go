@@ -169,7 +169,7 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 		}
 
 		if n < 0 || n > math.MaxUint16 {
-			log.Errorf("invalid frame length")
+			errCh <- fmt.Errorf("invalid frame length (%d > %d)", n, math.MaxUint16)
 			return
 		}
 		binary.LittleEndian.PutUint16(size, uint16(n))
