@@ -59,10 +59,8 @@ func peekAddress(listeningConn *net.UnixConn) (*net.UnixAddr, error) {
 	magic := make([]byte, 4)
 	getRemoteAddr := func(fd uintptr) bool {
 		_, vfkitSockaddr, getRemoteAddrErr = syscall.Recvfrom(int(fd), magic, syscall.MSG_PEEK|syscall.MSG_TRUNC)
-		if errors.Is(getRemoteAddrErr, syscall.EAGAIN) {
-			return false
-		}
-		return true
+
+		return !errors.Is(getRemoteAddrErr, syscall.EAGAIN)
 	}
 	if err := rawConn.Read(getRemoteAddr); err != nil {
 		return nil, err
