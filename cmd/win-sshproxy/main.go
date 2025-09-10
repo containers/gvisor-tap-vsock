@@ -96,7 +96,7 @@ func main() {
 
 	// Save thread for legacy callers which use it to post a quit
 	if _, err := saveThreadId(); err != nil {
-		logrus.Errorf("Error saving thread id: " + err.Error())
+		logrus.Errorf("Error saving thread id: %v", err)
 	}
 
 	logrus.Debug("Setting up proxies")
@@ -108,7 +108,7 @@ func main() {
 
 	// Wait for completion (cancellation) or error
 	if err := group.Wait(); err != nil {
-		logrus.Errorf("Error occurred in execution group: " + err.Error())
+		logrus.Errorf("Error occurred in execution group: %v", err)
 		return
 	}
 }
