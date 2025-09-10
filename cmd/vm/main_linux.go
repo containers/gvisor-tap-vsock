@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,7 +59,7 @@ func main() {
 		log.Fatal(err)
 	}
 	for _, link := range links {
-		if contains(expected, link.Attrs().Name) {
+		if slices.Contains(expected, link.Attrs().Name) {
 			log.Infof("interface %s prevented this program to run", link.Attrs().Name)
 			return
 		}
@@ -69,15 +70,6 @@ func main() {
 		}
 		time.Sleep(time.Second)
 	}
-}
-
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
 }
 
 func run() error {
