@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/songgao/packets/ethernet"
 	"github.com/songgao/water"
@@ -58,7 +58,7 @@ func main() {
 		log.Fatal(err)
 	}
 	for _, link := range links {
-		if contains(expected, link.Attrs().Name) {
+		if slices.Contains(expected, link.Attrs().Name) {
 			log.Infof("interface %s prevented this program to run", link.Attrs().Name)
 			return
 		}
@@ -71,23 +71,16 @@ func main() {
 	}
 }
 
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
-}
-
 func run() error {
+	log.Infof("Dialing to %s…", endpoint)
 	conn, path, err := transport.Dial(endpoint)
 	if err != nil {
-		return errors.Wrap(err, "cannot connect to host")
+		return fmt.Errorf("cannot connect to host: %w", err)
 	}
 	defer conn.Close()
 
 	if path != "" {
+		log.Infof("Sending post request to %s", path)
 		req, err := http.NewRequest("POST", path, nil)
 		if err != nil {
 			return err
@@ -97,6 +90,7 @@ func run() error {
 		}
 	}
 
+	log.Infof("Configuring tap device %s", iface)
 	tap, err := water.New(water.Config{
 		DeviceType: water.TAP,
 		PlatformSpecificParams: water.PlatformSpecificParams{
@@ -104,15 +98,18 @@ func run() error {
 		},
 	})
 	if err != nil {
-		return errors.Wrap(err, "cannot create tap device")
+		return fmt.Errorf("cannot create tap device: %w", err)
 	}
 	defer tap.Close()
 
 	if !tapPreexists {
+		log.Infof("Enabling tap device %s", iface)
 		if err := linkUp(); err != nil {
-			return errors.Wrap(err, "cannot set mac address")
+			return fmt.Errorf("cannot set mac address: %w", err)
 		}
 	}
+
+	log.Infof("Starting rx/tx loops")
 
 	errCh := make(chan error, 1)
 	go tx(conn, tap, errCh, mtu)
@@ -120,7 +117,7 @@ func run() error {
 	if !tapPreexists {
 		go func() {
 			if err := dhcp(); err != nil {
-				errCh <- errors.Wrap(err, "dhcp error")
+				errCh <- fmt.Errorf("dhcp error: %w", err)
 			}
 		}()
 	}
@@ -166,7 +163,7 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 		frame.Resize(mtu)
 		n, err := tap.Read([]byte(frame))
 		if err != nil {
-			errCh <- errors.Wrap(err, "cannot read packet from tap")
+			errCh <- fmt.Errorf("cannot read packet from tap: %w", err)
 			return
 		}
 		frame = frame[:n]
@@ -177,12 +174,12 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 		}
 
 		if n < 0 || n > math.MaxUint16 {
-			log.Errorf("invalid frame length")
+			errCh <- fmt.Errorf("invalid frame length (%d > %d)", n, math.MaxUint16)
 			return
 		}
 		binary.LittleEndian.PutUint16(size, uint16(n))
 		if _, err := conn.Write(append(size, frame...)); err != nil {
-			errCh <- errors.Wrap(err, "cannot write size and packet to socket")
+			errCh <- fmt.Errorf("cannot write size and packet to socket: %w", err)
 			return
 		}
 	}
@@ -195,7 +192,7 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 	for {
 		n, err := io.ReadFull(conn, sizeBuf)
 		if err != nil {
-			errCh <- errors.Wrap(err, "cannot read size from socket")
+			errCh <- fmt.Errorf("cannot read size from socket: %w", err)
 			return
 		}
 		if n != 2 {
@@ -206,7 +203,7 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 
 		n, err = io.ReadFull(conn, buf[:size])
 		if err != nil {
-			errCh <- errors.Wrap(err, "cannot read payload from socket")
+			errCh <- fmt.Errorf("cannot read payload from socket: %w", err)
 			return
 		}
 		if n == 0 || n != size {
@@ -220,7 +217,7 @@ func tx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 		}
 
 		if _, err := tap.Write(buf[:size]); err != nil {
-			errCh <- errors.Wrap(err, "cannot write packet to tap")
+			errCh <- fmt.Errorf("cannot write packet to tap: %w", err)
 			return
 		}
 	}
