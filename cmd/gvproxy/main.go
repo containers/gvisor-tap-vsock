@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -22,7 +23,6 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
 	"github.com/containers/winquit/pkg/winquit"
 	humanize "github.com/dustin/go-humanize"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
@@ -130,7 +130,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		log.Infof("listening %s", endpoint)
 		ln, err := transport.Listen(endpoint)
 		if err != nil {
-			return errors.Wrap(err, "cannot listen")
+			return fmt.Errorf("cannot listen: %w", err)
 		}
 		httpServe(ctx, g, ln, withProfiler(vn))
 	}
@@ -139,7 +139,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		log.Infof("enabling services API. Listening %s", config.Services)
 		ln, err := transport.Listen(config.Services)
 		if err != nil {
-			return errors.Wrap(err, "cannot listen")
+			return fmt.Errorf("cannot listen: %w", err)
 		}
 		httpServe(ctx, g, ln, vn.ServicesMux())
 	}
@@ -172,7 +172,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if config.Interfaces.VPNKit != "" {
 		vpnkitListener, err := transport.Listen(config.Interfaces.VPNKit)
 		if err != nil {
-			return errors.Wrap(err, "vpnkit listen error")
+			return fmt.Errorf("vpnkit listen error: %w", err)
 		}
 		g.Go(func() error {
 		vpnloop:
@@ -199,7 +199,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if config.Interfaces.Qemu != "" {
 		qemuListener, err := transport.Listen(config.Interfaces.Qemu)
 		if err != nil {
-			return errors.Wrap(err, "qemu listen error")
+			return fmt.Errorf("qemu listen error: %w", err)
 		}
 
 		g.Go(func() error {
@@ -213,7 +213,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		g.Go(func() error {
 			conn, err := qemuListener.Accept()
 			if err != nil {
-				return errors.Wrap(err, "qemu accept error")
+				return fmt.Errorf("qemu accept error: %w", err)
 			}
 			return vn.AcceptQemu(ctx, conn)
 		})
@@ -222,7 +222,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if config.Interfaces.Bess != "" {
 		bessListener, err := transport.Listen(config.Interfaces.Bess)
 		if err != nil {
-			return errors.Wrap(err, "bess listen error")
+			return fmt.Errorf("bess listen error: %w", err)
 		}
 
 		g.Go(func() error {
@@ -236,7 +236,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		g.Go(func() error {
 			conn, err := bessListener.Accept()
 			if err != nil {
-				return errors.Wrap(err, "bess accept error")
+				return fmt.Errorf("bess accept error: %w", err)
 			}
 			return vn.AcceptBess(ctx, conn)
 		})
@@ -245,7 +245,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if config.Interfaces.Vfkit != "" {
 		conn, err := transport.ListenUnixgram(config.Interfaces.Vfkit)
 		if err != nil {
-			return errors.Wrap(err, "vfkit listen error")
+			return fmt.Errorf("vfkit listen error: %w", err)
 		}
 
 		g.Go(func() error {
@@ -260,7 +260,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		g.Go(func() error {
 			vfkitConn, err := transport.AcceptVfkit(conn)
 			if err != nil {
-				return errors.Wrap(err, "vfkit accept error")
+				return fmt.Errorf("vfkit accept error: %w", err)
 			}
 			return vn.AcceptVfkit(ctx, vfkitConn)
 		})
