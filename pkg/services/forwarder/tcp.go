@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/containers/gvisor-tap-vsock/pkg/tcpproxy"
+	"github.com/inetaf/tcpproxy"
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
