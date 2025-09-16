@@ -102,3 +102,25 @@ var _ = ginkgo.Describe("upload and download with vfkit", func() {
 		tmpDir = dlTmpDir
 	})
 })
+var _ = ginkgo.Describe("ping with gvproxy and vfkit", func() {
+	ginkgo.It("should succeed to ping a known domain", func() {
+		_, err := sshExec("ping -w2 crc.dev")
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	})
+	ginkgo.It("should fail to ping an unknown domain", func() {
+		_, err := sshExec("ping -w2 unknown.crc.dev")
+		gomega.Expect(err).To(gomega.HaveOccurred())
+	})
+	ginkgo.It("should succeed to ping a known IP", func() {
+		_, err := sshExec("ping -w2 1.1.1.1")
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	})
+	ginkgo.It("should fail to ping an unknown IP", func() {
+		_, err := sshExec("ping -w2 7.7.7.7")
+		// FIXME: This should be:
+		// gomega.Expect(err).To(gomega.HaveOccurred())
+		// but this is currently not working as expected:
+		// https://github.com/containers/gvisor-tap-vsock/issues/428
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	})
+})
