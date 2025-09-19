@@ -4,10 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -105,13 +105,13 @@ outer:
 			break
 		}
 
-		efiArgs, err := efiArgs()
+		qemuCmd := newQemuCmd()
+		qemuCmd.SetIgnition(ignFile)
+		qemuCmd.SetDrive(qemuImage, true)
+		qemuCmd.SetNetdevSocket(net.JoinHostPort("127.0.0.1", strconv.Itoa(qemuPort)), "5a:94:ef:e4:0c:ee")
+		qemuCmd.SetSerial(qconLog)
+		client, err = qemuCmd.Cmd(qemuExecutable())
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-
-		template := `%s%s-m 2048 -nographic -serial file:%s -drive if=virtio,file=%s,snapshot=on -fw_cfg name=opt/com.coreos/config,file=%s -netdev socket,id=vlan,connect=127.0.0.1:%d -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee`
-
-		// #nosec
-		client = exec.Command(qemuExecutable(), strings.Split(fmt.Sprintf(template, qemuArgs(), efiArgs, qconLog, qemuImage, ignFile, qemuPort), " ")...)
 		client.Stderr = os.Stderr
 		client.Stdout = os.Stdout
 		gomega.Expect(client.Start()).Should(gomega.Succeed())
@@ -153,35 +153,6 @@ outer:
 	gomega.Expect(cmd.Start()).ShouldNot(gomega.HaveOccurred())
 	time.Sleep(5 * time.Second)
 })
-
-func qemuExecutable() string {
-	qemuBinaries := []string{"qemu-kvm", fmt.Sprintf("qemu-system-%s", e2e_utils.CoreosArch())}
-	for _, binary := range qemuBinaries {
-		path, err := exec.LookPath(binary)
-		if err == nil && path != "" {
-			return path
-		}
-	}
-
-	return ""
-}
-
-func qemuArgs() string {
-	accel := "kvm"
-	if runtime.GOOS == "darwin" {
-		accel = "hvf"
-	}
-	machine := "q35"
-	switch runtime.GOARCH {
-	case "amd64":
-		machine = "q35"
-	case "arm64":
-		machine = "virt"
-	default:
-		panic(fmt.Sprintf("unsupported arch: %s", runtime.GOARCH))
-	}
-	return fmt.Sprintf("-machine %s,accel=%s:tcg -smp 4 -cpu host ", machine, accel)
-}
 
 func scp(src, dst string) error {
 	sshCmd := exec.Command("scp",
