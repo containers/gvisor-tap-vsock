@@ -15,6 +15,7 @@ import (
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	e2e_utils "github.com/containers/gvisor-tap-vsock/test-utils"
+	vfkit "github.com/crc-org/vfkit/pkg/config"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -31,6 +32,7 @@ func TestSuite(t *testing.T) {
 const (
 	sock         = "/tmp/gvproxy-api-vfkit.sock"
 	vfkitSock    = "/tmp/vfkit.sock"
+	ignitionSock = "/tmp/ignition.sock"
 	sshPort      = 2223
 	ignitionUser = "test"
 	// #nosec "test" (for manual usage)
@@ -68,6 +70,34 @@ func gvproxyCmd() *exec.Cmd {
 	cmd.SSHPort = sshPort
 
 	return cmd.Cmd(filepath.Join(binDir, "gvproxy"))
+}
+
+func vfkitCmd(diskImage string) (*exec.Cmd, error) {
+	bootloader := vfkit.NewEFIBootloader(efiStore, true)
+	vm := vfkit.NewVirtualMachine(2, 2048, bootloader)
+	disk, err := vfkit.VirtioBlkNew(diskImage)
+	if err != nil {
+		return nil, err
+	}
+	err = vm.AddDevice(disk)
+	if err != nil {
+		return nil, err
+	}
+	net, err := vfkit.VirtioNetNew("5a:94:ef:e4:0c:ee")
+	if err != nil {
+		return nil, err
+	}
+	net.SetUnixSocketPath(vfkitSock)
+	err = vm.AddDevice(net)
+	if err != nil {
+		return nil, err
+	}
+	ignition, err := vfkit.IgnitionNew(ignFile, ignitionSock)
+	if err != nil {
+		return nil, err
+	}
+	vm.Ignition = ignition
+	return vm.Cmd(vfkitExecutable())
 }
 
 var _ = ginkgo.BeforeSuite(func() {
@@ -136,9 +166,8 @@ outer:
 			break
 		}
 
-		vfkitArgs := `--cpus 2 --memory 2048 --bootloader efi,variable-store=%s,create --device virtio-blk,path=%s --ignition %s  --device virtio-net,unixSocketPath=%s,mac=5a:94:ef:e4:0c:ee`
-		// #nosec
-		client = exec.Command(vfkitExecutable(), strings.Split(fmt.Sprintf(vfkitArgs, efiStore, fcosImage, ignFile, vfkitSock), " ")...)
+		client, err = vfkitCmd(fcosImage)
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		client.Stderr = os.Stderr
 		client.Stdout = os.Stdout
 		gomega.Expect(client.Start()).Should(gomega.Succeed())

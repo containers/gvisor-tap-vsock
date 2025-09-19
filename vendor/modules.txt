@@ -11,6 +11,9 @@ github.com/Microsoft/go-winio/pkg/guid
 # github.com/apparentlymart/go-cidr v1.1.0
 ## explicit
 github.com/apparentlymart/go-cidr/cidr
+# github.com/containers/common v0.64.2
+## explicit; go 1.23.3
+github.com/containers/common/pkg/strongunits
 # github.com/containers/winquit v1.1.0
 ## explicit; go 1.19
 github.com/containers/winquit/pkg/winquit
@@ -21,7 +24,11 @@ github.com/coreos/stream-metadata-go/fedoracoreos
 github.com/coreos/stream-metadata-go/fedoracoreos/internals
 github.com/coreos/stream-metadata-go/stream
 github.com/coreos/stream-metadata-go/stream/rhcos
-# github.com/davecgh/go-spew v1.1.1
+# github.com/crc-org/vfkit v0.6.3
+## explicit; go 1.24.2
+github.com/crc-org/vfkit/pkg/config
+github.com/crc-org/vfkit/pkg/util
+# github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 ## explicit
 github.com/davecgh/go-spew/spew
 # github.com/dustin/go-humanize v1.0.1
@@ -126,7 +133,7 @@ github.com/pierrec/lz4/v4/internal/xxh32
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/pmezard/go-difflib v1.0.0
+# github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
 # github.com/sirupsen/logrus v1.9.4
