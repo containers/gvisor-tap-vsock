@@ -15,7 +15,7 @@ import (
 
 	e2e_utils "github.com/containers/gvisor-tap-vsock/test-utils"
 
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
 )
