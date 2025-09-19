@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	e2e_utils "github.com/containers/gvisor-tap-vsock/test-utils"
 
 	"github.com/onsi/ginkgo/v2"
@@ -61,6 +62,23 @@ func init() {
 
 }
 
+func gvproxyCmd() *exec.Cmd {
+	cmd := types.NewGvproxyCommand()
+	cmd.AddEndpoint(fmt.Sprintf("unix://%s", sock))
+	cmd.AddQemuSocket("tcp://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(qemuPort)))
+	cmd.AddForwardSock(forwardSock)
+	cmd.AddForwardDest(podmanSock)
+	cmd.AddForwardUser(ignitionUser)
+	cmd.AddForwardIdentity(privateKeyFile)
+
+	cmd.AddForwardSock(forwardRootSock)
+	cmd.AddForwardDest(podmanRootSock)
+	cmd.AddForwardUser("root")
+	cmd.AddForwardIdentity(privateKeyFile)
+
+	return cmd.Cmd(filepath.Join(binDir, "gvproxy"))
+}
+
 var _ = ginkgo.BeforeSuite(func() {
 	gomega.Expect(os.MkdirAll(filepath.Join(tmpDir, "disks"), os.ModePerm)).Should(gomega.Succeed())
 
@@ -79,13 +97,7 @@ outer:
 	for panics := 0; ; panics++ {
 		_ = os.Remove(sock)
 
-		// #nosec
-		host = exec.Command(filepath.Join(binDir, "gvproxy"), fmt.Sprintf("--listen=unix://%s", sock), fmt.Sprintf("--listen-qemu=tcp://127.0.0.1:%d", qemuPort),
-			fmt.Sprintf("--forward-sock=%s", forwardSock), fmt.Sprintf("--forward-dest=%s", podmanSock), fmt.Sprintf("--forward-user=%s", ignitionUser),
-			fmt.Sprintf("--forward-identity=%s", privateKeyFile),
-			fmt.Sprintf("--forward-sock=%s", forwardRootSock), fmt.Sprintf("--forward-dest=%s", podmanRootSock), fmt.Sprintf("--forward-user=%s", "root"),
-			fmt.Sprintf("--forward-identity=%s", privateKeyFile))
-
+		host = gvproxyCmd()
 		host.Stderr = os.Stderr
 		host.Stdout = os.Stdout
 		gomega.Expect(host.Start()).Should(gomega.Succeed())
