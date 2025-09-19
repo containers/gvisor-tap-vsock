@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	e2e_utils "github.com/containers/gvisor-tap-vsock/test-utils"
 
 	"github.com/onsi/ginkgo/v2"
@@ -60,6 +61,15 @@ func init() {
 	cmdDir = "../cmd"
 }
 
+func gvproxyCmd() *exec.Cmd {
+	cmd := types.NewGvproxyCommand()
+	cmd.AddEndpoint(fmt.Sprintf("unix://%s", sock))
+	cmd.AddVfkitSocket("unixgram://" + vfkitSock)
+	cmd.SSHPort = sshPort
+
+	return cmd.Cmd(filepath.Join(binDir, "gvproxy"))
+}
+
 var _ = ginkgo.BeforeSuite(func() {
 	// clear the environment before running the tests. It may happen the tests were abruptly stopped earlier leaving a dirty env
 	cleanup()
@@ -92,14 +102,12 @@ outer:
 		_ = os.Remove(sock)
 		_ = os.Remove(vfkitSock)
 
-		gvproxyArgs := []string{fmt.Sprintf("--ssh-port=%d", sshPort), fmt.Sprintf("--listen=unix://%s", sock), fmt.Sprintf("--listen-vfkit=unixgram://%s", vfkitSock)}
+		host = gvproxyCmd()
 		if *debugEnabled {
+			gvproxyArgs := host.Args[1:]
 			dlvArgs := []string{"debug", "--headless", "--listen=:2345", "--api-version=2", "--accept-multiclient", filepath.Join(cmdDir, "gvproxy"), "--"}
 			dlvArgs = append(dlvArgs, gvproxyArgs...)
 			host = exec.Command("dlv", dlvArgs...)
-		} else {
-			// #nosec
-			host = exec.Command(filepath.Join(binDir, "gvproxy"), gvproxyArgs...)
 		}
 
 		host.Stderr = os.Stderr
