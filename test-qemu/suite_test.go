@@ -3,7 +3,6 @@ package e2eqemu
 import (
 	"flag"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -93,68 +92,52 @@ var _ = ginkgo.BeforeSuite(func() {
 	err = e2e_utils.CreateIgnition(ignFile, publicKey, ignitionUser, ignitionPasswordHash)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-outer:
-	for panics := 0; ; panics++ {
-		_ = os.Remove(sock)
+	_ = os.Remove(sock)
 
-		host = gvproxyCmd()
-		host.Stderr = os.Stderr
-		host.Stdout = os.Stdout
-		gomega.Expect(host.Start()).Should(gomega.Succeed())
-		go func() {
-			if err := host.Wait(); err != nil {
-				log.Error(err)
-			}
-		}()
+	host = gvproxyCmd()
+	host.Stderr = os.Stderr
+	host.Stdout = os.Stdout
+	gomega.Expect(host.Start()).Should(gomega.Succeed())
+	go func() {
+		if err := host.Wait(); err != nil {
+			log.Error(err)
+		}
+	}()
 
-		for {
-			_, err := os.Stat(sock)
-			if os.IsNotExist(err) {
-				log.Info("waiting for socket")
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
+	for {
+		_, err := os.Stat(sock)
+		if os.IsNotExist(err) {
+			log.Info("waiting for socket")
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		break
+	}
+
+	qemuCmd := newQemuCmd()
+	qemuCmd.SetIgnition(ignFile)
+	qemuCmd.SetDrive(qemuImage, true)
+	qemuCmd.SetNetdevSocket(net.JoinHostPort("127.0.0.1", strconv.Itoa(qemuPort)), "5a:94:ef:e4:0c:ee")
+	qemuCmd.SetSerial(qconLog)
+	client, err = qemuCmd.Cmd(qemuExecutable())
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+	client.Stderr = os.Stderr
+	client.Stdout = os.Stdout
+	gomega.Expect(client.Start()).Should(gomega.Succeed())
+	go func() {
+		if err := client.Wait(); err != nil {
+			log.Error(err)
+		}
+	}()
+
+	for {
+		_, err := sshExec("whoami")
+		if err == nil {
 			break
 		}
 
-		qemuCmd := newQemuCmd()
-		qemuCmd.SetIgnition(ignFile)
-		qemuCmd.SetDrive(qemuImage, true)
-		qemuCmd.SetNetdevSocket(net.JoinHostPort("127.0.0.1", strconv.Itoa(qemuPort)), "5a:94:ef:e4:0c:ee")
-		qemuCmd.SetSerial(qconLog)
-		client, err = qemuCmd.Cmd(qemuExecutable())
-		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		client.Stderr = os.Stderr
-		client.Stdout = os.Stdout
-		gomega.Expect(client.Start()).Should(gomega.Succeed())
-		go func() {
-			if err := client.Wait(); err != nil {
-				log.Error(err)
-			}
-		}()
-
-		for {
-			_, err := sshExec("whoami")
-			if err == nil {
-				break outer
-			}
-
-			// Check for panic
-			didPanic, err := panicCheck(qconLog)
-			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-
-			if didPanic {
-				gomega.Expect(panics).ToNot(gomega.BeNumerically(">", 15), "No more than 15 panics allowed")
-				log.Info("Detected Kernel panic, retrying...")
-				_ = client.Process.Kill()
-				_ = host.Process.Kill()
-				_ = os.Remove(qconLog)
-				continue outer
-			}
-
-			log.Infof("waiting for client to connect: %v", err)
-			time.Sleep(time.Second)
-		}
+		log.Infof("waiting for client to connect: %v", err)
+		time.Sleep(time.Second)
 	}
 
 	err = scp(filepath.Join(binDir, "test-companion"), "/tmp/test-companion")
@@ -193,24 +176,6 @@ func sshCommand(cmd ...string) *exec.Cmd {
 		"-p", strconv.Itoa(sshPort),
 		fmt.Sprintf("%s@127.0.0.1", ignitionUser), "--", strings.Join(cmd, " ")) // #nosec G204
 	return sshCmd
-}
-
-func panicCheck(con string) (bool, error) {
-	file, err := os.Open(con)
-	if err != nil {
-		return false, err
-	}
-
-	_, _ = file.Seek(-500, io.SeekEnd)
-	// Ignore seek errors (not enough content yet)
-
-	contents := make([]byte, 500)
-	_, err = io.ReadAtLeast(file, contents, len(contents))
-	if err != nil && err != io.ErrUnexpectedEOF {
-		return false, err
-	}
-
-	return strings.Contains(string(contents), "end Kernel panic"), nil
 }
 
 var _ = ginkgo.AfterSuite(func() {
