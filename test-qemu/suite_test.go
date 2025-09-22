@@ -98,21 +98,8 @@ var _ = ginkgo.BeforeSuite(func() {
 	host.Stderr = os.Stderr
 	host.Stdout = os.Stdout
 	gomega.Expect(host.Start()).Should(gomega.Succeed())
-	go func() {
-		if err := host.Wait(); err != nil {
-			log.Error(err)
-		}
-	}()
-
-	for {
-		_, err := os.Stat(sock)
-		if os.IsNotExist(err) {
-			log.Info("waiting for socket")
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		break
-	}
+	err = e2e_utils.WaitGvproxy(host, sock)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 	qemuCmd := newQemuCmd()
 	qemuCmd.SetIgnition(ignFile)
@@ -124,21 +111,8 @@ var _ = ginkgo.BeforeSuite(func() {
 	client.Stderr = os.Stderr
 	client.Stdout = os.Stdout
 	gomega.Expect(client.Start()).Should(gomega.Succeed())
-	go func() {
-		if err := client.Wait(); err != nil {
-			log.Error(err)
-		}
-	}()
-
-	for {
-		_, err := sshExec("whoami")
-		if err == nil {
-			break
-		}
-
-		log.Infof("waiting for client to connect: %v", err)
-		time.Sleep(time.Second)
-	}
+	err = e2e_utils.WaitSSH(client, sshExec)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 	err = scp(filepath.Join(binDir, "test-companion"), "/tmp/test-companion")
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
