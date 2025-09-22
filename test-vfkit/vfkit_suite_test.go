@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	e2e_utils "github.com/containers/gvisor-tap-vsock/test-utils"
@@ -125,8 +124,6 @@ var _ = ginkgo.BeforeSuite(func() {
 	err = e2e_utils.CreateIgnition(ignFile, publicKey, ignitionUser, ignitionPasswordHash)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-	errors := make(chan error)
-
 	host = gvproxyCmd()
 	if *debugEnabled {
 		gvproxyArgs := host.Args[1:]
@@ -138,57 +135,16 @@ var _ = ginkgo.BeforeSuite(func() {
 	host.Stderr = os.Stderr
 	host.Stdout = os.Stdout
 	gomega.Expect(host.Start()).Should(gomega.Succeed())
-	go func() {
-		if err := host.Wait(); err != nil {
-			log.Error(err)
-			errors <- err
-		}
-	}()
-
-	for {
-		_, err := os.Stat(sock)
-		if os.IsNotExist(err) {
-			log.Info("waiting for vfkit-api socket")
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		_, err = os.Stat(vfkitSock)
-		if os.IsNotExist(err) {
-			log.Info("waiting for vfkit socket")
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		break
-	}
+	err = e2e_utils.WaitGvproxy(host, sock, vfkitSock)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 	client, err = vfkitCmd(fcosImage)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 	client.Stderr = os.Stderr
 	client.Stdout = os.Stdout
 	gomega.Expect(client.Start()).Should(gomega.Succeed())
-	go func() {
-		if err := client.Wait(); err != nil {
-			log.Error(err)
-			errors <- err
-		}
-	}()
-
-	for {
-		_, err := sshExec("whoami")
-		if err == nil {
-			break
-		}
-
-		select {
-		case err := <-errors:
-			log.Errorf("Error %v", err)
-			// this expect will always fail so the tests stop
-			gomega.Expect(err).To(gomega.Equal(nil))
-			break
-		case <-time.After(1 * time.Second):
-			log.Infof("waiting for client to connect: %v", err)
-		}
-	}
+	err = e2e_utils.WaitSSH(client, sshExec)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 })
 
 func vfkitVersion() (float64, error) {
