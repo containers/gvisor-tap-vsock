@@ -127,76 +127,68 @@ var _ = ginkgo.BeforeSuite(func() {
 
 	errors := make(chan error)
 
-outer:
-	for panics := 0; ; panics++ {
-		_ = os.Remove(sock)
-		_ = os.Remove(vfkitSock)
+	host = gvproxyCmd()
+	if *debugEnabled {
+		gvproxyArgs := host.Args[1:]
+		dlvArgs := []string{"debug", "--headless", "--listen=:2345", "--api-version=2", "--accept-multiclient", filepath.Join(cmdDir, "gvproxy"), "--"}
+		dlvArgs = append(dlvArgs, gvproxyArgs...)
+		host = exec.Command("dlv", dlvArgs...)
+	}
 
-		host = gvproxyCmd()
-		if *debugEnabled {
-			gvproxyArgs := host.Args[1:]
-			dlvArgs := []string{"debug", "--headless", "--listen=:2345", "--api-version=2", "--accept-multiclient", filepath.Join(cmdDir, "gvproxy"), "--"}
-			dlvArgs = append(dlvArgs, gvproxyArgs...)
-			host = exec.Command("dlv", dlvArgs...)
+	host.Stderr = os.Stderr
+	host.Stdout = os.Stdout
+	gomega.Expect(host.Start()).Should(gomega.Succeed())
+	go func() {
+		if err := host.Wait(); err != nil {
+			log.Error(err)
+			errors <- err
 		}
+	}()
 
-		host.Stderr = os.Stderr
-		host.Stdout = os.Stdout
-		gomega.Expect(host.Start()).Should(gomega.Succeed())
-		go func() {
-			if err := host.Wait(); err != nil {
-				log.Error(err)
-				errors <- err
-			}
-		}()
+	for {
+		_, err := os.Stat(sock)
+		if os.IsNotExist(err) {
+			log.Info("waiting for vfkit-api socket")
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		_, err = os.Stat(vfkitSock)
+		if os.IsNotExist(err) {
+			log.Info("waiting for vfkit socket")
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		break
+	}
 
-		for {
-			_, err := os.Stat(sock)
-			if os.IsNotExist(err) {
-				log.Info("waiting for vfkit-api socket")
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			_, err = os.Stat(vfkitSock)
-			if os.IsNotExist(err) {
-				log.Info("waiting for vfkit socket")
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
+	client, err = vfkitCmd(fcosImage)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+	client.Stderr = os.Stderr
+	client.Stdout = os.Stdout
+	gomega.Expect(client.Start()).Should(gomega.Succeed())
+	go func() {
+		if err := client.Wait(); err != nil {
+			log.Error(err)
+			errors <- err
+		}
+	}()
+
+	for {
+		_, err := sshExec("whoami")
+		if err == nil {
 			break
 		}
 
-		client, err = vfkitCmd(fcosImage)
-		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		client.Stderr = os.Stderr
-		client.Stdout = os.Stdout
-		gomega.Expect(client.Start()).Should(gomega.Succeed())
-		go func() {
-			if err := client.Wait(); err != nil {
-				log.Error(err)
-				errors <- err
-			}
-		}()
-
-		for {
-			_, err := sshExec("whoami")
-			if err == nil {
-				break outer
-			}
-
-			select {
-			case err := <-errors:
-				log.Errorf("Error %v", err)
-				// this expect will always fail so the tests stop
-				gomega.Expect(err).To(gomega.Equal(nil))
-				break outer
-			case <-time.After(1 * time.Second):
-				log.Infof("waiting for client to connect: %v", err)
-			}
+		select {
+		case err := <-errors:
+			log.Errorf("Error %v", err)
+			// this expect will always fail so the tests stop
+			gomega.Expect(err).To(gomega.Equal(nil))
+			break
+		case <-time.After(1 * time.Second):
+			log.Infof("waiting for client to connect: %v", err)
 		}
 	}
-
-	time.Sleep(5 * time.Second)
 })
 
 func vfkitVersion() (float64, error) {
