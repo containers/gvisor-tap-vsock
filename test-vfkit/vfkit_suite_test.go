@@ -197,7 +197,7 @@ func cleanup() {
 	_ = os.Remove(sock)
 	_ = os.Remove(vfkitSock)
 
-	// this should be handled by vfkit once https://github.com/crc-org/vfkit/pull/230 gets merged
+	// this is handled by vfkit since vfkit v0.6.1 released in March 2025
 	// it removes the ignition.sock file
 	socketPath := filepath.Join(os.TempDir(), "ignition.sock")
 	_ = os.Remove(socketPath)
