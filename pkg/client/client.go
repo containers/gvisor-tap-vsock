@@ -117,3 +117,20 @@ func (c *Client) AddDNS(req *types.Zone) error {
 	}
 	return nil
 }
+
+func (c *Client) ListDHCPLeases() (map[string]string, error) {
+	res, err := c.client.Get(fmt.Sprintf("%s%s", c.base, "/services/dhcp/leases"))
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %d", res.StatusCode)
+	}
+	dec := json.NewDecoder(res.Body)
+	var leases map[string]string
+	if err := dec.Decode(&leases); err != nil {
+		return nil, err
+	}
+	return leases, nil
+}
