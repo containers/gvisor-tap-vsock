@@ -6,7 +6,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/containers/winquit v1.1.0
-	github.com/coreos/stream-metadata-go v0.4.9
+	github.com/coreos/stream-metadata-go v0.4.10
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/gopacket v1.1.19
 	github.com/insomniacslk/dhcp v0.0.0-20240710054256-ddd8a41251c9
@@ -26,6 +26,7 @@ require (
 	golang.org/x/mod v0.28.0
 	golang.org/x/sync v0.17.0
 	golang.org/x/sys v0.36.0
+	gopkg.in/yaml.v3 v3.0.1
 	gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f
 )
 
@@ -46,5 +47,4 @@ require (
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.36.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
