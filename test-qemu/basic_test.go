@@ -20,6 +20,13 @@ var _ = ginkgo.Describe("dns with qemu", func() {
 	})
 })
 
+var _ = ginkgo.Describe("dhcp with qemu", func() {
+	e2e.BasicDHCPTests(e2e.BasicTestProps{
+		SSHExec: sshExec,
+		Sock:    sock,
+	})
+})
+
 var _ = ginkgo.Describe("command-line format", func() {
 	ginkgo.It("should convert Command to command line format", func() {
 		command := types.NewGvproxyCommand()

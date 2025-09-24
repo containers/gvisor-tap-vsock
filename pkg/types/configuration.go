@@ -79,5 +79,5 @@ type Zone struct {
 type Record struct {
 	Name   string         `yaml:"name,omitempty"`
 	IP     net.IP         `yaml:"ip,omitempty"`
-	Regexp *regexp.Regexp `yaml:"regexp,omitempty"`
+	Regexp *regexp.Regexp `json:",omitempty" yaml:"regexp,omitempty"`
 }

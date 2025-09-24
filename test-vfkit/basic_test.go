@@ -31,6 +31,13 @@ var _ = ginkgo.Describe("dns with vfkit", func() {
 	})
 })
 
+var _ = ginkgo.Describe("dhcp with vfkit", func() {
+	e2e.BasicDHCPTests(e2e.BasicTestProps{
+		SSHExec: sshExec,
+		Sock:    sock,
+	})
+})
+
 var _ = ginkgo.Describe("upload and download with vfkit", func() {
 	tmpDir, err := os.MkdirTemp("", "vfkit")
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
