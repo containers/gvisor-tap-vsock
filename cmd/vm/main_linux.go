@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,7 +59,7 @@ func main() {
 		log.Fatal(err)
 	}
 	for _, link := range links {
-		if contains(expected, link.Attrs().Name) {
+		if slices.Contains(expected, link.Attrs().Name) {
 			log.Infof("interface %s prevented this program to run", link.Attrs().Name)
 			return
 		}
@@ -71,16 +72,8 @@ func main() {
 	}
 }
 
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
-}
-
 func run() error {
+	log.Infof("Dialing to %s…", endpoint)
 	conn, path, err := transport.Dial(endpoint)
 	if err != nil {
 		return errors.Wrap(err, "cannot connect to host")
@@ -88,6 +81,7 @@ func run() error {
 	defer conn.Close()
 
 	if path != "" {
+		log.Infof("Sending post request to %s", path)
 		req, err := http.NewRequest("POST", path, nil)
 		if err != nil {
 			return err
@@ -97,6 +91,7 @@ func run() error {
 		}
 	}
 
+	log.Infof("Configuring tap device %s", iface)
 	tap, err := water.New(water.Config{
 		DeviceType: water.TAP,
 		PlatformSpecificParams: water.PlatformSpecificParams{
@@ -109,10 +104,13 @@ func run() error {
 	defer tap.Close()
 
 	if !tapPreexists {
+		log.Infof("Enabling tap device %s", iface)
 		if err := linkUp(); err != nil {
 			return errors.Wrap(err, "cannot set mac address")
 		}
 	}
+
+	log.Infof("Starting rx/tx loops")
 
 	errCh := make(chan error, 1)
 	go tx(conn, tap, errCh, mtu)
@@ -177,7 +175,7 @@ func rx(conn net.Conn, tap *water.Interface, errCh chan error, mtu int) {
 		}
 
 		if n < 0 || n > math.MaxUint16 {
-			log.Errorf("invalid frame length")
+			errCh <- fmt.Errorf("invalid frame length (%d > %d)", n, math.MaxUint16)
 			return
 		}
 		binary.LittleEndian.PutUint16(size, uint16(n))
