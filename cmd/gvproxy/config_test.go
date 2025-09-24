@@ -465,7 +465,7 @@ forwards:
       user: ???
       identity: ???
 `,
-			ErrorPrefix: "Identity file",
+			ErrorPrefix: "identity file",
 		},
 		{
 			CaseName:    "debug check #1",

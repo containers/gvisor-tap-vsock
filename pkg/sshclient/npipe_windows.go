@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	winio "github.com/Microsoft/go-winio"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -34,7 +33,7 @@ func ListenNpipe(socketURI *url.URL) (net.Listener, error) {
 
 	listener, err := winio.ListenPipe(path, &config)
 	if err != nil {
-		return listener, errors.Wrapf(err, "Error listening on socket: %s", socketURI)
+		return listener, fmt.Errorf("error listening on socket: %s: %w", socketURI, err)
 	}
 
 	logrus.Info("Listening on: " + path)

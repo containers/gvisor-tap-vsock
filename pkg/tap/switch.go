@@ -3,6 +3,7 @@ package tap
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,7 +14,6 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -95,7 +95,8 @@ func (e *Switch) Accept(ctx context.Context, rawConn net.Conn, protocol types.Pr
 		e.disconnect(id, conn)
 	}()
 	if err := e.rx(ctx, id, conn); err != nil {
-		log.Error(errors.Wrapf(err, "cannot receive packets from %s, disconnecting", conn.RemoteAddr().String()))
+		err := fmt.Errorf("cannot receive packets from %s, disconnecting: %w", conn.RemoteAddr().String(), err)
+		log.Error(err)
 		return err
 	}
 	return nil
@@ -223,7 +224,7 @@ loop:
 		}
 		n, err := conn.Read(buf)
 		if err != nil {
-			return errors.Wrap(err, "cannot read size from socket")
+			return fmt.Errorf("cannot read size from socket: %w", err)
 		}
 		e.rxBuf(ctx, id, buf[:n])
 	}
@@ -243,14 +244,14 @@ loop:
 		}
 		_, err := io.ReadFull(reader, sizeBuf)
 		if err != nil {
-			return errors.Wrap(err, "cannot read size from socket")
+			return fmt.Errorf("cannot read size from socket: %w", err)
 		}
 		size := sProtocol.Read(sizeBuf)
 
 		buf := make([]byte, size)
 		_, err = io.ReadFull(reader, buf)
 		if err != nil {
-			return errors.Wrap(err, "cannot read packet from socket")
+			return fmt.Errorf("cannot read packet from socket: %w", err)
 		}
 		e.rxBuf(ctx, id, buf)
 	}

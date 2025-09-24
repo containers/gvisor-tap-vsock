@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -12,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -254,16 +254,16 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	if config.Interfaces.Qemu != "" {
 		uri, err := url.Parse(config.Interfaces.Qemu)
 		if err != nil || uri == nil {
-			return config, errors.Wrapf(err, "invalid value for qemu listen address")
+			return config, fmt.Errorf("invalid value for qemu listen address: %w", err)
 		}
 		if _, err := os.Stat(uri.Path); err == nil && uri.Scheme == "unix" {
-			return config, errors.Errorf("%q already exists", uri.Path)
+			return config, fmt.Errorf("%q already exists", uri.Path)
 		}
 	}
 	if config.Interfaces.Bess != "" {
 		uri, err := url.Parse(config.Interfaces.Bess)
 		if err != nil || uri == nil {
-			return config, errors.Wrapf(err, "invalid value for bess listen address")
+			return config, fmt.Errorf("invalid value for bess listen address: %w", err)
 		}
 		if uri.Scheme != "unixpacket" {
 			return config, errors.New("bess listen address must be unixpacket:// address")
@@ -275,13 +275,13 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	if config.Interfaces.Vfkit != "" {
 		uri, err := url.Parse(config.Interfaces.Vfkit)
 		if err != nil || uri == nil {
-			return config, errors.Wrapf(err, "invalid value for vfkit listen address")
+			return config, fmt.Errorf("invalid value for vfkit listen address: %w", err)
 		}
 		if uri.Scheme != "unixgram" {
 			return config, errors.New("vfkit listen address must be unixgram:// address")
 		}
 		if _, err := os.Stat(uri.Path); err == nil {
-			return config, errors.Errorf("%q already exists", uri.Path)
+			return config, fmt.Errorf("%q already exists", uri.Path)
 		}
 	}
 
@@ -381,7 +381,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	for _, v := range config.Forwards {
 		_, err := os.Stat(v.Identity)
 		if err != nil {
-			return config, errors.Wrapf(err, "Identity file \"%s\" can't be loaded", v.Identity)
+			return config, fmt.Errorf("identity file %q can't be loaded: %w", v.Identity, err)
 		}
 	}
 
