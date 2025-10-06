@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package e2e
@@ -42,7 +43,7 @@ func startMockServer() {
 	}
 	sshConfig.AddHostKey(key)
 
-	listener, err := net.Listen("tcp", ":2134")
+	listener, err := net.Listen("tcp", "localhost:2134")
 	if err != nil {
 		panic(err)
 	}
@@ -58,7 +59,7 @@ func startMockServer() {
 				break loop
 			default:
 				// proceed
-			} 
+			}
 			conn, err := listener.Accept()
 			if err != nil {
 				panic(err)
@@ -83,7 +84,7 @@ func stopMockServer() {
 }
 
 func handleRequests(reqs <-chan *ssh.Request) {
-	for _ = range reqs {
+	for range reqs {
 	}
 }
 
@@ -91,14 +92,20 @@ func handleChannels(chans <-chan ssh.NewChannel) {
 	directMsg := streamLocalDirect{}
 	for newChannel := range chans {
 		if t := newChannel.ChannelType(); t != "direct-streamlocal@openssh.com" {
-			newChannel.Reject(ssh.UnknownChannelType, fmt.Sprintf("unknown channel type: %s", t))
+			err := newChannel.Reject(ssh.UnknownChannelType, fmt.Sprintf("unknown channel type: %s", t))
+			if err != nil {
+				logrus.Errorf("could not reject channel: %s", err)
+			}
 			continue
 		}
 
 		if err := ssh.Unmarshal(newChannel.ExtraData(), &directMsg); err != nil {
 			logrus.Errorf("could not direct-streamlocal data: %s", err)
 
-			newChannel.Reject(ssh.Prohibited, "invalid format")
+			err = newChannel.Reject(ssh.Prohibited, "invalid format")
+			if err != nil {
+				logrus.Errorf("could not reject channel: %s", err)
+			}
 			return
 		}
 
@@ -124,7 +131,13 @@ func handleChannels(chans <-chan ssh.NewChannel) {
 			resp.StatusCode = 404
 			resp.ContentLength = 0
 		}
-		resp.Write(channel)
-		channel.CloseWrite()
+		err = resp.Write(channel)
+		if err != nil {
+			logrus.Errorf("could not write response: %s", err)
+		}
+		err = channel.CloseWrite()
+		if err != nil {
+			logrus.Errorf("could not close write: %s", err)
+		}
 	}
 }

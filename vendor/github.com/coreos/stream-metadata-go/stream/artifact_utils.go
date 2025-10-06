@@ -2,6 +2,7 @@ package stream
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,7 +20,9 @@ func (a *Artifact) Fetch(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		err = errors.Join(resp.Body.Close())
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s returned status: %s", a.Location, resp.Status)

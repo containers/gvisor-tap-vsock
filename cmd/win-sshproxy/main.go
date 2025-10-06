@@ -96,16 +96,20 @@ func main() {
 
 	// Save thread for legacy callers which use it to post a quit
 	if _, err := saveThreadId(); err != nil {
-		logrus.Errorf("Error saving thread id: " + err.Error())
+		logrus.Errorf("Error saving thread id: %v", err)
 	}
 
 	logrus.Debug("Setting up proxies")
-	setupProxies(ctx, group, sources, dests, identities)
+	err = setupProxies(ctx, group, sources, dests, identities)
+	if err != nil {
+		logrus.Errorf("Error setting up proxies: %v", err)
+		return
+	}
 
-	// Wait for cmopletion (cancellation) or error
+	// Wait for completion (cancellation) or error
 	if err := group.Wait(); err != nil {
-		logrus.Errorf("Error occured in execution group: " + err.Error())
-		os.Exit(1)
+		logrus.Errorf("Error occurred in execution group: %v", err)
+		return
 	}
 }
 

@@ -1,11 +1,10 @@
 package e2eutils
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 func CreateSSHKeys(publicKeyFile, privateKeyFile string) (string, error) {
@@ -13,7 +12,7 @@ func CreateSSHKeys(publicKeyFile, privateKeyFile string) (string, error) {
 	_ = os.Remove(privateKeyFile)
 	err := exec.Command("ssh-keygen", "-N", "", "-t", "ed25519", "-f", privateKeyFile).Run()
 	if err != nil {
-		return "", errors.Wrap(err, "Could not generate ssh keys")
+		return "", fmt.Errorf("could not generate ssh keys: %w", err)
 	}
 
 	return readPublicKey(publicKeyFile)

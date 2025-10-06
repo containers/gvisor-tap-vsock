@@ -8,7 +8,6 @@ import (
 
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -43,7 +42,7 @@ func main() {
 func run() error {
 	conn, err := net.Dial("unix", endpoint)
 	if err != nil {
-		return errors.Wrap(err, "cannot connect to host")
+		return fmt.Errorf("cannot connect to host: %w", err)
 	}
 	defer conn.Close()
 

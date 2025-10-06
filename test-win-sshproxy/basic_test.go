@@ -47,7 +47,9 @@ var _ = Describe("connectivity", func() {
 	It("proxies over a windows pipe", func() {
 		err := startProxy()
 		Expect(err).ShouldNot(HaveOccurred())
-		defer stopProxy(false)
+		defer func() {
+			Expect(stopProxy(false)).ShouldNot(HaveOccurred())
+		}()
 		httpClient := &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -71,19 +73,18 @@ var _ = Describe("connectivity", func() {
 			g.Expect(string(reply)).To(Equal("pong"))
 
 		}).Should(Succeed())
-
-		err = stopProxy(true)
-		Expect(err).ShouldNot(HaveOccurred())
 	})
 
 	It("windows event logs were created", func() {
 		cmd := exec.Command("powershell", "-Command", "&{Get-WinEvent -ProviderName \".NET Runtime\" -MaxEvents 10 | Where-Object -Property Message -Match \"test:\"}")
 		reader, err := cmd.StdoutPipe()
 		Expect(err).ShouldNot(HaveOccurred())
-		cmd.Start()
+		err = cmd.Start()
+		Expect(err).ShouldNot(HaveOccurred())
 		output, err := io.ReadAll(reader)
 		Expect(err).ShouldNot(HaveOccurred())
-		cmd.Wait()
+		err = cmd.Wait()
+		Expect(err).ShouldNot(HaveOccurred())
 		Expect(strings.Contains(string(output), `[info ] test: Listening on: \\.\pipe\fake_docker_engine`)).Should(BeTrue())
 		Expect(strings.Contains(string(output), `[debug] test: Socket forward established`)).Should(BeTrue())
 	})

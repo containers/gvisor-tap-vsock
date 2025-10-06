@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package e2e
@@ -14,6 +15,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -64,14 +66,20 @@ func readTid() (uint32, uint32, error) {
 	}
 
 	var pid, tid uint32
-	fmt.Sscanf(string(contents), "%d:%d", &pid, &tid)
+	_, err = fmt.Sscanf(string(contents), "%d:%d", &pid, &tid)
+	if err != nil {
+		return 0, 0, err
+	}
 	return pid, tid, nil
 }
 
 func sendQuit(tid uint32) {
 	user32 := syscall.NewLazyDLL("user32.dll")
 	postMessage := user32.NewProc("PostThreadMessageW")
-	postMessage.Call(uintptr(tid), WM_QUIT, 0, 0)
+	_, _, err := postMessage.Call(uintptr(tid), WM_QUIT, 0, 0)
+	if err != nil {
+		logrus.Errorf("Error posting quit message: %v", err)
+	}
 }
 
 func stopProxy(noKill bool) error {

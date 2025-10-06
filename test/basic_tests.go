@@ -52,6 +52,23 @@ func BasicConnectivityTests(props BasicTestProps) {
 	})
 }
 
+func BasicDHCPTests(props BasicTestProps) {
+	ginkgo.It("should return DHCP leases", func() {
+		client := gvproxyclient.New(&http.Client{
+			Transport: &http.Transport{
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+					return net.Dial("unix", props.Sock)
+				},
+			},
+		}, "http://base")
+		leases, err := client.ListDHCPLeases()
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(leases).Should(gomega.HaveKeyWithValue("192.168.127.1", "5a:94:ef:e4:0c:dd"))
+		gomega.Expect(leases).Should(gomega.HaveKeyWithValue("192.168.127.2", "5a:94:ef:e4:0c:ee"))
+	})
+
+}
+
 func BasicDNSTests(props BasicTestProps) {
 	ginkgo.It("should resolve redhat.com", func() {
 		out, err := props.SSHExec("nslookup redhat.com")

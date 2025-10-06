@@ -24,6 +24,9 @@ var defaultLintersSettings = LintersSettings{
 	Dupl: DuplSettings{
 		Threshold: 150,
 	},
+	EmbeddedStructFieldCheck: EmbeddedStructFieldCheckSettings{
+		EmptyLine: true,
+	},
 	ErrorLint: ErrorLintSettings{
 		Errorf:      true,
 		ErrorfMulti: true,
@@ -159,6 +162,9 @@ var defaultLintersSettings = LintersSettings{
 		SkipRegexp:    `(export|internal)_test\.go`,
 		AllowPackages: []string{"main"},
 	},
+	Unqueryvet: UnqueryvetSettings{
+		CheckSQLBuilders: true,
+	},
 	Unused: UnusedSettings{
 		FieldWritesAreUses:     true,
 		PostStatementsAreReads: false,
@@ -239,6 +245,7 @@ type LintersSettings struct {
 	Goconst                  GoConstSettings                  `mapstructure:"goconst"`
 	Gocritic                 GoCriticSettings                 `mapstructure:"gocritic"`
 	Gocyclo                  GoCycloSettings                  `mapstructure:"gocyclo"`
+	Godoclint                GodoclintSettings                `mapstructure:"godoclint"`
 	Godot                    GodotSettings                    `mapstructure:"godot"`
 	Godox                    GodoxSettings                    `mapstructure:"godox"`
 	Goheader                 GoHeaderSettings                 `mapstructure:"goheader"`
@@ -246,12 +253,15 @@ type LintersSettings struct {
 	Gomodguard               GoModGuardSettings               `mapstructure:"gomodguard"`
 	Gosec                    GoSecSettings                    `mapstructure:"gosec"`
 	Gosmopolitan             GosmopolitanSettings             `mapstructure:"gosmopolitan"`
+	Unqueryvet               UnqueryvetSettings               `mapstructure:"unqueryvet"`
 	Govet                    GovetSettings                    `mapstructure:"govet"`
 	Grouper                  GrouperSettings                  `mapstructure:"grouper"`
 	Iface                    IfaceSettings                    `mapstructure:"iface"`
 	ImportAs                 ImportAsSettings                 `mapstructure:"importas"`
 	Inamedparam              INamedParamSettings              `mapstructure:"inamedparam"`
+	Ineffassign              IneffassignSettings              `mapstructure:"ineffassign"`
 	InterfaceBloat           InterfaceBloatSettings           `mapstructure:"interfacebloat"`
+	IotaMixing               IotaMixingSettings               `mapstructure:"iotamixing"`
 	Ireturn                  IreturnSettings                  `mapstructure:"ireturn"`
 	Lll                      LllSettings                      `mapstructure:"lll"`
 	LoggerCheck              LoggerCheckSettings              `mapstructure:"loggercheck"`
@@ -380,6 +390,7 @@ type DupWordSettings struct {
 
 type EmbeddedStructFieldCheckSettings struct {
 	ForbidMutex bool `mapstructure:"forbid-mutex"`
+	EmptyLine   bool `mapstructure:"empty-line"`
 }
 
 type ErrcheckSettings struct {
@@ -421,8 +432,12 @@ type ExhaustiveSettings struct {
 }
 
 type ExhaustructSettings struct {
-	Include []string `mapstructure:"include"`
-	Exclude []string `mapstructure:"exclude"`
+	Include                []string `mapstructure:"include"`
+	Exclude                []string `mapstructure:"exclude"`
+	AllowEmpty             bool     `mapstructure:"allow-empty"`
+	AllowEmptyRx           []string `mapstructure:"allow-empty-rx"`
+	AllowEmptyReturns      bool     `mapstructure:"allow-empty-returns"`
+	AllowEmptyDeclarations bool     `mapstructure:"allow-empty-declarations"`
 }
 
 type FatcontextSettings struct {
@@ -467,6 +482,7 @@ type GinkgoLinterSettings struct {
 	ForbidSpecPollution        bool `mapstructure:"forbid-spec-pollution"`
 	ForceSucceedForFuncs       bool `mapstructure:"force-succeed"`
 	ForceAssertionDescription  bool `mapstructure:"force-assertion-description"`
+	ForeToNot                  bool `mapstructure:"force-tonot"`
 }
 
 type GoChecksumTypeSettings struct {
@@ -509,6 +525,24 @@ type GoCriticCheckSettings map[string]any
 
 type GoCycloSettings struct {
 	MinComplexity int `mapstructure:"min-complexity"`
+}
+
+type GodoclintSettings struct {
+	Default *string  `mapstructure:"default"`
+	Enable  []string `mapstructure:"enable"`
+	Disable []string `mapstructure:"disable"`
+	Options struct {
+		MaxLen struct {
+			Length *uint `mapstructure:"length"`
+		} `mapstructure:"max-len"`
+		RequireDoc struct {
+			IgnoreExported   *bool `mapstructure:"ignore-exported"`
+			IgnoreUnexported *bool `mapstructure:"ignore-unexported"`
+		} `mapstructure:"require-doc"`
+		StartWithName struct {
+			IncludeUnexported *bool `mapstructure:"include-unexported"`
+		} `mapstructure:"start-with-name"`
+	} `mapstructure:"options"`
 }
 
 type GodotSettings struct {
@@ -636,8 +670,16 @@ type INamedParamSettings struct {
 	SkipSingleParam bool `mapstructure:"skip-single-param"`
 }
 
+type IneffassignSettings struct {
+	CheckEscapingErrors bool `mapstructure:"check-escaping-errors"`
+}
+
 type InterfaceBloatSettings struct {
 	Max int `mapstructure:"max"`
+}
+
+type IotaMixingSettings struct {
+	ReportIndividual bool `mapstructure:"report-individual"`
 }
 
 type IreturnSettings struct {
@@ -838,7 +880,7 @@ type StaticCheckSettings struct {
 }
 
 func (s *StaticCheckSettings) HasConfiguration() bool {
-	return len(s.Initialisms) > 0 || len(s.HTTPStatusCodeWhitelist) > 0 || len(s.DotImportWhitelist) > 0 || len(s.Checks) > 0
+	return s.Initialisms == nil || s.HTTPStatusCodeWhitelist == nil || s.DotImportWhitelist == nil || s.Checks == nil
 }
 
 type TagAlignSettings struct {
@@ -965,6 +1007,11 @@ type UnconvertSettings struct {
 
 type UnparamSettings struct {
 	CheckExported bool `mapstructure:"check-exported"`
+}
+
+type UnqueryvetSettings struct {
+	CheckSQLBuilders bool     `mapstructure:"check-sql-builders"`
+	AllowedPatterns  []string `mapstructure:"allowed-patterns"`
 }
 
 type UnusedSettings struct {
