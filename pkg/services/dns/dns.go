@@ -94,7 +94,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		}
 
 		resolver := net.Resolver{
-			PreferGo: false,
+			PreferGo: true,
 		}
 		switch q.Qtype {
 		case dns.TypeA:
