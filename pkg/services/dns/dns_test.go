@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
+	"github.com/foxcpp/go-mockdns"
 	"github.com/miekg/dns"
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
@@ -225,17 +226,31 @@ var _ = ginkgo.Describe("dns add test", func() {
 
 var _ = ginkgo.Describe("TXT records", func() {
 
-	netResolver := net.Resolver{
-		PreferGo: false,
-	}
-
 	var cleanup func()
 	var vsockResolver *net.Resolver
+	var upstream upstreamResolver
+
+	const longTxtDomain = "long.txt.test."         // 20230601._domainkey.gmail.com
+	const multipleTxtDomain = "multiple.txt.test." // google.com
 
 	ginkgo.BeforeEach(func() {
 		var nameserver string
 		var err error
-		nameserver, cleanup, err = startDNSServer()
+
+		const txt = "abcdefghijklmnopqrstuvwxyz012456789"
+		const longTxt = txt + txt + txt + txt + txt + txt + txt + txt
+		upstream = &mockdns.Resolver{
+			Zones: map[string]mockdns.Zone{
+				longTxtDomain: {
+					TXT: []string{longTxt},
+				},
+				multipleTxtDomain: {
+					TXT: []string{"AAAAAAA", "BBBBBBB"},
+				},
+			},
+		}
+
+		nameserver, cleanup, err = startDNSServer(upstream)
 		gomega.Expect(err).To(gomega.BeNil())
 		time.Sleep(100 * time.Millisecond)
 
@@ -251,6 +266,8 @@ var _ = ginkgo.Describe("TXT records", func() {
 	ginkgo.AfterEach(func() {
 		if cleanup != nil {
 			cleanup()
+			// TODO port conflict race condition.
+			time.Sleep(100 * time.Millisecond)
 		}
 	})
 
@@ -264,37 +281,31 @@ var _ = ginkgo.Describe("TXT records", func() {
 			}
 			return false
 		}
+		ginkgo.It("Should produce the same result as upstream Resolver", func() {
 
-		// Test with Gmail's DKIM record which is known to be longer than 255 bytes
-		// note this will eventually need to be updated ;-(
-		const longTxtDomain = "20230601._domainkey.gmail.com"
-		ginkgo.It("Should produce the same result as net.Resolver", func() {
+			upstreamRecords, err := upstream.LookupTXT(context.Background(), longTxtDomain)
+			gomega.Expect(err).To(gomega.BeNil())
+			gomega.Expect(hasLongString(upstreamRecords)).To(gomega.BeTrue(), "Expected at least one TXT string longer than 255 bytes")
 
-			netRecords, netErr := netResolver.LookupTXT(context.Background(), longTxtDomain)
-			gomega.Expect(netErr).To(gomega.BeNil())
-			gomega.Expect(hasLongString(netRecords)).To(gomega.BeTrue(), "Expected at least one TXT string longer than 255 bytes")
+			vsockRecords, err := vsockResolver.LookupTXT(context.Background(), longTxtDomain)
+			gomega.Expect(err).To(gomega.BeNil())
 
-			vsockRecords, vsockErr := vsockResolver.LookupTXT(context.Background(), longTxtDomain)
-			gomega.Expect(vsockErr).To(gomega.BeNil())
-
-			gomega.Expect(vsockRecords).To(gomega.Equal(netRecords))
+			gomega.Expect(vsockRecords).To(gomega.Equal(upstreamRecords))
 
 		})
 
 	})
 
 	ginkgo.When("there are multiple TXT Records", func() {
-		const multipleTxtDomain = "google.com"
-		ginkgo.It("Should produce the same result as net.Resolver", func() {
+		ginkgo.It("Should produce the same result as upstream Resolver", func() {
+			upstreamRecords, err := upstream.LookupTXT(context.Background(), multipleTxtDomain)
+			gomega.Expect(err).To(gomega.BeNil())
+			gomega.Expect(len(upstreamRecords)).To(gomega.BeNumerically(">", 1), "Expected more than one TXT record")
 
-			netRecords, netErr := netResolver.LookupTXT(context.Background(), multipleTxtDomain)
-			gomega.Expect(netErr).To(gomega.BeNil())
-			gomega.Expect(len(netRecords)).To(gomega.BeNumerically(">", 1), "Expected more than one TXT record")
+			vsockRecords, err := vsockResolver.LookupTXT(context.Background(), multipleTxtDomain)
+			gomega.Expect(err).To(gomega.BeNil())
 
-			vsockRecords, vsockErr := vsockResolver.LookupTXT(context.Background(), multipleTxtDomain)
-			gomega.Expect(vsockErr).To(gomega.BeNil())
-
-			gomega.Expect(vsockRecords).To(gomega.ConsistOf(netRecords))
+			gomega.Expect(vsockRecords).To(gomega.ConsistOf(upstreamRecords))
 
 		})
 	})
@@ -308,7 +319,16 @@ type ARecord struct {
 
 func TestDNS(t *testing.T) {
 	log.Infof("starting test DNS servers")
-	nameserver, cleanup, err := startDNSServer()
+
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{
+			"redhat.com.": {
+				A: []string{"52.200.142.250", "34.235.198.240"},
+			},
+		},
+	}
+
+	nameserver, cleanup, err := startDNSServer(upstream)
 	require.NoError(t, err)
 	defer cleanup()
 	time.Sleep(100 * time.Millisecond)
@@ -344,7 +364,7 @@ func TestDNS(t *testing.T) {
 	}
 }
 
-func startDNSServer() (string, func(), error) {
+func startDNSServer(upstream upstreamResolver) (string, func(), error) {
 	udpConn, err := net.ListenPacket("udp", "127.0.0.1:5354")
 	if err != nil {
 		return "", nil, err
@@ -355,7 +375,7 @@ func startDNSServer() (string, func(), error) {
 		return "", nil, err
 	}
 
-	server, err := New(udpConn, tcpLn, nil)
+	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream)
 	if err != nil {
 		return "", nil, err
 	}

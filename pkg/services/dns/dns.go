@@ -14,9 +14,19 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type upstreamResolver interface {
+	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
+	LookupCNAME(ctx context.Context, host string) (string, error)
+	LookupMX(ctx context.Context, name string) ([]*net.MX, error)
+	LookupNS(ctx context.Context, name string) ([]*net.NS, error)
+	LookupSRV(ctx context.Context, service, proto, name string) (string, []*net.SRV, error)
+	LookupTXT(ctx context.Context, name string) ([]string, error)
+}
+
 type dnsHandler struct {
 	zones     []types.Zone
 	zonesLock sync.RWMutex
+	upstream  upstreamResolver
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
@@ -112,9 +122,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 			return
 		}
 
-		resolver := net.Resolver{
-			PreferGo: false,
-		}
+		resolver := h.upstream
 		switch q.Qtype {
 		case dns.TypeA:
 			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
@@ -236,7 +244,14 @@ type Server struct {
 }
 
 func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Server, error) {
-	handler := &dnsHandler{zones: zones}
+	upstream := &net.Resolver{
+		PreferGo: false,
+	}
+	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream)
+}
+
+func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver) (*Server, error) {
+	handler := &dnsHandler{zones: zones, upstream: upstream}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
 }
 
