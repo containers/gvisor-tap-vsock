@@ -220,6 +220,85 @@ var _ = ginkgo.Describe("dns add test", func() {
 		gomega.Expect(m.Answer[0].Header().Name).To(gomega.Equal("redhat.com."))
 		gomega.Expect(m.Answer[0].String()).To(gomega.SatisfyAny(gomega.ContainSubstring("34.235.198.240"), gomega.ContainSubstring("52.200.142.250")))
 	})
+
+})
+
+var _ = ginkgo.Describe("TXT records", func() {
+
+	netResolver := net.Resolver{
+		PreferGo: false,
+	}
+
+	var cleanup func()
+	var vsockResolver *net.Resolver
+
+	ginkgo.BeforeEach(func() {
+		var nameserver string
+		var err error
+		nameserver, cleanup, err = startDNSServer()
+		gomega.Expect(err).To(gomega.BeNil())
+		time.Sleep(100 * time.Millisecond)
+
+		vsockResolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				d := net.Dialer{}
+				return d.DialContext(ctx, network, nameserver)
+			},
+		}
+	})
+
+	ginkgo.AfterEach(func() {
+		if cleanup != nil {
+			cleanup()
+		}
+	})
+
+	ginkgo.When("There are long TXT Records", func() {
+
+		hasLongString := func(records []string) bool {
+			for _, txt := range records {
+				if len(txt) > 255 {
+					return true
+				}
+			}
+			return false
+		}
+
+		// Test with Gmail's DKIM record which is known to be longer than 255 bytes
+		// note this will eventually need to be updated ;-(
+		const longTxtDomain = "20230601._domainkey.gmail.com"
+		ginkgo.It("Should produce the same result as net.Resolver", func() {
+
+			netRecords, netErr := netResolver.LookupTXT(context.Background(), longTxtDomain)
+			gomega.Expect(netErr).To(gomega.BeNil())
+			gomega.Expect(hasLongString(netRecords)).To(gomega.BeTrue(), "Expected at least one TXT string longer than 255 bytes")
+
+			vsockRecords, vsockErr := vsockResolver.LookupTXT(context.Background(), longTxtDomain)
+			gomega.Expect(vsockErr).To(gomega.BeNil())
+
+			gomega.Expect(vsockRecords).To(gomega.Equal(netRecords))
+
+		})
+
+	})
+
+	ginkgo.When("there are multiple TXT Records", func() {
+		const multipleTxtDomain = "google.com"
+		ginkgo.It("Should produce the same result as net.Resolver", func() {
+
+			netRecords, netErr := netResolver.LookupTXT(context.Background(), multipleTxtDomain)
+			gomega.Expect(netErr).To(gomega.BeNil())
+			gomega.Expect(len(netRecords)).To(gomega.BeNumerically(">", 1), "Expected more than one TXT record")
+
+			vsockRecords, vsockErr := vsockResolver.LookupTXT(context.Background(), multipleTxtDomain)
+			gomega.Expect(vsockErr).To(gomega.BeNil())
+
+			gomega.Expect(vsockRecords).To(gomega.ConsistOf(netRecords))
+
+		})
+	})
+
 })
 
 type ARecord struct {

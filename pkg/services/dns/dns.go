@@ -87,6 +87,25 @@ func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
 	return false
 }
 
+func splitTxt(s string) []string {
+	const k = 255
+	var c []string
+
+	if len(s) <= k {
+		return []string{s}
+	}
+
+	for len(s) > k {
+		c = append(c, s[:k])
+		s = s[k:]
+	}
+
+	if len(s) > 0 {
+		c = append(c, s)
+	}
+
+	return c
+}
 func (h *dnsHandler) addAnswers(m *dns.Msg) {
 	for _, q := range m.Question {
 		if done := h.addLocalAnswers(m, q); done {
@@ -188,20 +207,24 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 				})
 			}
 		case dns.TypeTXT:
-			records, err := resolver.LookupTXT(context.TODO(), q.Name)
+			txts, err := resolver.LookupTXT(context.TODO(), q.Name)
 			if err != nil {
 				m.Rcode = dns.RcodeNameError
 				return
 			}
-			m.Answer = append(m.Answer, &dns.TXT{
-				Hdr: dns.RR_Header{
-					Name:   q.Name,
-					Rrtype: dns.TypeTXT,
-					Class:  dns.ClassINET,
-					Ttl:    0,
-				},
-				Txt: records,
-			})
+
+			for _, txt := range txts {
+				m.Answer = append(m.Answer, &dns.TXT{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeTXT,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					Txt: splitTxt(txt),
+				})
+			}
+
 		}
 	}
 }
