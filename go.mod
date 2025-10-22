@@ -8,6 +8,7 @@ require (
 	github.com/containers/winquit v1.1.0
 	github.com/coreos/stream-metadata-go v0.4.10
 	github.com/dustin/go-humanize v1.0.1
+	github.com/foxcpp/go-mockdns v1.1.0
 	github.com/google/gopacket v1.1.19
 	github.com/insomniacslk/dhcp v0.0.0-20240710054256-ddd8a41251c9
 	github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
