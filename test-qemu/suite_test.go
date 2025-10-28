@@ -53,7 +53,7 @@ var (
 func init() {
 	flag.StringVar(&tmpDir, "tmpDir", "../tmp", "temporary working directory")
 	flag.StringVar(&binDir, "bin", "../bin", "directory with compiled binaries")
-	privateKeyFile = filepath.Join(tmpDir, "id_test")
+	privateKeyFile = filepath.Join(tmpDir, "id_test_qemu")
 	publicKeyFile = privateKeyFile + ".pub"
 	ignFile = filepath.Join(tmpDir, "test.ign")
 	forwardSock = filepath.Join(tmpDir, "podman-remote.sock")
