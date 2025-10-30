@@ -19,3 +19,16 @@ type UnexposeRequest struct {
 	Local    string            `json:"local"`
 	Protocol TransportProtocol `json:"protocol"`
 }
+
+type NotificationMessage struct {
+	NotificationType NotificationType `json:"notification_type"`
+}
+
+type NotificationType string
+
+const (
+	Ready                 NotificationType = "ready"
+	ConnectionEstablished NotificationType = "connection_established"
+	HypervisorWarning     NotificationType = "hypervisor_warning"
+	HypervisorError       NotificationType = "hypervisor_error"
+)
