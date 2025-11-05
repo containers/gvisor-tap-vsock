@@ -932,6 +932,27 @@ func (e *ErrMulticastInputCannotBeOutput) afterLoad(context.Context) {}
 func (e *ErrMulticastInputCannotBeOutput) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
+func (e *ErrEndpointBusy) StateTypeName() string {
+	return "pkg/tcpip.ErrEndpointBusy"
+}
+
+func (e *ErrEndpointBusy) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrEndpointBusy) beforeSave() {}
+
+// +checklocksignore
+func (e *ErrEndpointBusy) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrEndpointBusy) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *ErrEndpointBusy) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
 func (l *RouteList) StateTypeName() string {
 	return "pkg/tcpip.RouteList"
 }
@@ -1078,6 +1099,7 @@ func (so *SocketOptions) StateFields() []string {
 		"receiveBufferSize",
 		"linger",
 		"rcvlowat",
+		"experimentOptionValue",
 	}
 }
 
@@ -1114,6 +1136,7 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(25, &so.receiveBufferSize)
 	stateSinkObject.Save(26, &so.linger)
 	stateSinkObject.Save(27, &so.rcvlowat)
+	stateSinkObject.Save(28, &so.experimentOptionValue)
 }
 
 func (so *SocketOptions) afterLoad(context.Context) {}
@@ -1148,6 +1171,7 @@ func (so *SocketOptions) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(25, &so.receiveBufferSize)
 	stateSourceObject.Load(26, &so.linger)
 	stateSourceObject.Load(27, &so.rcvlowat)
+	stateSourceObject.Load(28, &so.experimentOptionValue)
 }
 
 func (l *LocalSockError) StateTypeName() string {
@@ -1642,6 +1666,68 @@ func (f *ICMPv6Filter) afterLoad(context.Context) {}
 // +checklocksignore
 func (f *ICMPv6Filter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.DenyType)
+}
+
+func (t *TpacketReq) StateTypeName() string {
+	return "pkg/tcpip.TpacketReq"
+}
+
+func (t *TpacketReq) StateFields() []string {
+	return []string{
+		"TpBlockSize",
+		"TpBlockNr",
+		"TpFrameSize",
+		"TpFrameNr",
+	}
+}
+
+func (t *TpacketReq) beforeSave() {}
+
+// +checklocksignore
+func (t *TpacketReq) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.TpBlockSize)
+	stateSinkObject.Save(1, &t.TpBlockNr)
+	stateSinkObject.Save(2, &t.TpFrameSize)
+	stateSinkObject.Save(3, &t.TpFrameNr)
+}
+
+func (t *TpacketReq) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (t *TpacketReq) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.TpBlockSize)
+	stateSourceObject.Load(1, &t.TpBlockNr)
+	stateSourceObject.Load(2, &t.TpFrameSize)
+	stateSourceObject.Load(3, &t.TpFrameNr)
+}
+
+func (t *TpacketStats) StateTypeName() string {
+	return "pkg/tcpip.TpacketStats"
+}
+
+func (t *TpacketStats) StateFields() []string {
+	return []string{
+		"Packets",
+		"Dropped",
+	}
+}
+
+func (t *TpacketStats) beforeSave() {}
+
+// +checklocksignore
+func (t *TpacketStats) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.Packets)
+	stateSinkObject.Save(1, &t.Dropped)
+}
+
+func (t *TpacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (t *TpacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.Packets)
+	stateSourceObject.Load(1, &t.Dropped)
 }
 
 func (l *LingerOption) StateTypeName() string {
@@ -2362,6 +2448,7 @@ func (i *IPForwardingStats) StateFields() []string {
 		"NoMulticastPendingQueueBufferSpace",
 		"OutgoingDeviceNoBufferSpace",
 		"Errors",
+		"OutgoingDeviceClosedForSend",
 	}
 }
 
@@ -2383,6 +2470,7 @@ func (i *IPForwardingStats) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &i.NoMulticastPendingQueueBufferSpace)
 	stateSinkObject.Save(11, &i.OutgoingDeviceNoBufferSpace)
 	stateSinkObject.Save(12, &i.Errors)
+	stateSinkObject.Save(13, &i.OutgoingDeviceClosedForSend)
 }
 
 func (i *IPForwardingStats) afterLoad(context.Context) {}
@@ -2402,6 +2490,7 @@ func (i *IPForwardingStats) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(10, &i.NoMulticastPendingQueueBufferSpace)
 	stateSourceObject.Load(11, &i.OutgoingDeviceNoBufferSpace)
 	stateSourceObject.Load(12, &i.Errors)
+	stateSourceObject.Load(13, &i.OutgoingDeviceClosedForSend)
 }
 
 func (i *IPStats) StateTypeName() string {
@@ -3230,6 +3319,7 @@ func init() {
 	state.Register((*ErrWouldBlock)(nil))
 	state.Register((*ErrMissingRequiredFields)(nil))
 	state.Register((*ErrMulticastInputCannotBeOutput)(nil))
+	state.Register((*ErrEndpointBusy)(nil))
 	state.Register((*RouteList)(nil))
 	state.Register((*RouteEntry)(nil))
 	state.Register((*sockErrorList)(nil))
@@ -3250,6 +3340,8 @@ func init() {
 	state.Register((*TCPSendBufferSizeRangeOption)(nil))
 	state.Register((*TCPReceiveBufferSizeRangeOption)(nil))
 	state.Register((*ICMPv6Filter)(nil))
+	state.Register((*TpacketReq)(nil))
+	state.Register((*TpacketStats)(nil))
 	state.Register((*LingerOption)(nil))
 	state.Register((*IPPacketInfo)(nil))
 	state.Register((*IPv6PacketInfo)(nil))
