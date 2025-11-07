@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/notification"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
@@ -59,12 +60,13 @@ type GvproxyConfig struct {
 		Stdio  string `yaml:"stdio,omitempty"`
 		Vfkit  string `yaml:"vfkit,omitempty"`
 	} `yaml:"interfaces,omitempty"`
-	Forwards           []GvproxyConfigForward `yaml:"forwards,omitempty"`
-	PIDFile            string                 `yaml:"pid-file,omitempty"`
-	LogFile            string                 `yaml:"log-file,omitempty"`
-	Services           string                 `yaml:"services,omitempty"`
-	Ec2MetadataAccess  bool                   `yaml:"ec2-metadata-access,omitempty"`
-	NotificationSocket string                 `yaml:"notification,omitempty"`
+	Forwards           []GvproxyConfigForward           `yaml:"forwards,omitempty"`
+	PIDFile            string                           `yaml:"pid-file,omitempty"`
+	LogFile            string                           `yaml:"log-file,omitempty"`
+	Services           string                           `yaml:"services,omitempty"`
+	Ec2MetadataAccess  bool                             `yaml:"ec2-metadata-access,omitempty"`
+	NotificationSocket string                           `yaml:"notification,omitempty"`
+	NotificationSender *notification.NotificationSender `yaml:"-"`
 }
 
 type GvproxyConfigForward struct {
@@ -241,6 +243,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		config.PIDFile = args.pidFile
 	}
 	if args.notificationSocket != "" {
+		log.Debugf("notification socket: %s", args.notificationSocket)
 		uri, err := url.Parse(args.notificationSocket)
 		if err != nil {
 			return config, fmt.Errorf("invalid value for notification listen address: %w", err)

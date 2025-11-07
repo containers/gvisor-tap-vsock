@@ -128,6 +128,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	}
 	log.Info("waiting for clients...")
 
+	// Start the notification sender in a goroutine
 	notificationSender := notification.NewNotificationSender(config.NotificationSocket)
 	if config.NotificationSocket != "" {
 		g.Go(func() error {
@@ -135,6 +136,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 			return nil
 		})
 	}
+	vn.SetNotificationSender(notificationSender)
 	for _, endpoint := range config.Listen {
 		log.Infof("listening %s", endpoint)
 		ln, err := transport.Listen(endpoint)
@@ -182,6 +184,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if config.Interfaces.VPNKit != "" {
 		vpnkitListener, err := transport.Listen(config.Interfaces.VPNKit)
 		if err != nil {
+			notificationSender.Send(types.NotificationMessage{NotificationType: types.HypervisorError})
 			return fmt.Errorf("vpnkit listen error: %w", err)
 		}
 		g.Go(func() error {
@@ -195,10 +198,10 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 				}
 				conn, err := vpnkitListener.Accept()
 				if err != nil {
+					notificationSender.Send(types.NotificationMessage{NotificationType: types.HypervisorError})
 					log.Errorf("vpnkit accept error: %s", err)
 					continue
 				}
-				notificationSender.Send(types.NotificationMessage{NotificationType: types.ConnectionEstablished})
 				g.Go(func() error {
 					return vn.AcceptVpnKit(conn)
 				})
@@ -210,6 +213,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if config.Interfaces.Qemu != "" {
 		qemuListener, err := transport.Listen(config.Interfaces.Qemu)
 		if err != nil {
+			notificationSender.Send(types.NotificationMessage{NotificationType: types.HypervisorError})
 			return fmt.Errorf("qemu listen error: %w", err)
 		}
 
@@ -227,7 +231,6 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 				notificationSender.Send(types.NotificationMessage{NotificationType: types.HypervisorError})
 				return fmt.Errorf("qemu accept error: %w", err)
 			}
-			notificationSender.Send(types.NotificationMessage{NotificationType: types.ConnectionEstablished})
 			return vn.AcceptQemu(ctx, conn)
 		})
 	}
@@ -235,6 +238,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if config.Interfaces.Bess != "" {
 		bessListener, err := transport.Listen(config.Interfaces.Bess)
 		if err != nil {
+			notificationSender.Send(types.NotificationMessage{NotificationType: types.HypervisorError})
 			return fmt.Errorf("bess listen error: %w", err)
 		}
 
@@ -252,7 +256,6 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 				notificationSender.Send(types.NotificationMessage{NotificationType: types.HypervisorError})
 				return fmt.Errorf("bess accept error: %w", err)
 			}
-			notificationSender.Send(types.NotificationMessage{NotificationType: types.ConnectionEstablished})
 			return vn.AcceptBess(ctx, conn)
 		})
 	}
@@ -280,7 +283,6 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 				return fmt.Errorf("vfkit accept error: %w", err)
 			}
 
-			notificationSender.Send(types.NotificationMessage{NotificationType: types.ConnectionEstablished})
 			return vn.AcceptVfkit(ctx, vfkitConn)
 		})
 	}
@@ -288,8 +290,11 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if config.Interfaces.Stdio != "" {
 		g.Go(func() error {
 			conn := stdio.GetStdioConn()
-			notificationSender.Send(types.NotificationMessage{NotificationType: types.ConnectionEstablished})
-			return vn.AcceptStdio(ctx, conn)
+			err := vn.AcceptStdio(ctx, conn)
+			if err != nil {
+				notificationSender.Send(types.NotificationMessage{NotificationType: types.HypervisorError})
+			}
+			return err
 		})
 	}
 
