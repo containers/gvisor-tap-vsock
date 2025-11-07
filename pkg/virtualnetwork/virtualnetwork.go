@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/notification"
 	"github.com/containers/gvisor-tap-vsock/pkg/tap"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -26,6 +27,10 @@ type VirtualNetwork struct {
 	networkSwitch *tap.Switch
 	servicesMux   http.Handler
 	ipPool        *tap.IPPool
+}
+
+func (n *VirtualNetwork) SetNotificationSender(notificationSender *notification.NotificationSender) {
+	n.networkSwitch.SetNotificationSender(notificationSender)
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {

@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/notification"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -48,6 +49,8 @@ type Switch struct {
 	writeLock sync.Mutex
 
 	gateway VirtualDevice
+
+	notificationSender *notification.NotificationSender
 }
 
 func NewSwitch(debug bool, mtu int) *Switch {
@@ -197,6 +200,12 @@ func (e *Switch) disconnect(id int, conn net.Conn) {
 
 	for address, targetConn := range e.cam {
 		if targetConn == id {
+			if e.notificationSender != nil {
+				e.notificationSender.Send(types.NotificationMessage{
+					NotificationType: types.ConnectionClosed,
+					MacAddress:       address.String(),
+				})
+			}
 			delete(e.cam, address)
 		}
 	}
@@ -267,8 +276,16 @@ func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
 	eth := header.Ethernet(buf)
 
 	e.camLock.Lock()
+	_, exists := e.cam[eth.SourceAddress()]
 	e.cam[eth.SourceAddress()] = id
 	e.camLock.Unlock()
+
+	if !exists && e.notificationSender != nil {
+		e.notificationSender.Send(types.NotificationMessage{
+			NotificationType: types.ConnectionEstablished,
+			MacAddress:       eth.SourceAddress().String(),
+		})
+	}
 
 	if eth.DestinationAddress() != e.gateway.LinkAddress() {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -303,4 +320,8 @@ func protocolImplementation(protocol types.Protocol) protocol {
 	default:
 		return &hyperkitProtocol{}
 	}
+}
+
+func (e *Switch) SetNotificationSender(notificationSender *notification.NotificationSender) {
+	e.notificationSender = notificationSender
 }
