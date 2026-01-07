@@ -71,11 +71,11 @@ func (r *Resolver) LookupCNAME(ctx context.Context, host string) (cname string, 
 }
 
 func (r *Resolver) LookupHost(ctx context.Context, host string) (addrs []string, err error) {
-	_, addrs4, err := r.lookupA(ctx, host)
+	_, _, _, addrs4, err := r.lookupA(ctx, host)
 	if err != nil {
 		return nil, err
 	}
-	_, addrs6, err := r.lookupAAAA(ctx, host)
+	_, _, _, addrs6, err := r.lookupAAAA(ctx, host)
 	if err != nil {
 		return nil, err
 	}
@@ -90,52 +90,51 @@ func (r *Resolver) LookupHost(ctx context.Context, host string) (addrs []string,
 	return addrs, err
 }
 
-func (r *Resolver) targetZone(name string) (ad bool, rname string, zone Zone, err error) {
-	rname = strings.ToLower(dns.Fqdn(name))
+func (r *Resolver) targetZone(qname string) (ad bool, cnames []string, rname string, rzone Zone, err error) {
+	rname = strings.ToLower(dns.Fqdn(qname))
 	rzone, ok := r.Zones[rname]
 	if !ok {
-		return false, "", Zone{}, notFound(name)
+		return false, nil, rname, Zone{}, notFound(rname)
 	}
-
 	if rzone.Err != nil {
-		return false, "", rzone, rzone.Err
+		return rzone.AD, nil, rname, rzone, rzone.Err
+	}
+	if r.SkipCNAME {
+		return rzone.AD, nil, rname, rzone, nil
 	}
 
 	ad = rzone.AD
-
-	if !r.SkipCNAME {
-		for rzone.CNAME != "" {
-			rname = rzone.CNAME
-			rzone, ok = r.Zones[rname]
-			if !ok {
-				return false, rname, Zone{}, notFound(rname)
-			}
-			if rzone.Err != nil {
-				return false, "", rzone, rzone.Err
-			}
-			ad = ad && rzone.AD
+	for rzone.CNAME != "" {
+		cnames = append(cnames, rname)
+		rname = rzone.CNAME
+		rzone, ok = r.Zones[rname]
+		if !ok {
+			return ad, cnames, rname, Zone{}, notFound(rname)
+		}
+		ad = ad && rzone.AD
+		if rzone.Err != nil {
+			return ad, cnames, rname, rzone, rzone.Err
 		}
 	}
-
-	return ad, rname, rzone, nil
+	return ad, cnames, rname, rzone, nil
 }
 
-func (r *Resolver) lookupA(ctx context.Context, host string) (cname string, addrs []string, err error) {
-	_, cname, rzone, err := r.targetZone(host)
+func (r *Resolver) lookupA(ctx context.Context, host string) (ad bool, cnames []string, rname string, addrs []string, err error) {
+	ad, cnames, rname, rzone, err := r.targetZone(host)
 	if err != nil {
-		return cname, nil, err
+		return ad, cnames, rname, nil, err
 	}
 
-	return cname, rzone.A, nil
+	return ad, cnames, rname, rzone.A, nil
 }
 
-func (r *Resolver) lookupAAAA(ctx context.Context, host string) (cname string, addrs []string, err error) {
-	_, cname, rzone, err := r.targetZone(host)
+func (r *Resolver) lookupAAAA(ctx context.Context, host string) (ad bool, cnames []string, rname string, addrs []string, err error) {
+	ad, cnames, rname, rzone, err := r.targetZone(host)
 	if err != nil {
-		return cname, nil, err
+		return ad, cnames, rname, nil, err
 	}
 
-	return cname, rzone.AAAA, nil
+	return ad, cnames, rname, rzone.AAAA, nil
 }
 
 func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
@@ -164,9 +163,9 @@ func (r *Resolver) LookupIP(ctx context.Context, network, host string) ([]net.IP
 	case "ip":
 		addrs, err = r.LookupHost(ctx, host)
 	case "ip4":
-		_, addrs, err = r.lookupA(ctx, host)
+		_, _, _, addrs, err = r.lookupA(ctx, host)
 	case "ip6":
-		_, addrs, err = r.lookupAAAA(ctx, host)
+		_, _, _, addrs, err = r.lookupAAAA(ctx, host)
 	default:
 		return nil, fmt.Errorf("unsupported network: %v", network)
 	}
@@ -186,16 +185,16 @@ func (r *Resolver) LookupIP(ctx context.Context, network, host string) ([]net.IP
 }
 
 func (r *Resolver) LookupMX(ctx context.Context, name string) ([]*net.MX, error) {
-	_, mx, err := r.lookupMX(ctx, name)
+	_, _, _, mx, err := r.lookupMX(ctx, name)
 	res := make([]*net.MX, len(mx))
 	copy(res, mx)
 	return res, err
 }
 
-func (r *Resolver) lookupMX(ctx context.Context, name string) (string, []*net.MX, error) {
-	_, cname, rzone, err := r.targetZone(name)
+func (r *Resolver) lookupMX(ctx context.Context, name string) (bool, []string, string, []*net.MX, error) {
+	ad, cnames, rname, rzone, err := r.targetZone(name)
 	if err != nil {
-		return "", nil, err
+		return ad, cnames, rname, nil, err
 	}
 
 	out := make([]*net.MX, 0, len(rzone.MX))
@@ -204,20 +203,20 @@ func (r *Resolver) lookupMX(ctx context.Context, name string) (string, []*net.MX
 		out = append(out, &mxCpy)
 	}
 
-	return cname, out, nil
+	return ad, cnames, rname, out, nil
 }
 
 func (r *Resolver) LookupNS(ctx context.Context, name string) ([]*net.NS, error) {
-	_, ns, err := r.lookupNS(ctx, name)
+	_, _, _, ns, err := r.lookupNS(ctx, name)
 	res := make([]*net.NS, len(ns))
 	copy(res, ns)
 	return res, err
 }
 
-func (r *Resolver) lookupNS(ctx context.Context, name string) (string, []*net.NS, error) {
-	_, cname, rzone, err := r.targetZone(name)
+func (r *Resolver) lookupNS(ctx context.Context, name string) (bool, []string, string, []*net.NS, error) {
+	ad, cnames, rname, rzone, err := r.targetZone(name)
 	if err != nil {
-		return "", nil, err
+		return ad, cnames, rname, nil, err
 	}
 
 	out := make([]*net.NS, 0, len(rzone.MX))
@@ -226,7 +225,7 @@ func (r *Resolver) lookupNS(ctx context.Context, name string) (string, []*net.NS
 		out = append(out, &nsCpy)
 	}
 
-	return cname, out, nil
+	return ad, cnames, rname, out, nil
 }
 
 func (r *Resolver) LookupPort(ctx context.Context, network, service string) (port int, err error) {
@@ -234,15 +233,16 @@ func (r *Resolver) LookupPort(ctx context.Context, network, service string) (por
 	return net.LookupPort(network, service)
 }
 
-func (r *Resolver) LookupSRV(ctx context.Context, service, proto, name string) (cname string, addrs []*net.SRV, err error) {
+func (r *Resolver) LookupSRV(ctx context.Context, service, proto, name string) (rname string, addrs []*net.SRV, err error) {
 	query := fmt.Sprintf("_%s._%s.%s", service, proto, name)
-	return r.lookupSRV(ctx, query)
+	_, _, rname, addrs, err = r.lookupSRV(ctx, query)
+	return rname, addrs, err
 }
 
-func (r *Resolver) lookupSRV(ctx context.Context, query string) (cname string, addrs []*net.SRV, err error) {
-	_, cname, rzone, err := r.targetZone(query)
+func (r *Resolver) lookupSRV(ctx context.Context, query string) (ad bool, cnames []string, rname string, addrs []*net.SRV, err error) {
+	ad, cnames, rname, rzone, err := r.targetZone(query)
 	if err != nil {
-		return "", nil, err
+		return ad, cnames, rname, nil, err
 	}
 
 	out := make([]*net.SRV, 0, len(rzone.SRV))
@@ -251,23 +251,23 @@ func (r *Resolver) lookupSRV(ctx context.Context, query string) (cname string, a
 		out = append(out, &srvCpy)
 	}
 
-	return cname, out, nil
+	return ad, cnames, rname, out, nil
 }
 
 func (r *Resolver) LookupTXT(ctx context.Context, name string) ([]string, error) {
-	_, txt, err := r.lookupTXT(ctx, name)
+	_, _, _, txt, err := r.lookupTXT(ctx, name)
 	res := make([]string, len(txt))
 	copy(res, txt)
 	return res, err
 }
 
-func (r *Resolver) lookupTXT(ctx context.Context, name string) (string, []string, error) {
-	_, cname, rzone, err := r.targetZone(name)
+func (r *Resolver) lookupTXT(ctx context.Context, name string) (bool, []string, string, []string, error) {
+	ad, cnames, rname, rzone, err := r.targetZone(name)
 	if err != nil {
-		return "", nil, err
+		return ad, cnames, rname, nil, err
 	}
 
-	return cname, rzone.TXT, nil
+	return ad, cnames, rname, rzone.TXT, nil
 }
 
 // Dial implements the function similar to net.Dial that uses Resolver zones
@@ -289,11 +289,11 @@ func (r *Resolver) DialContext(ctx context.Context, network, addr string) (net.C
 		return net.Dial(network, addr)
 	}
 
-	_, addrs6, err := r.lookupAAAA(ctx, host)
+	_, _, _, addrs6, err := r.lookupAAAA(ctx, host)
 	if err != nil {
 		return nil, err
 	}
-	_, addrs4, err := r.lookupA(ctx, host)
+	_, _, _, addrs4, err := r.lookupA(ctx, host)
 	if err != nil {
 		return nil, err
 	}

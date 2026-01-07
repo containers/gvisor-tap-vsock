@@ -17,9 +17,9 @@ func (r *Resolver) LookupNetIP(ctx context.Context, network, host string) ([]net
 	case "ip":
 		addrs, err = r.LookupHost(ctx, host)
 	case "ip4":
-		_, addrs, err = r.lookupA(ctx, host)
+		_, _, _, addrs, err = r.lookupA(ctx, host)
 	case "ip6":
-		_, addrs, err = r.lookupAAAA(ctx, host)
+		_, _, _, addrs, err = r.lookupAAAA(ctx, host)
 	default:
 		return nil, fmt.Errorf("unsupported network: %v", network)
 	}

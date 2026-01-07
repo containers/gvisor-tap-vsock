@@ -73,7 +73,8 @@ func NewServerWithLogger(zones map[string]Zone, l Logger, authoritative bool) (*
 func (s *Server) writeErr(w dns.ResponseWriter, reply *dns.Msg, err error) {
 	reply.Rcode = dns.RcodeServerFailure
 	reply.RecursionAvailable = false
-	reply.Answer = nil
+	// A not found response may still include answers (e.g. CNAME chain).
+	//reply.Answer = nil
 	reply.Extra = nil
 
 	if dnsErr, ok := err.(*net.DNSError); ok {
@@ -158,7 +159,6 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, m *dns.Msg) {
 	}
 
 	q := m.Question[0]
-
 	qname := strings.ToLower(dns.Fqdn(q.Name))
 
 	if q.Qclass != dns.ClassINET {
@@ -169,28 +169,11 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, m *dns.Msg) {
 		return
 	}
 
-	qnameZone, ok := s.r.Zones[qname]
-	if !ok {
-		s.writeErr(w, reply, notFound(qname))
-		return
-	}
-
-	// This does the lookup twice (including lookup* below).
-	// TODO: Avoid this.
-	ad, rname, _, err := s.r.targetZone(qname)
-	if err != nil {
-		s.writeErr(w, reply, err)
-		return
-	}
-	reply.AuthenticatedData = ad
-
-	if rname != qname {
-		reply.Answer = append(reply.Answer, mkCname(qname, rname))
-	}
-
 	switch q.Qtype {
 	case dns.TypeA:
-		_, addrs, err := s.r.lookupA(context.Background(), qname)
+		ad, cnames, rname, addrs, err := s.r.lookupA(context.Background(), qname)
+		reply.AuthenticatedData = ad
+		reply.Answer = appendCNAMEs(reply.Answer, cnames, rname)
 		if err != nil {
 			s.writeErr(w, reply, err)
 			return
@@ -212,7 +195,9 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, m *dns.Msg) {
 			})
 		}
 	case dns.TypeAAAA:
-		_, addrs, err := s.r.lookupAAAA(context.Background(), q.Name)
+		ad, cnames, rname, addrs, err := s.r.lookupAAAA(context.Background(), q.Name)
+		reply.AuthenticatedData = ad
+		reply.Answer = appendCNAMEs(reply.Answer, cnames, rname)
 		if err != nil {
 			s.writeErr(w, reply, err)
 			return
@@ -234,7 +219,9 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, m *dns.Msg) {
 			})
 		}
 	case dns.TypeMX:
-		_, mxs, err := s.r.lookupMX(context.Background(), q.Name)
+		ad, cnames, rname, mxs, err := s.r.lookupMX(context.Background(), q.Name)
+		reply.AuthenticatedData = ad
+		reply.Answer = appendCNAMEs(reply.Answer, cnames, rname)
 		if err != nil {
 			s.writeErr(w, reply, err)
 			return
@@ -253,15 +240,14 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, m *dns.Msg) {
 			})
 		}
 	case dns.TypeNS:
-		cname, nss, err := s.r.lookupNS(context.Background(), q.Name)
+		ad, cnames, rname, nss, err := s.r.lookupNS(context.Background(), q.Name)
+		reply.AuthenticatedData = ad
+		reply.Answer = appendCNAMEs(reply.Answer, cnames, rname)
 		if err != nil {
 			s.writeErr(w, reply, err)
 			return
 		}
 
-		if cname != "" {
-			reply.Answer = append(reply.Answer, mkCname(q.Name, cname))
-		}
 		for _, ns := range nss {
 			reply.Answer = append(reply.Answer, &dns.NS{
 				Hdr: dns.RR_Header{
@@ -274,7 +260,9 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, m *dns.Msg) {
 			})
 		}
 	case dns.TypeSRV:
-		_, srvs, err := s.r.lookupSRV(context.Background(), q.Name)
+		ad, cnames, rname, srvs, err := s.r.lookupSRV(context.Background(), q.Name)
+		reply.AuthenticatedData = ad
+		reply.Answer = appendCNAMEs(reply.Answer, cnames, rname)
 		if err != nil {
 			s.writeErr(w, reply, err)
 			return
@@ -294,9 +282,22 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, m *dns.Msg) {
 			})
 		}
 	case dns.TypeCNAME:
-		reply.AuthenticatedData = qnameZone.AD
+		rname := strings.ToLower(dns.Fqdn(q.Name))
+		rzone, ok := s.r.Zones[rname]
+		if !ok {
+			s.writeErr(w, reply, notFound(rname))
+			return
+		}
+		if rzone.CNAME == "" {
+			s.writeErr(w, reply, notFound(rname))
+			return
+		}
+		reply.Answer = append(reply.Answer, mkCname(rname, rzone.CNAME))
+
 	case dns.TypeTXT:
-		_, txts, err := s.r.lookupTXT(context.Background(), q.Name)
+		ad, cnames, rname, txts, err := s.r.lookupTXT(context.Background(), q.Name)
+		reply.AuthenticatedData = ad
+		reply.Answer = appendCNAMEs(reply.Answer, cnames, rname)
 		if err != nil {
 			s.writeErr(w, reply, err)
 			return
@@ -323,7 +324,7 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, m *dns.Msg) {
 		for _, name := range rzone.PTR {
 			reply.Answer = append(reply.Answer, &dns.PTR{
 				Hdr: dns.RR_Header{
-					Name:   rname,
+					Name:   q.Name,
 					Rrtype: dns.TypePTR,
 					Class:  dns.ClassINET,
 					Ttl:    9999,
@@ -364,6 +365,14 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, m *dns.Msg) {
 	if err := w.WriteMsg(reply); err != nil {
 		s.Log.Printf("WriteMsg: %v", err)
 	}
+}
+
+func appendCNAMEs(answer []dns.RR, cnames []string, rname string) []dns.RR {
+	for _, cname := range cnames {
+		answer = append(answer, mkCname(rname, cname))
+		rname = cname
+	}
+	return answer
 }
 
 // LocalAddr returns the local endpoint used by the server. It will always be
