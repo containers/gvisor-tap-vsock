@@ -77,6 +77,8 @@ func (proxy *UDPProxy) replyLoop(proxyConn net.Conn, clientAddr net.Addr, client
 	readBuf := make([]byte, UDPBufSize)
 	for {
 		_ = proxyConn.SetReadDeadline(time.Now().Add(UDPConnTrackTimeout))
+		consecutiveECONNREFUSED := 0
+		maxConsecutiveECONNREFUSED := 100
 	again:
 		read, err := proxyConn.Read(readBuf)
 		if err != nil {
@@ -85,11 +87,20 @@ func (proxy *UDPProxy) replyLoop(proxyConn net.Conn, clientAddr net.Addr, client
 				// (e.g: nothing is actually listening on the
 				// proxied port on the container), ignore it
 				// and continue until UDPConnTrackTimeout
-				// expires:
-				goto again
+				// expires.
+				// However, limit consecutive retries to prevent
+				// infinite loops when ECONNREFUSED persists
+				// (e.g., after macOS sleep with queued ICMP errors)
+				consecutiveECONNREFUSED++
+				if consecutiveECONNREFUSED < maxConsecutiveECONNREFUSED {
+					time.Sleep(10 * time.Millisecond)
+					goto again
+				}
+				log.Debugf("Too many consecutive ECONNREFUSED errors, closing connection")
 			}
 			return
 		}
+		consecutiveECONNREFUSED = 0
 		for i := 0; i != read; {
 			written, err := proxy.listener.WriteTo(readBuf[i:read], clientAddr)
 			if err != nil {
