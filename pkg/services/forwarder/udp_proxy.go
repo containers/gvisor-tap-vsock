@@ -20,6 +20,13 @@ const (
 	UDPConnTrackTimeout = 90 * time.Second
 	// UDPBufSize is the buffer size for the UDP proxy
 	UDPBufSize = 65507
+	// UDPMaxConsecutiveECONNREFUSED is the maximum number of consecutive ECONNREFUSED
+	// errors to tolerate before closing the connection. This prevents infinite loops
+	// when ECONNREFUSED persists (e.g., after macOS sleep with queued ICMP errors).
+	UDPMaxConsecutiveECONNREFUSED = 100
+	// UDPECONNREFUSEDRetryDelay is the delay between ECONNREFUSED retry attempts
+	// to prevent busy loops while still allowing transient errors to be retried.
+	UDPECONNREFUSEDRetryDelay = 10 * time.Millisecond
 )
 
 // A net.Addr where the IP is split into two fields so you can use it as a key
@@ -78,7 +85,6 @@ func (proxy *UDPProxy) replyLoop(proxyConn net.Conn, clientAddr net.Addr, client
 	for {
 		_ = proxyConn.SetReadDeadline(time.Now().Add(UDPConnTrackTimeout))
 		consecutiveECONNREFUSED := 0
-		maxConsecutiveECONNREFUSED := 100
 	again:
 		read, err := proxyConn.Read(readBuf)
 		if err != nil {
@@ -92,8 +98,8 @@ func (proxy *UDPProxy) replyLoop(proxyConn net.Conn, clientAddr net.Addr, client
 				// infinite loops when ECONNREFUSED persists
 				// (e.g., after macOS sleep with queued ICMP errors)
 				consecutiveECONNREFUSED++
-				if consecutiveECONNREFUSED < maxConsecutiveECONNREFUSED {
-					time.Sleep(10 * time.Millisecond)
+				if consecutiveECONNREFUSED < UDPMaxConsecutiveECONNREFUSED {
+					time.Sleep(UDPECONNREFUSEDRetryDelay)
 					goto again
 				}
 				log.Debugf("Too many consecutive ECONNREFUSED errors, closing connection")
