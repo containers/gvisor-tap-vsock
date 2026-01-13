@@ -26,25 +26,26 @@ const (
 )
 
 type GvproxyArgs struct {
-	config            string
-	endpoints         arrayFlags
-	debug             bool
-	mtu               int
-	sshPort           int
-	vpnkitSocket      string
-	qemuSocket        string
-	bessSocket        string
-	stdioSocket       string
-	vfkitSocket       string
-	forwardSocket     arrayFlags
-	forwardDest       arrayFlags
-	forwardUser       arrayFlags
-	forwardIdentify   arrayFlags
-	pidFile           string
-	pcapFile          string
-	logFile           string
-	servicesEndpoint  string
-	ec2MetadataAccess bool
+	config             string
+	endpoints          arrayFlags
+	debug              bool
+	mtu                int
+	sshPort            int
+	vpnkitSocket       string
+	qemuSocket         string
+	bessSocket         string
+	stdioSocket        string
+	vfkitSocket        string
+	notificationSocket string
+	forwardSocket      arrayFlags
+	forwardDest        arrayFlags
+	forwardUser        arrayFlags
+	forwardIdentify    arrayFlags
+	pidFile            string
+	pcapFile           string
+	logFile            string
+	servicesEndpoint   string
+	ec2MetadataAccess  bool
 }
 
 type GvproxyConfig struct {
@@ -58,11 +59,12 @@ type GvproxyConfig struct {
 		Stdio  string `yaml:"stdio,omitempty"`
 		Vfkit  string `yaml:"vfkit,omitempty"`
 	} `yaml:"interfaces,omitempty"`
-	Forwards          []GvproxyConfigForward `yaml:"forwards,omitempty"`
-	PIDFile           string                 `yaml:"pid-file,omitempty"`
-	LogFile           string                 `yaml:"log-file,omitempty"`
-	Services          string                 `yaml:"services,omitempty"`
-	Ec2MetadataAccess bool                   `yaml:"ec2-metadata-access,omitempty"`
+	Forwards           []GvproxyConfigForward `yaml:"forwards,omitempty"`
+	PIDFile            string                 `yaml:"pid-file,omitempty"`
+	LogFile            string                 `yaml:"log-file,omitempty"`
+	Services           string                 `yaml:"services,omitempty"`
+	Ec2MetadataAccess  bool                   `yaml:"ec2-metadata-access,omitempty"`
+	NotificationSocket string                 `yaml:"notification,omitempty"`
 }
 
 type GvproxyConfigForward struct {
@@ -130,6 +132,7 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.StringVar(&args.logFile, "log-file", "", "Output log messages (logrus) to a given file path")
 	flagSet.StringVar(&args.servicesEndpoint, "services", "", "Exposes the same HTTP API as the --listen flag, without the /connect endpoint")
 	flagSet.BoolVar(&args.ec2MetadataAccess, "ec2-metadata-access", false, "Permits access to EC2 Metadata Service (TCP only)")
+	flagSet.StringVar(&args.notificationSocket, "notification", "", "Socket to be used to send network-ready notifications")
 	if err := flagSet.Parse(argv); err != nil {
 		return nil, err
 	}
@@ -238,6 +241,17 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	}
 	if args.pidFile != "" {
 		config.PIDFile = args.pidFile
+	}
+	if args.notificationSocket != "" {
+		log.Debugf("notification socket: %s", args.notificationSocket)
+		uri, err := url.Parse(args.notificationSocket)
+		if err != nil {
+			return config, fmt.Errorf("invalid value for notification listen address: %w", err)
+		}
+		if uri.Scheme != "unix" {
+			return config, errors.New("notification listen address must be unix:// address")
+		}
+		config.NotificationSocket = uri.Path
 	}
 	if len(args.endpoints) > 0 {
 		config.Listen = args.endpoints
