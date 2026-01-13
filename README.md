@@ -210,5 +210,41 @@ This is the same behaviour as [slirp](https://wiki.qemu.org/index.php/Documentat
 3. The tap device receives the packets and injects them in the kernel.
 4. The http server receives the request and send back the response.
 
-### Development
+## Notifications
+
+`gvproxy` can send notifications over a unix socket about hypervisor
+connections, and about network switch connections/disconnections.
+
+These notifications can be enabled with the `--notification unix://$NOTIF_PATH` argument.
+`$NOTIF_PATH` is the path to a listening unix socket.
+`gvproxy` will then send json messages on this socket.
+
+To receive notifications, 2 terminals need to be opened.
+
+### Terminal 1:
+
+```bash
+$ nc -k -U -l /tmp/notification.sock
+```
+
+### Terminal 2:
+
+```bash
+$ gvproxy --notification unix:///tmp/notification.sock
+```
+
+The terminal where `nc` is running will print:
+```json
+{"notification_type":"ready"}
+{"notification_type":"connection_established","mac_address":"5a:94:ef:e4:0c:ee"}
+{"notification_type":"connection_closed","mac_address":"5a:94:ef:e4:0c:ee"}
+```
+
+Notification types:
+- `ready` - sent when gvproxy is ready to accept connections
+- `connection_established` - sent when a VM connects (includes `mac_address`)
+- `connection_closed` - sent when a VM disconnects (includes `mac_address`)
+- `hypervisor_error` - sent on hypervisor errors
+
+## Development
 Developers who want to work on gvisor-tap-vsock should visit the [Development](./DEVELOPMENT.md) document.
