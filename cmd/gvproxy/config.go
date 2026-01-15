@@ -145,6 +145,14 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		config.LogLevel = "debug"
 	}
 
+	if args.logFile != "" {
+		config.LogFile = args.logFile
+	}
+
+	if config.LogLevel == "" {
+		config.LogLevel = "info"
+	}
+
 	// Set log level
 	if logLevel, err := log.ParseLevel(strings.ToLower(config.LogLevel)); err != nil {
 		log.Warningf("bad log level \"%s\", falling back to \"info\"", config.LogLevel)
@@ -174,9 +182,6 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	}
 
 	// Set defaults
-	if config.LogLevel == "" {
-		config.LogLevel = "info"
-	}
 	if config.Stack.MTU == 0 {
 		config.Stack.MTU = 1500
 	}
@@ -222,9 +227,6 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	// Default vpnkit mac addresses enabled only for the default mode
 
 	// Patch config with CLI args
-	if args.logFile != "" {
-		config.LogFile = args.logFile
-	}
 	if args.qemuSocket != "" {
 		config.Interfaces.Qemu = args.qemuSocket
 	}
