@@ -124,4 +124,9 @@ var _ = ginkgo.Describe("ping with gvproxy and vfkit", func() {
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).To(gomega.HaveOccurred())
 	})
+	ginkgo.It("should succeed to ping an localhost", func() {
+		out, err := sshExec("ping -w2 127.0.0.1")
+		log.Infof("ping: %s", out)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	})
 })
