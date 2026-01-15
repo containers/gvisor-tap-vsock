@@ -1,4 +1,8 @@
-./bin/
+bin/
 capture.pcap
 tmp/
 test/qcon.log
+.idea/
+.vscode/
+test-qemu/qcon.log
+test-qemu/ovmf_vars.fd
