@@ -16,6 +16,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
@@ -28,6 +29,8 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
 	udpForwarder := forwarder.UDP(s, translation, &natLock)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
+	icmpForwarder := forwarder.ICMP(s, translation, &natLock)
+	s.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
 
 	dnsMux, err := dnsServer(configuration, s)
 	if err != nil {
