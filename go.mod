@@ -25,6 +25,7 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	golang.org/x/crypto v0.50.0
 	golang.org/x/mod v0.35.0
+	golang.org/x/net v0.52.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -45,7 +46,6 @@ require (
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
-	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.43.0 // indirect
