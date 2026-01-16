@@ -145,6 +145,10 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		config.LogLevel = "debug"
 	}
 
+	if args.logFile != "" {
+		config.LogFile = args.logFile
+	}
+
 	// Set log level
 	if logLevel, err := log.ParseLevel(strings.ToLower(config.LogLevel)); err != nil {
 		log.Warningf("bad log level \"%s\", falling back to \"info\"", config.LogLevel)
