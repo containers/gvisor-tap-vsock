@@ -59,6 +59,9 @@ type Configuration struct {
 
 	// EC2 Metadata Service Access
 	Ec2MetadataAccess bool `yaml:"ec2MetadataAccess,omitempty"`
+
+	// Block all guest-initiated outbound TCP/UDP connections (host→guest forwarding still works)
+	BlockAllOutbound bool `yaml:"blockAllOutbound,omitempty"`
 }
 
 type Protocol string

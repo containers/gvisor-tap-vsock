@@ -14,9 +14,15 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool) *udp.Forwarder {
+func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, blockAllOutbound bool) *udp.Forwarder {
 	return udp.NewForwarder(s, func(r *udp.ForwarderRequest) bool {
 		localAddress := r.ID().LocalAddress
+
+		if blockAllOutbound {
+			log.Debugf("Blocking outbound UDP to %s:%d (blockAllOutbound=true)",
+				localAddress.String(), r.ID().LocalPort)
+			return true
+		}
 
 		if (!ec2MetadataAccess) && linkLocal().Contains(localAddress) || (localAddress == header.IPv4Broadcast) {
 			return true
