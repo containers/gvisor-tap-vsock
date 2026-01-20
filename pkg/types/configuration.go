@@ -65,6 +65,9 @@ type Configuration struct {
 
 	// Timeout in seconds for outbound TCP connection attempts (default: 30)
 	TCPConnectTimeout int `yaml:"tcpConnectTimeout,omitempty"`
+
+	// Block all guest-initiated outbound TCP/UDP connections (host→guest forwarding still works)
+	BlockAllOutbound bool `yaml:"blockAllOutbound,omitempty"`
 }
 
 type Protocol string
