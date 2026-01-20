@@ -24,9 +24,9 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	var natLock sync.Mutex
 	translation := parseNATTable(configuration)
 
-	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess)
+	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.BlockAllOutbound)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := forwarder.UDP(s, translation, &natLock)
+	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.BlockAllOutbound)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 
 	dnsMux, err := dnsServer(configuration, s)
