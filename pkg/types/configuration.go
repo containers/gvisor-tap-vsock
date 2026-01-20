@@ -70,6 +70,9 @@ type Configuration struct {
 	// Timeout in seconds for outbound TCP connection attempts (default: 30)
 	TCPConnectTimeout int `yaml:"tcpConnectTimeout,omitempty"`
 
+	// Block all guest-initiated outbound TCP/UDP connections (host→guest forwarding still works)
+	BlockAllOutbound bool `yaml:"blockAllOutbound,omitempty"`
+
 	// DialFilter, when set, is consulted before every connection the
 	// forwarders open for the guest. A non-nil error refuses it: TCP answers
 	// the guest with a reset, UDP and ICMP are dropped.

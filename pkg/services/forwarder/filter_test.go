@@ -87,7 +87,7 @@ var _ = ginkgo.Describe("dial filter", func() {
 		dial := func(f *recordingFilter) (net.Conn, error) {
 			s := newTestStack()
 			var natLock sync.Mutex
-			fwd := TCP(s, natToLoopback, &natLock, false, 0, 0, f.filter)
+			fwd := TCP(s, natToLoopback, &natLock, false, 0, 0, false, f.filter)
 			s.SetTransportProtocolHandler(tcp.ProtocolNumber, fwd.HandlePacket)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -131,7 +131,7 @@ var _ = ginkgo.Describe("dial filter", func() {
 		send := func(f *recordingFilter) bool {
 			s := newTestStack()
 			var natLock sync.Mutex
-			fwd := UDP(s, natToLoopback, &natLock, false, f.filter)
+			fwd := UDP(s, natToLoopback, &natLock, false, false, f.filter)
 			s.SetTransportProtocolHandler(udp.ProtocolNumber, fwd.HandlePacket)
 			c, err := gonet.DialUDP(s, nil, &tcpip.FullAddress{NIC: 1, Addr: guestAddr, Port: port}, ipv4.ProtocolNumber)
 			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
