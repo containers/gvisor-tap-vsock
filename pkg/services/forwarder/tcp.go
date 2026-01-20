@@ -23,7 +23,7 @@ const (
 	defaultTCPConnectTimeout = 30 * time.Second
 )
 
-func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, maxInFlight int, connectTimeout time.Duration) *tcp.Forwarder {
+func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, maxInFlight int, connectTimeout time.Duration, blockAllOutbound bool) *tcp.Forwarder {
 	if maxInFlight <= 0 {
 		maxInFlight = defaultTCPMaxInFlight
 	}
@@ -32,6 +32,13 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 	}
 	return tcp.NewForwarder(s, 0, maxInFlight, func(r *tcp.ForwarderRequest) {
 		localAddress := r.ID().LocalAddress
+
+		if blockAllOutbound {
+			log.Debugf("Blocking outbound TCP to %s:%d (blockAllOutbound=true)",
+				localAddress.String(), r.ID().LocalPort)
+			r.Complete(true)
+			return
+		}
 
 		if (!ec2MetadataAccess) && linkLocal().Contains(localAddress) {
 			r.Complete(true)
