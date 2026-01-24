@@ -207,6 +207,9 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	if config.Stack.GatewayIPv6 == "" {
 		config.Stack.GatewayIPv6 = "fd00::1"
 	}
+	if config.Stack.SubnetIPv6 == "" {
+		config.Stack.SubnetIPv6 = "fd00::/64"
+	}
 	if len(config.Stack.NAT) == 0 {
 		config.Stack.NAT = map[string]string{
 			luaddr.String(): "127.0.0.1",
@@ -353,6 +356,10 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 						Name: host,
 						IP:   net.ParseIP(hostIP),
 					},
+					{
+						Name: gateway,
+						IP:   net.ParseIP(config.Stack.GatewayIPv6),
+					},
 				},
 			},
 			{
@@ -365,6 +372,10 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 					{
 						Name: host,
 						IP:   net.ParseIP(hostIP),
+					},
+					{
+						Name: gateway,
+						IP:   net.ParseIP(config.Stack.GatewayIPv6),
 					},
 				},
 			},

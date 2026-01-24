@@ -3,25 +3,27 @@ package tap
 import (
 	"errors"
 	"maps"
-	"math"
+	"math/big"
 	"net"
 	"sync"
-
-	"github.com/apparentlymart/go-cidr/cidr"
 )
 
 type IPPool struct {
 	base   *net.IPNet
-	count  uint64
 	leases map[string]string
 	lock   sync.Mutex
+	next   *big.Int
 }
 
 func NewIPPool(base *net.IPNet) *IPPool {
+	start := big.NewInt(0)
+	start.SetBytes(base.IP.To16())
+	start.Add(start, big.NewInt(1))
+
 	return &IPPool{
 		base:   base,
-		count:  cidr.AddressCount(base),
 		leases: make(map[string]string),
+		next:   start,
 	}
 }
 
@@ -47,21 +49,26 @@ func (p *IPPool) GetOrAssign(mac string) (net.IP, error) {
 			return net.ParseIP(ip), nil
 		}
 	}
-
-	if p.count > math.MaxInt {
-		return nil, errors.New("IP pool exceeds maximum number of IP addresses")
-	}
-	for i := 1; i < int(p.count); i++ {
-		candidate, err := cidr.Host(p.base, i)
-		if err != nil {
-			continue
+	for {
+		ipBytes := p.next.Bytes()
+		if len(ipBytes) < len(p.base.IP) {
+			padded := make([]byte, len(p.base.IP))
+			copy(padded[len(p.base.IP)-len(ipBytes):], ipBytes)
+			ipBytes = padded
 		}
+
+		candidate := net.IP(ipBytes)
+		if !p.base.Contains(candidate) {
+			return nil, errors.New("cannot find available IP")
+		}
+
+		p.next.Add(p.next, big.NewInt(1))
+
 		if _, ok := p.leases[candidate.String()]; !ok {
 			p.leases[candidate.String()] = mac
 			return candidate, nil
 		}
 	}
-	return nil, errors.New("cannot find available IP")
 }
 
 func (p *IPPool) Reserve(ip net.IP, mac string) {

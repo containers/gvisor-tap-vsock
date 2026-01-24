@@ -13,7 +13,14 @@ import (
 
 // raBuf returns a valid NDP Router Advertisement with options, router
 // preference and DHCPv6 configurations specified.
-func raBuf(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool, prf header.NDPRoutePreference, optSer header.NDPOptionsSerializer) *stack.PacketBuffer {
+func raBuf(
+	src, dst tcpip.LinkAddress,
+	ip tcpip.Address,
+	rl uint16,
+	managedAddress, otherConfigurations bool,
+	prf header.NDPRoutePreference,
+	optSer header.NDPOptionsSerializer,
+) *stack.PacketBuffer {
 	const flagsByte = 1
 	const routerLifetimeOffset = 2
 
@@ -47,8 +54,7 @@ func raBuf(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, managedAddre
 	}))
 	hdr.Prepend(buffer.NewViewWithData(pkt))
 
-	//payloadLength := hdr.UsedLength()
-	payloadLength := 0
+	payloadLength := icmpSize
 	iph := header.IPv6(make([]byte, header.IPv6MinimumSize))
 	iph.Encode(&header.IPv6Fields{
 		TrafficClass:      0,
@@ -68,7 +74,7 @@ func raBuf(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, managedAddre
 		SrcAddr: src,
 		DstAddr: dst,
 	})
-	hdr.Prepend(buffer.NewViewWithData(iph))
+	hdr.Prepend(buffer.NewViewWithData(eth))
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: hdr,
 	})
