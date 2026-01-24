@@ -25,6 +25,9 @@ type Configuration struct {
 	// IPv6 address of the virtual gateway. Prefix will be 64.
 	GatewayIPv6 string `yaml:"gatewayIPv6,omitempty"`
 
+	// IPv6 subnet for the virtual network
+	SubnetIPv6 string `yaml:"subnetIPv6,omitempty"`
+
 	// MAC address of the virtual gateway
 	GatewayMacAddress string `yaml:"gatewayMacAddress,omitempty"`
 

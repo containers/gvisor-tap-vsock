@@ -27,6 +27,20 @@ var _ = ginkgo.Describe("dhcp with qemu", func() {
 	})
 })
 
+var _ = ginkgo.Describe("ipv6 connectivity with qemu", func() {
+	e2e.BasicIPv6ConnectivityTests(e2e.BasicTestProps{
+		SSHExec: sshExec,
+		Sock:    sock,
+	})
+})
+
+var _ = ginkgo.Describe("ipv6 dns with qemu", func() {
+	e2e.BasicIPv6DNSTests(e2e.BasicTestProps{
+		SSHExec: sshExec,
+		Sock:    sock,
+	})
+})
+
 var _ = ginkgo.Describe("command-line format", func() {
 	ginkgo.It("should convert Command to command line format", func() {
 		command := types.NewGvproxyCommand()

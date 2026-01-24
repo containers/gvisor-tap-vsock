@@ -18,13 +18,15 @@ type LinkEndpoint struct {
 	mtu        uint32
 	mac        tcpip.LinkAddress
 	ip         string
+	ipv6       string
+	subnetIPv6 string
 	virtualIPs map[string]struct{}
 
 	dispatcher    stack.NetworkDispatcher
 	networkSwitch NetworkSwitch
 }
 
-func NewLinkEndpoint(debug bool, mtu uint32, macAddress string, ip string, virtualIPs []string) (*LinkEndpoint, error) {
+func NewLinkEndpoint(debug bool, mtu uint32, macAddress string, ip string, ipv6 string, subnetIPv6 string, virtualIPs []string) (*LinkEndpoint, error) {
 	linkAddr, err := net.ParseMAC(macAddress)
 	if err != nil {
 		return nil, err
@@ -38,6 +40,8 @@ func NewLinkEndpoint(debug bool, mtu uint32, macAddress string, ip string, virtu
 		mtu:        mtu,
 		mac:        tcpip.LinkAddress(linkAddr),
 		ip:         ip,
+		ipv6:       ipv6,
+		subnetIPv6: subnetIPv6,
 		virtualIPs: set,
 	}, nil
 }
@@ -134,7 +138,7 @@ func (e *LinkEndpoint) writePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 		transportLayer := header.ICMPv6(pkt.TransportHeader().View().AsSlice())
 		if transportLayer.Type() == header.ICMPv6NeighborAdvert {
 			ip := header.NDPNeighborAdvert(transportLayer.MessageBody()).TargetAddress().String()
-			if ip != "fe80::1" {
+			if ip != e.ipv6 {
 				log.Debugf("dropping spoofing packets from the gateway about IP %s", ip)
 				return nil
 			}
@@ -156,4 +160,12 @@ func (e *LinkEndpoint) WriteRawPacket(_ *stack.PacketBuffer) tcpip.Error {
 
 func (e *LinkEndpoint) IP() string {
 	return e.ip
+}
+
+func (e *LinkEndpoint) IPv6() string {
+	return e.ipv6
+}
+
+func (e *LinkEndpoint) SubnetIPv6() string {
+	return e.subnetIPv6
 }

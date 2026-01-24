@@ -3,6 +3,7 @@ package tap
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,8 @@ type VirtualDevice interface {
 	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer)
 	LinkAddress() tcpip.LinkAddress
 	IP() string
+	IPv6() string
+	SubnetIPv6() string
 }
 
 type NetworkSwitch interface {
@@ -291,11 +294,45 @@ func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
 		if networkLayer.TransportProtocol() == header.ICMPv6ProtocolNumber {
 			transportLayer := header.ICMPv6(networkLayer.Payload())
 			if transportLayer.Type() == header.ICMPv6RouterSolicit {
-				routerAdvertisement := raBufSimple(e.gateway.LinkAddress(), eth.SourceAddress(), tcpip.AddrFrom16Slice(net.ParseIP("fe80::1")), 1000)
-				if err := e.tx(routerAdvertisement); err != nil {
-					log.Error(err)
+
+				if gatewayIPv6 := e.gateway.IPv6(); gatewayIPv6 != "" {
+					// Source Address MUST be the link-local address assigned to the interface from which this message is sent
+					linkLocalAddr := tcpip.AddrFrom16Slice(
+						net.ParseIP("fe80::1").To16(),
+					)
+					ndpOpts := header.NDPOptionsSerializer{
+						header.NDPSourceLinkLayerAddressOption(e.gateway.LinkAddress()),
+					}
+					if subnetIPv6 := e.gateway.SubnetIPv6(); subnetIPv6 != "" {
+						_, ipnet, err := net.ParseCIDR(subnetIPv6)
+						if err == nil {
+							prefixLen, _ := ipnet.Mask.Size()
+							ndpOpts = append(
+								ndpOpts,
+								makePrefixInfo(
+									uint8(prefixLen),
+									ipnet.IP.To16(),
+									86400,
+									14400,
+								),
+							)
+						}
+					}
+					routerAdvertisement := raBuf(
+						e.gateway.LinkAddress(),
+						eth.SourceAddress(),
+						linkLocalAddr,
+						1000,
+						true,
+						true,
+						0,
+						ndpOpts,
+					)
+					if err := e.tx(routerAdvertisement); err != nil {
+						log.Error(err)
+					}
+					routerAdvertisement.DecRef()
 				}
-				routerAdvertisement.DecRef()
 			}
 		}
 	}
@@ -309,7 +346,10 @@ func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
 		}
 		pkt.DecRef()
 	}
-	if eth.DestinationAddress() == e.gateway.LinkAddress() || eth.DestinationAddress() == header.EthernetBroadcastAddress || header.IsMulticastEthernetAddress(eth.DestinationAddress()) {
+	if eth.DestinationAddress() == e.gateway.LinkAddress() ||
+		eth.DestinationAddress() == header.EthernetBroadcastAddress ||
+		header.IsMulticastEthernetAddress(eth.DestinationAddress()) {
+
 		data := buffer.MakeWithData(buf)
 		data.TrimFront(header.EthernetMinimumSize)
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -337,4 +377,22 @@ func protocolImplementation(protocol types.Protocol) protocol {
 
 func (e *Switch) SetNotificationSender(notificationSender *notification.NotificationSender) {
 	e.notificationSender = notificationSender
+}
+
+// makePrefixInfo creates an NDP Prefix Information option per RFC 4861 section 4.6.2.
+// Layout (30 bytes after type/length header):
+//   - [0]:     Prefix Length (bits)
+//   - [1]:     Flags: bit 7 = OnLink (L), bit 6 = Autonomous (A)
+//   - [2:6]:   Valid Lifetime (seconds, big-endian)
+//   - [6:10]:  Preferred Lifetime (seconds, big-endian)
+//   - [10:14]: Reserved
+//   - [14:30]: Prefix (16 bytes IPv6 address)
+func makePrefixInfo(prefixLen uint8, prefix []byte, validLifetime, preferredLifetime uint32) header.NDPPrefixInformation {
+	buf := [30]byte{}
+	buf[0] = prefixLen
+	buf[1] = (1 << 7) | (1 << 6) // OnLink=1, Autonomous=1
+	binary.BigEndian.PutUint32(buf[2:], validLifetime)
+	binary.BigEndian.PutUint32(buf[6:], preferredLifetime)
+	copy(buf[14:], prefix)
+	return header.NDPPrefixInformation(buf[:])
 }
