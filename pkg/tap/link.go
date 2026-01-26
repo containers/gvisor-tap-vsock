@@ -131,7 +131,7 @@ func (e *LinkEndpoint) writePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 	}
 
 	if pkt.NetworkProtocolNumber == ipv6.ProtocolNumber && pkt.TransportProtocolNumber == icmp.ProtocolNumber6 {
-		transportLayer := header.ICMPv6(pkt.TransportHeader().View())
+		transportLayer := header.ICMPv6(pkt.TransportHeader().View().AsSlice())
 		if transportLayer.Type() == header.ICMPv6NeighborAdvert {
 			ip := header.NDPNeighborAdvert(transportLayer.MessageBody()).TargetAddress().String()
 			if ip != "fe80::1" {

@@ -3,8 +3,8 @@ package tap
 import (
 	"encoding/binary"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -18,8 +18,8 @@ func raBuf(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, managedAddre
 	const routerLifetimeOffset = 2
 
 	icmpSize := header.ICMPv6HeaderSize + header.NDPRAMinimumSize + optSer.Length()
-	hdr := buffer.NewPrependable(header.EthernetMinimumSize + header.IPv6MinimumSize + icmpSize)
-	pkt := header.ICMPv6(hdr.Prepend(icmpSize))
+	hdr := buffer.MakeWithView(buffer.NewView(header.EthernetMinimumSize + header.IPv6MinimumSize + icmpSize))
+	pkt := header.ICMPv6(make([]byte, icmpSize))
 	pkt.SetType(header.ICMPv6RouterAdvert)
 	pkt.SetCode(0)
 	raPayload := pkt.MessageBody()
@@ -45,24 +45,31 @@ func raBuf(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, managedAddre
 		Src:    ip,
 		Dst:    header.IPv6AllNodesMulticastAddress,
 	}))
-	payloadLength := hdr.UsedLength()
-	iph := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	hdr.Prepend(buffer.NewViewWithData(pkt))
+
+	payloadLength := icmpSize
+	iph := header.IPv6(make([]byte, header.IPv6MinimumSize))
 	iph.Encode(&header.IPv6Fields{
+		TrafficClass:      0,
+		FlowLabel:         0,
 		PayloadLength:     uint16(payloadLength),
 		TransportProtocol: icmp.ProtocolNumber6,
 		HopLimit:          header.NDPHopLimit,
 		SrcAddr:           ip,
 		DstAddr:           header.IPv6AllNodesMulticastAddress,
+		ExtensionHeaders:  []header.IPv6SerializableExtHdr{},
 	})
+	hdr.Prepend(buffer.NewViewWithData(iph))
 
-	eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
+	eth := header.Ethernet(make([]byte, header.EthernetMinimumSize))
 	eth.Encode(&header.EthernetFields{
 		Type:    ipv6.ProtocolNumber,
 		SrcAddr: src,
 		DstAddr: dst,
 	})
+	hdr.Prepend(buffer.NewViewWithData(eth))
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: hdr.View().ToVectorisedView(),
+		Payload: hdr,
 	})
 }
 
