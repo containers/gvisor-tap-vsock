@@ -5,9 +5,6 @@ github.com/Microsoft/go-winio/internal/fs
 github.com/Microsoft/go-winio/internal/socket
 github.com/Microsoft/go-winio/internal/stringbuffer
 github.com/Microsoft/go-winio/pkg/guid
-# github.com/apparentlymart/go-cidr v1.1.0
-## explicit
-github.com/apparentlymart/go-cidr/cidr
 # github.com/containers/winquit v1.1.0
 ## explicit; go 1.19
 github.com/containers/winquit/pkg/winquit
