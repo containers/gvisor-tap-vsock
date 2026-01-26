@@ -135,7 +135,7 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 	if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP(configuration.GatewayIPv6)),
+			Address:   tcpip.AddrFrom16Slice(net.ParseIP(configuration.GatewayIPv6)),
 			PrefixLen: 64,
 		},
 	}, stack.AddressProperties{}); err != nil {
