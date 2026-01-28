@@ -36,8 +36,7 @@ type Switch struct {
 	Sent     uint64
 	Received uint64
 
-	debug               bool
-	maxTransmissionUnit int
+	debug bool
 
 	nextConnID int
 	conns      map[int]protocolConn
@@ -53,12 +52,11 @@ type Switch struct {
 	notificationSender *notification.NotificationSender
 }
 
-func NewSwitch(debug bool, mtu int) *Switch {
+func NewSwitch(debug bool) *Switch {
 	return &Switch{
-		debug:               debug,
-		maxTransmissionUnit: mtu,
-		conns:               make(map[int]protocolConn),
-		cam:                 make(map[tcpip.LinkAddress]int),
+		debug: debug,
+		conns: make(map[int]protocolConn),
+		cam:   make(map[tcpip.LinkAddress]int),
 	}
 }
 
