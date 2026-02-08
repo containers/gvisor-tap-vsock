@@ -193,22 +193,6 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 			Gateway:     tcpip.Address{},
 			NIC:         1,
 		})
-
-		_, linkLocalSubnet, _ := net.ParseCIDR("fe80::/10")
-		linkLocal, _ := tcpip.NewSubnet(tcpip.AddrFromSlice(linkLocalSubnet.IP), tcpip.MaskFromBytes(linkLocalSubnet.Mask))
-		routes = append(routes, tcpip.Route{
-			Destination: linkLocal,
-			Gateway:     tcpip.Address{},
-			NIC:         1,
-		})
-
-		_, ipv6DefaultCIDR, _ := net.ParseCIDR("::/0")
-		ipv6DefaultRoute, _ := tcpip.NewSubnet(tcpip.AddrFromSlice(ipv6DefaultCIDR.IP), tcpip.MaskFromBytes(ipv6DefaultCIDR.Mask))
-		routes = append(routes, tcpip.Route{
-			Destination: ipv6DefaultRoute,
-			Gateway:     tcpip.Address{},
-			NIC:         1,
-		})
 	}
 
 	s.SetRouteTable(routes)

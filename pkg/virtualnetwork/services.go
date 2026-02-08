@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
+// ipv6Pool can be nil
 func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool, ipv6Pool *tap.IPPool) (http.Handler, error) {
 	var natLock sync.Mutex
 	translation := parseNATTable(configuration)
@@ -41,14 +42,6 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 		return nil, err
 	}
 
-	var dhcpv6Mux http.Handler
-	if ipv6Pool != nil {
-		dhcpv6Mux, err = dhcpv6Server(configuration, s, ipv6Pool)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	forwarderMux, err := forwardHostVM(configuration, s)
 	if err != nil {
 		return nil, err
@@ -56,7 +49,11 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	mux := http.NewServeMux()
 	mux.Handle("/forwarder/", http.StripPrefix("/forwarder", forwarderMux))
 	mux.Handle("/dhcp/", http.StripPrefix("/dhcp", dhcpMux))
-	if dhcpv6Mux != nil {
+	if ipv6Pool != nil {
+		dhcpv6Mux, err := dhcpv6Server(configuration, s, ipv6Pool)
+		if err != nil {
+			return nil, err
+		}
 		mux.Handle("/dhcpv6/", http.StripPrefix("/dhcpv6", dhcpv6Mux))
 	}
 	mux.Handle("/dns/", http.StripPrefix("/dns", dnsMux))
