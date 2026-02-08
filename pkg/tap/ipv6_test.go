@@ -17,7 +17,8 @@ func TestRaBufSimple(t *testing.T) {
 	gatewayIP := tcpip.AddrFrom16Slice(net.ParseIP("fe80::1"))
 	routerLifetime := uint16(1000)
 
-	pkt := raBufSimple(srcMAC, dstMAC, gatewayIP, routerLifetime)
+	pkt, err := raBufSimple(srcMAC, dstMAC, gatewayIP, routerLifetime)
+	require.NoError(t, err)
 	require.NotNil(t, pkt, "raBufSimple should return a non-nil packet")
 	defer pkt.DecRef()
 
@@ -36,7 +37,8 @@ func TestRaBufWithOptions(t *testing.T) {
 	routerLifetime := uint16(1800)
 
 	// Test with empty options
-	pkt := raBufWithOpts(srcMAC, dstMAC, gatewayIP, routerLifetime, header.NDPOptionsSerializer{})
+	pkt, err := raBufWithOpts(srcMAC, dstMAC, gatewayIP, routerLifetime, header.NDPOptionsSerializer{})
+	require.NoError(t, err)
 	require.NotNil(t, pkt, "raBufWithOpts should return a non-nil packet")
 	defer pkt.DecRef()
 
@@ -84,7 +86,8 @@ func TestRaBufFull(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pkt := raBuf(srcMAC, dstMAC, gatewayIP, routerLifetime, tt.managedAddress, tt.otherConfigurations, tt.prf, header.NDPOptionsSerializer{})
+			pkt, err := raBuf(srcMAC, dstMAC, gatewayIP, routerLifetime, tt.managedAddress, tt.otherConfigurations, tt.prf, header.NDPOptionsSerializer{})
+			require.NoError(t, err)
 			require.NotNil(t, pkt, "raBuf should return a non-nil packet")
 			defer pkt.DecRef()
 

@@ -296,7 +296,7 @@ func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
 			if transportLayer.Type() == header.ICMPv6RouterSolicit {
 
 				if gatewayIPv6 := e.gateway.IPv6(); gatewayIPv6 != "" {
-					// Source Address MUST be the link-local address assigned to the interface from which this message is sent
+					// RFC 4861: Source Address MUST be the link-local address assigned to the interface from which this message is sent
 					linkLocalAddr := tcpip.AddrFrom16Slice(
 						net.ParseIP("fe80::1").To16(),
 					)
@@ -318,7 +318,7 @@ func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
 							)
 						}
 					}
-					routerAdvertisement := raBuf(
+					routerAdvertisement, err := raBuf(
 						e.gateway.LinkAddress(),
 						eth.SourceAddress(),
 						linkLocalAddr,
@@ -328,10 +328,14 @@ func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
 						0,
 						ndpOpts,
 					)
-					if err := e.tx(routerAdvertisement); err != nil {
+					if err != nil {
 						log.Error(err)
+					} else {
+						if err := e.tx(routerAdvertisement); err != nil {
+							log.Error(err)
+						}
+						routerAdvertisement.DecRef()
 					}
-					routerAdvertisement.DecRef()
 				}
 			}
 		}

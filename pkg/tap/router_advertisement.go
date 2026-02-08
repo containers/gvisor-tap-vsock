@@ -13,7 +13,14 @@ import (
 
 // raBuf returns a valid NDP Router Advertisement with options, router
 // preference and DHCPv6 configurations specified.
-func raBuf(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool, prf header.NDPRoutePreference, optSer header.NDPOptionsSerializer) *stack.PacketBuffer {
+func raBuf(
+	src, dst tcpip.LinkAddress,
+	ip tcpip.Address,
+	rl uint16,
+	managedAddress, otherConfigurations bool,
+	prf header.NDPRoutePreference,
+	optSer header.NDPOptionsSerializer,
+) (*stack.PacketBuffer, error) {
 	const flagsByte = 1
 	const routerLifetimeOffset = 2
 
@@ -45,7 +52,9 @@ func raBuf(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, managedAddre
 		Src:    ip,
 		Dst:    header.IPv6AllNodesMulticastAddress,
 	}))
-	hdr.Prepend(buffer.NewViewWithData(pkt))
+	if err := hdr.Prepend(buffer.NewViewWithData(pkt)); err != nil {
+		return nil, err
+	}
 
 	payloadLength := icmpSize
 	iph := header.IPv6(make([]byte, header.IPv6MinimumSize))
@@ -59,7 +68,9 @@ func raBuf(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, managedAddre
 		DstAddr:           header.IPv6AllNodesMulticastAddress,
 		ExtensionHeaders:  []header.IPv6SerializableExtHdr{},
 	})
-	hdr.Prepend(buffer.NewViewWithData(iph))
+	if err := hdr.Prepend(buffer.NewViewWithData(iph)); err != nil {
+		return nil, err
+	}
 
 	eth := header.Ethernet(make([]byte, header.EthernetMinimumSize))
 	eth.Encode(&header.EthernetFields{
@@ -67,17 +78,19 @@ func raBuf(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, managedAddre
 		SrcAddr: src,
 		DstAddr: dst,
 	})
-	hdr.Prepend(buffer.NewViewWithData(eth))
+	if err := hdr.Prepend(buffer.NewViewWithData(eth)); err != nil {
+		return nil, err
+	}
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: hdr,
-	})
+	}), nil
 }
 
 // raBufWithOpts returns a valid NDP Router Advertisement with options.
 //
 // Note, raBufWithOpts does not populate any of the RA fields other than the
 // Router Lifetime.
-func raBufWithOpts(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializer) *stack.PacketBuffer {
+func raBufWithOpts(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializer) (*stack.PacketBuffer, error) {
 	return raBuf(src, dst, ip, rl, false /* managedAddress */, false /* otherConfigurations */, 0 /* prf */, optSer)
 }
 
@@ -85,6 +98,6 @@ func raBufWithOpts(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16, optS
 //
 // Note, raBuf does not populate any of the RA fields other than the
 // Router Lifetime.
-func raBufSimple(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16) *stack.PacketBuffer {
+func raBufSimple(src, dst tcpip.LinkAddress, ip tcpip.Address, rl uint16) (*stack.PacketBuffer, error) {
 	return raBufWithOpts(src, dst, ip, rl, header.NDPOptionsSerializer{})
 }
