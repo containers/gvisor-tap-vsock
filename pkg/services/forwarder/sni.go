@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"net"
 	"regexp"
 	"strings"
 )
@@ -34,6 +35,7 @@ const (
 
 	// TLS extension types
 	extServerName           = 0x0000
+	extALPN                 = 0x0010
 	extEncryptedClientHello = 0xfe0d
 	extLegacyESNI           = 0xffce
 
@@ -42,56 +44,56 @@ const (
 )
 
 // PeekSNI peeks at TLS ClientHello bytes from br without consuming them,
-// extracts the SNI hostname. It returns the hostname, the number of bytes
-// peeked, and any error. The bufio.Reader is left with all peeked bytes
-// available for subsequent reads.
+// extracts the SNI hostname and ALPN protocol list. It returns the hostname,
+// ALPN protocols, the number of bytes peeked, and any error. The bufio.Reader
+// is left with all peeked bytes available for subsequent reads.
 //
 // The parser handles ClientHello messages split across multiple TLS records
 // (TLS record fragmentation), detects ECH/ESNI extensions, and performs
 // bounds checking at every field boundary.
-func PeekSNI(br *bufio.Reader) (sni string, peeked int, err error) {
+func PeekSNI(br *bufio.Reader) (sni string, alpn []string, peeked int, err error) {
 	// Peek at the first byte to check if it looks like TLS.
 	hdr, err := br.Peek(1)
 	if err != nil || len(hdr) < 1 {
-		return "", 0, ErrNotTLS
+		return "", nil, 0, ErrNotTLS
 	}
 	if hdr[0] != tlsContentTypeHandshake {
-		return "", 1, ErrNotTLS
+		return "", nil, 1, ErrNotTLS
 	}
 
 	// Peek at the first TLS record header (5 bytes).
 	hdr, err = br.Peek(5)
 	if err != nil || len(hdr) < 5 {
-		return "", len(hdr), ErrShortRead
+		return "", nil, len(hdr), ErrShortRead
 	}
 
 	recordLen := int(binary.BigEndian.Uint16(hdr[3:5]))
 	if recordLen == 0 || recordLen > tlsMaxRecordLen {
-		return "", 5, ErrNotTLS
+		return "", nil, 5, ErrNotTLS
 	}
 
 	// Peek the entire first TLS record.
 	totalPeeked := 5 + recordLen
 	data, err := br.Peek(totalPeeked)
 	if err != nil || len(data) < totalPeeked {
-		return "", len(data), ErrShortRead
+		return "", nil, len(data), ErrShortRead
 	}
 
 	// The handshake payload starts at offset 5.
 	// We need at least 4 bytes for handshake type (1) + length (3).
 	payload := data[5:]
 	if len(payload) < 4 {
-		return "", totalPeeked, ErrNotTLS
+		return "", nil, totalPeeked, ErrNotTLS
 	}
 
 	if payload[0] != tlsHandshakeClientHello {
-		return "", totalPeeked, ErrNotTLS
+		return "", nil, totalPeeked, ErrNotTLS
 	}
 
 	// Handshake message length (3 bytes, big-endian).
 	hsLen := int(payload[1])<<16 | int(payload[2])<<8 | int(payload[3])
 	if hsLen > maxClientHelloLen {
-		return "", totalPeeked, ErrNotTLS
+		return "", nil, totalPeeked, ErrNotTLS
 	}
 
 	// The handshake message body starts at payload[4:].
@@ -104,23 +106,23 @@ func PeekSNI(br *bufio.Reader) (sni string, peeked int, err error) {
 		nextHdrEnd := totalPeeked + 5
 		data, err = br.Peek(nextHdrEnd)
 		if err != nil || len(data) < nextHdrEnd {
-			return "", len(data), ErrShortRead
+			return "", nil, len(data), ErrShortRead
 		}
 
 		nextHdr := data[totalPeeked:]
 		if nextHdr[0] != tlsContentTypeHandshake {
-			return "", nextHdrEnd, ErrNotTLS
+			return "", nil, nextHdrEnd, ErrNotTLS
 		}
 
 		nextRecordLen := int(binary.BigEndian.Uint16(nextHdr[3:5]))
 		if nextRecordLen == 0 || nextRecordLen > tlsMaxRecordLen {
-			return "", nextHdrEnd, ErrNotTLS
+			return "", nil, nextHdrEnd, ErrNotTLS
 		}
 
 		nextEnd := totalPeeked + 5 + nextRecordLen
 		data, err = br.Peek(nextEnd)
 		if err != nil || len(data) < nextEnd {
-			return "", len(data), ErrShortRead
+			return "", nil, len(data), ErrShortRead
 		}
 
 		// Append the new record's payload to hsBody.
@@ -131,12 +133,12 @@ func PeekSNI(br *bufio.Reader) (sni string, peeked int, err error) {
 
 	// Truncate hsBody to exactly hsLen.
 	if len(hsBody) < hsLen {
-		return "", totalPeeked, ErrShortRead
+		return "", nil, totalPeeked, ErrShortRead
 	}
 	hsBody = hsBody[:hsLen]
 
-	sni, err = parseClientHello(hsBody)
-	return sni, totalPeeked, err
+	sni, alpn, err = parseClientHello(hsBody)
+	return sni, alpn, totalPeeked, err
 }
 
 // reassembleHandshake extracts and concatenates all TLS record payloads from
@@ -167,69 +169,71 @@ func reassembleHandshake(data []byte) []byte {
 }
 
 // parseClientHello parses the ClientHello body (after the 4-byte handshake
-// header) and extracts the SNI hostname. It returns ErrECH if an ECH or
-// legacy ESNI extension is found, and ErrNoSNI if no SNI is present.
-func parseClientHello(body []byte) (string, error) {
+// header) and extracts the SNI hostname and ALPN protocols. It returns ErrECH
+// if an ECH or legacy ESNI extension is found, and ErrNoSNI if no SNI is
+// present.
+func parseClientHello(body []byte) (string, []string, error) {
 	off := 0
 
 	// Version (2 bytes).
 	if off+2 > len(body) {
-		return "", ErrShortRead
+		return "", nil, ErrShortRead
 	}
 	off += 2
 
 	// Random (32 bytes).
 	if off+32 > len(body) {
-		return "", ErrShortRead
+		return "", nil, ErrShortRead
 	}
 	off += 32
 
 	// Session ID (variable length, 1-byte length prefix).
 	if off+1 > len(body) {
-		return "", ErrShortRead
+		return "", nil, ErrShortRead
 	}
 	sidLen := int(body[off])
 	off++
 	if off+sidLen > len(body) {
-		return "", ErrShortRead
+		return "", nil, ErrShortRead
 	}
 	off += sidLen
 
 	// Cipher Suites (variable length, 2-byte length prefix).
 	if off+2 > len(body) {
-		return "", ErrShortRead
+		return "", nil, ErrShortRead
 	}
 	csLen := int(binary.BigEndian.Uint16(body[off : off+2]))
 	off += 2
 	if off+csLen > len(body) {
-		return "", ErrShortRead
+		return "", nil, ErrShortRead
 	}
 	off += csLen
 
 	// Compression Methods (variable length, 1-byte length prefix).
 	if off+1 > len(body) {
-		return "", ErrShortRead
+		return "", nil, ErrShortRead
 	}
 	cmLen := int(body[off])
 	off++
 	if off+cmLen > len(body) {
-		return "", ErrShortRead
+		return "", nil, ErrShortRead
 	}
 	off += cmLen
 
 	// Extensions (2-byte total length prefix).
 	if off+2 > len(body) {
 		// No extensions at all.
-		return "", ErrNoSNI
+		return "", nil, ErrNoSNI
 	}
 	extsLen := int(binary.BigEndian.Uint16(body[off : off+2]))
 	off += 2
 	if off+extsLen > len(body) {
-		return "", ErrShortRead
+		return "", nil, ErrShortRead
 	}
 
 	extsEnd := off + extsLen
 	var foundSNI string
+	var foundALPN []string
 	hasECH := false
 
 	for off+4 <= extsEnd {
@@ -237,7 +241,7 @@ func parseClientHello(body []byte) (string, error) {
 		extLen := int(binary.BigEndian.Uint16(body[off+2 : off+4]))
 		off += 4
 		if off+extLen > extsEnd {
-			return "", ErrShortRead
+			return "", nil, ErrShortRead
 		}
 		extData := body[off : off+extLen]
 
@@ -251,18 +255,22 @@ func parseClientHello(body []byte) (string, error) {
 					foundSNI = name
 				}
 			}
+		case extALPN:
+			if foundALPN == nil {
+				foundALPN = parseALPNExtension(extData)
+			}
 		}
 
 		off += extLen
 	}
 
 	if hasECH {
-		return "", ErrECH
+		return "", nil, ErrECH
 	}
 	if foundSNI == "" {
-		return "", ErrNoSNI
+		return "", nil, ErrNoSNI
 	}
-	return foundSNI, nil
+	return foundSNI, foundALPN, nil
 }
 
 // parseSNIExtension parses the server_name extension data and returns the
@@ -290,8 +298,10 @@ func parseSNIExtension(data []byte) (string, error) {
 			if hostname == "" {
 				return "", nil
 			}
-			// Normalize: strip trailing dot (FQDN form).
+			// Normalize: strip trailing dot (FQDN form) and lowercase
+			// (DNS is case-insensitive per RFC 4343).
 			hostname = strings.TrimSuffix(hostname, ".")
+			hostname = strings.ToLower(hostname)
 			if hostname == "" {
 				return "", nil
 			}
@@ -300,11 +310,45 @@ func parseSNIExtension(data []byte) (string, error) {
 			if !isValidSNIHostname(hostname) {
 				return "", nil
 			}
+			// Reject IP literals per RFC 6066 §3: "Literal IPv4 and IPv6
+			// addresses are not permitted in HostName."
+			if net.ParseIP(hostname) != nil {
+				return "", nil
+			}
 			return hostname, nil
 		}
 		off += nameLen
 	}
 	return "", nil
+}
+
+// parseALPNExtension parses the ALPN extension data and returns the list of
+// protocol names. Returns nil on malformed data (no error, just no ALPN).
+func parseALPNExtension(data []byte) []string {
+	if len(data) < 2 {
+		return nil
+	}
+	listLen := int(binary.BigEndian.Uint16(data[0:2]))
+	if 2+listLen > len(data) {
+		return nil
+	}
+
+	var protocols []string
+	off := 2
+	end := 2 + listLen
+	for off < end {
+		if off+1 > end {
+			return nil
+		}
+		nameLen := int(data[off])
+		off++
+		if off+nameLen > end {
+			return nil
+		}
+		protocols = append(protocols, string(data[off:off+nameLen]))
+		off += nameLen
+	}
+	return protocols
 }
 
 // isValidSNIHostname checks that s contains only characters valid in a DNS
