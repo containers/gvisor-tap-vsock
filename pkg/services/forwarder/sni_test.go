@@ -262,7 +262,7 @@ func isPrintableASCII(s string) bool {
 }
 
 // checkProperties verifies the property invariants P1-P4 from the plan.
-func checkProperties(t *testing.T, data []byte, sni string, peeked int, err error) {
+func checkProperties(t *testing.T, data []byte, sni string, _ []string, peeked int, err error) {
 	t.Helper()
 	// P1: no panic — implicit if we reach here.
 	// P2: non-empty on success.
@@ -291,10 +291,10 @@ func TestPeekSNI_TLS12(t *testing.T) {
 	opts.serverName = "example.com"
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_TLS13(t *testing.T) {
@@ -307,10 +307,10 @@ func TestPeekSNI_TLS13(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_TLS11(t *testing.T) {
@@ -321,10 +321,10 @@ func TestPeekSNI_TLS11(t *testing.T) {
 	opts.cipherSuites = []uint16{0x002f, 0x0035, 0x003c} // TLS 1.1 cipher suites
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_TLS10(t *testing.T) {
@@ -334,10 +334,10 @@ func TestPeekSNI_TLS10(t *testing.T) {
 	opts.handshakeVersion = 0x0301  // TLS 1.0 in ClientHello body
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_SSLv3(t *testing.T) {
@@ -347,11 +347,11 @@ func TestPeekSNI_SSLv3(t *testing.T) {
 	opts.handshakeVersion = 0x0300  // SSLv3 in ClientHello body
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	// SSLv3 ClientHello has the same structure — parser does not reject by version.
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 // TestPeekSNI_FakeVersion_TLS14 verifies that a ClientHello claiming to be
@@ -366,13 +366,13 @@ func TestPeekSNI_FakeVersion_TLS14(t *testing.T) {
 	opts.handshakeVersion = 0x0305  // fake "TLS 1.4" in ClientHello body
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	// Parser does not validate version — this is correct. Rejecting unknown
 	// versions would break forward compatibility and is explicitly discouraged
 	// by RFC 8446.
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 // TestPeekSNI_BogusVersions verifies that extreme/invalid version values
@@ -398,10 +398,10 @@ func TestPeekSNI_BogusVersions(t *testing.T) {
 			opts.handshakeVersion = tc.hsVer
 			data := buildClientHello(opts)
 			br := bufio.NewReader(bytes.NewReader(data))
-			sni, peeked, err := PeekSNI(br)
+			sni, alpn, peeked, err := PeekSNI(br)
 			require.NoError(t, err)
 			require.Equal(t, "example.com", sni)
-			checkProperties(t, data, sni, peeked, err)
+			checkProperties(t, data, sni, alpn, peeked, err)
 		})
 	}
 }
@@ -414,20 +414,20 @@ func TestPeekSNI_LongHostname(t *testing.T) {
 	opts.serverName = hostname
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, hostname, sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_SubdomainDots(t *testing.T) {
 	hostname := "deep.nested.sub.example.com"
 	data := buildClientHelloBytes(hostname)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, hostname, sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_MultipleExtensions(t *testing.T) {
@@ -440,16 +440,16 @@ func TestPeekSNI_MultipleExtensions(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_DoesNotConsumeBytes(t *testing.T) {
 	data := buildClientHelloBytes("example.com")
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, _, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
 	// P5: non-consumption.
@@ -470,7 +470,7 @@ func TestPeekSNI_NoSNIExtension(t *testing.T) {
 	opts.extensions = []tlsExtension{buildALPNExtension()}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNoSNI)
 }
 
@@ -480,7 +480,7 @@ func TestPeekSNI_EmptySNIHostname(t *testing.T) {
 	opts.extensions = []tlsExtension{buildSNIExtension("")}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNoSNI)
 }
 
@@ -492,7 +492,7 @@ func TestPeekSNI_SNIFirstExtension(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "first.example.com", sni)
 }
@@ -507,7 +507,7 @@ func TestPeekSNI_SNILastExtension(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "last.example.com", sni)
 }
@@ -525,7 +525,7 @@ func TestPeekSNI_MultipleServerNames(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "first.example.com", sni)
 }
@@ -537,7 +537,7 @@ func TestPeekSNI_NonHostNameType(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNoSNI)
 }
 
@@ -550,7 +550,7 @@ func TestPeekSNI_GREASEExtensions(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
 }
@@ -560,7 +560,7 @@ func TestPeekSNI_LargeSessionID(t *testing.T) {
 	opts.sessionID = make([]byte, 32) // max session ID length
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
 }
@@ -573,7 +573,7 @@ func TestPeekSNI_ManyCipherSuites(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
 }
@@ -584,14 +584,14 @@ func TestPeekSNI_NoExtensions(t *testing.T) {
 	opts.extensions = []tlsExtension{} // empty extensions list
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNoSNI)
 }
 
 func TestPeekSNI_TrailingDotHostname(t *testing.T) {
 	data := buildClientHelloBytes("example.com.")
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni) // trailing dot stripped
 }
@@ -599,9 +599,33 @@ func TestPeekSNI_TrailingDotHostname(t *testing.T) {
 func TestPeekSNI_IPv4InSNI(t *testing.T) {
 	data := buildClientHelloBytes("1.2.3.4")
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
+	require.ErrorIs(t, err, ErrNoSNI, "IPv4 literal in SNI should be rejected per RFC 6066")
+}
+
+func TestPeekSNI_IPv6InSNI(t *testing.T) {
+	// "::1" contains colons which are rejected by isValidSNIHostname.
+	data := buildClientHelloBytes("::1")
+	br := bufio.NewReader(bytes.NewReader(data))
+	_, _, _, err := PeekSNI(br)
+	require.ErrorIs(t, err, ErrNoSNI)
+}
+
+func TestPeekSNI_IPv4MappedIPv6(t *testing.T) {
+	// "::ffff:1.2.3.4" contains colons, rejected by isValidSNIHostname.
+	data := buildClientHelloBytes("::ffff:1.2.3.4")
+	br := bufio.NewReader(bytes.NewReader(data))
+	_, _, _, err := PeekSNI(br)
+	require.ErrorIs(t, err, ErrNoSNI)
+}
+
+func TestPeekSNI_NotAnIP(t *testing.T) {
+	// "10.example.com" looks like it starts with an IP but is a valid hostname.
+	data := buildClientHelloBytes("10.example.com")
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
-	require.Equal(t, "1.2.3.4", sni)
+	require.Equal(t, "10.example.com", sni, "hostname starting with digits should still be allowed")
 }
 
 // ---------------------------------------------------------------------------
@@ -615,10 +639,10 @@ func TestPeekSNI_FragmentedTLSRecords(t *testing.T) {
 	opts.fragmentAt = []int{30}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "fragmented.example.com", sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_ThreeFragments(t *testing.T) {
@@ -627,10 +651,10 @@ func TestPeekSNI_ThreeFragments(t *testing.T) {
 	opts.fragmentAt = []int{20, 50}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "three.fragments.example.com", sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_FragmentMidSNI(t *testing.T) {
@@ -649,10 +673,10 @@ func TestPeekSNI_FragmentMidSNI(t *testing.T) {
 	opts.fragmentAt = []int{splitPoint}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, peeked, err := PeekSNI(br)
+	sni, alpn, peeked, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, hostname, sni)
-	checkProperties(t, data, sni, peeked, err)
+	checkProperties(t, data, sni, alpn, peeked, err)
 }
 
 func TestPeekSNI_ECHExtension(t *testing.T) {
@@ -663,7 +687,7 @@ func TestPeekSNI_ECHExtension(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrECH)
 }
 
@@ -675,7 +699,7 @@ func TestPeekSNI_ECHWithSNI(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrECH)
 }
 
@@ -687,7 +711,7 @@ func TestPeekSNI_ESNILegacy(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrECH)
 }
 
@@ -698,19 +722,19 @@ func TestPeekSNI_ESNILegacy(t *testing.T) {
 func TestPeekSNI_NotTLS(t *testing.T) {
 	data := []byte("GET / HTTP/1.1\r\n")
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNotTLS)
 }
 
 func TestPeekSNI_EmptyInput(t *testing.T) {
 	br := bufio.NewReader(bytes.NewReader(nil))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNotTLS)
 }
 
 func TestPeekSNI_OneByte(t *testing.T) {
 	br := bufio.NewReader(bytes.NewReader([]byte{0x16}))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.Error(t, err)
 }
 
@@ -718,7 +742,7 @@ func TestPeekSNI_HeaderOnly(t *testing.T) {
 	// 5-byte TLS header with record length 0.
 	data := []byte{0x16, 0x03, 0x01, 0x00, 0x00}
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.Error(t, err)
 }
 
@@ -734,14 +758,14 @@ func TestPeekSNI_RecordLenOverflow(t *testing.T) {
 		data[i] = 0x01
 	}
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.Error(t, err, "should not panic with truncated data")
 }
 
 func TestPeekSNI_RecordLenZero(t *testing.T) {
 	data := []byte{0x16, 0x03, 0x01, 0x00, 0x00}
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNotTLS)
 }
 
@@ -750,7 +774,7 @@ func TestPeekSNI_BadHandshakeType(t *testing.T) {
 	payload := []byte{0x02, 0x00, 0x00, 0x04, 0x03, 0x03, 0x00, 0x00}
 	data := wrapTLSRecord(payload, 0x0301)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNotTLS)
 }
 
@@ -762,7 +786,7 @@ func TestPeekSNI_SessionIDLenOverflow(t *testing.T) {
 		data[43] = 0xFF
 	}
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.Error(t, err)
 }
 
@@ -774,7 +798,7 @@ func TestPeekSNI_CipherSuiteLenOverflow(t *testing.T) {
 		binary.BigEndian.PutUint16(data[44:46], 0xFFFF)
 	}
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.Error(t, err)
 }
 
@@ -793,7 +817,7 @@ func TestPeekSNI_ExtLenOverflow(t *testing.T) {
 		binary.BigEndian.PutUint16(data[pos:pos+2], 0xFFFF)
 	}
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.Error(t, err)
 }
 
@@ -809,7 +833,7 @@ func TestPeekSNI_ExtsTotalLenOverflow(t *testing.T) {
 		binary.BigEndian.PutUint16(data[off:off+2], 0xFFFF)
 	}
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.Error(t, err)
 }
 
@@ -825,7 +849,7 @@ func TestPeekSNI_SNIInternalLenMismatch(t *testing.T) {
 	opts.extensions = []tlsExtension{{typ: 0x0000, data: buf.Bytes()}}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.Error(t, err)
 }
 
@@ -838,14 +862,14 @@ func TestPeekSNI_TruncatedMidExtension(t *testing.T) {
 		binary.BigEndian.PutUint16(data[3:5], uint16(len(data)-5))
 	}
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.Error(t, err)
 }
 
 func TestPeekSNI_AllZeros(t *testing.T) {
 	data := make([]byte, 500)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNotTLS)
 }
 
@@ -862,7 +886,7 @@ func TestPeekSNI_MaxRecordLen(t *testing.T) {
 	copy(padded, hsPayload)
 	data := wrapTLSRecord(padded, 0x0301)
 	br := bufio.NewReaderSize(bytes.NewReader(data), len(data)+1)
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
 }
@@ -872,7 +896,7 @@ func TestPeekSNI_OverMaxRecordLen(t *testing.T) {
 	data = append(data, byte(16385>>8), byte(16385&0xFF))
 	data = append(data, make([]byte, 100)...)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 	require.ErrorIs(t, err, ErrNotTLS)
 }
 
@@ -887,7 +911,7 @@ func TestPeekSNI_FuzzRandom(t *testing.T) {
 		data := make([]byte, size)
 		rng.Read(data)
 		br := bufio.NewReader(bytes.NewReader(data))
-		PeekSNI(br) // must not panic
+		_, _, _, _ = PeekSNI(br) // must not panic
 	}
 }
 
@@ -919,7 +943,7 @@ func TestPeekSNI_FuzzMutated(t *testing.T) {
 		}
 
 		br := bufio.NewReader(bytes.NewReader(mutated))
-		sni, _, err := PeekSNI(br) // must not panic
+		sni, _, _, err := PeekSNI(br) // must not panic
 		if err == nil {
 			require.NotEmpty(t, sni, "P2: sni must be non-empty on success")
 		}
@@ -994,7 +1018,7 @@ func FuzzPeekSNI(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		br := bufio.NewReader(bytes.NewReader(data))
-		sni, _, err := PeekSNI(br)
+		sni, _, _, err := PeekSNI(br)
 		if err == nil {
 			require.NotEmpty(t, sni, "P2: non-empty on success")
 			// P4 (printable ASCII) is not enforced here — the parser returns
@@ -1012,10 +1036,10 @@ func TestPeekSNI_Idempotent(t *testing.T) {
 	data := buildClientHelloBytes("idempotent.example.com")
 	// Call PeekSNI twice on the same data.
 	br1 := bufio.NewReader(bytes.NewReader(data))
-	sni1, peeked1, err1 := PeekSNI(br1)
+	sni1, _, peeked1, err1 := PeekSNI(br1)
 
 	br2 := bufio.NewReader(bytes.NewReader(data))
-	sni2, peeked2, err2 := PeekSNI(br2)
+	sni2, _, peeked2, err2 := PeekSNI(br2)
 
 	require.Equal(t, sni1, sni2, "P6: idempotent — same SNI")
 	require.Equal(t, peeked1, peeked2, "P6: idempotent — same peeked count")
@@ -1040,7 +1064,7 @@ func TestPeekSNI_DifferentialVsCryptoTLS(t *testing.T) {
 
 			// Our parser.
 			br := bufio.NewReader(bytes.NewReader(data))
-			ourSNI, _, ourErr := PeekSNI(br)
+			ourSNI, _, _, ourErr := PeekSNI(br)
 			require.NoError(t, ourErr)
 			require.Equal(t, hostname, ourSNI)
 
@@ -1101,7 +1125,7 @@ func TestPeekSNI_CurlCapture(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "example.com", sni)
 }
@@ -1128,7 +1152,7 @@ func TestPeekSNI_ChromeCapture(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	require.Equal(t, "www.google.com", sni)
 }
@@ -1183,7 +1207,7 @@ func TestPeekSNI_RealCurlHex(t *testing.T) {
 		t.Fatalf("invalid hex: %v", err)
 	}
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, parseErr := PeekSNI(br)
+	sni, _, _, parseErr := PeekSNI(br)
 	require.NoError(t, parseErr)
 	require.Equal(t, "example.com", sni)
 }
@@ -1207,7 +1231,7 @@ func TestPeekSNI_DuplicateSNIExtensions(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 
 	// Parser uses the first SNI extension found, ignoring duplicates.
 	// This prevents an attacker from placing an allowed domain first
@@ -1226,7 +1250,7 @@ func TestPeekSNI_NullByteInHostname(t *testing.T) {
 	opts.serverName = hostname
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 
 	// Null bytes are rejected by hostname validation — connection will be blocked.
 	require.ErrorIs(t, err, ErrNoSNI)
@@ -1254,7 +1278,7 @@ func TestPeekSNI_ControlCharsInHostname(t *testing.T) {
 			opts.serverName = tc.hostname
 			data := buildClientHello(opts)
 			br := bufio.NewReader(bytes.NewReader(data))
-			_, _, err := PeekSNI(br)
+			_, _, _, err := PeekSNI(br)
 
 			// Control characters are rejected by hostname validation.
 			require.ErrorIs(t, err, ErrNoSNI)
@@ -1270,7 +1294,7 @@ func TestPeekSNI_TrailingDotNormalized(t *testing.T) {
 	opts.serverName = "example.com."
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	sni, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 	require.NoError(t, err)
 	// Trailing dot is stripped during parsing — no regex mismatch.
 	require.Equal(t, "example.com", sni)
@@ -1288,7 +1312,7 @@ func TestPeekSNI_HighBytesInHostname(t *testing.T) {
 	opts.serverName = hostname
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 
 	// Non-ASCII bytes are rejected by hostname validation.
 	require.ErrorIs(t, err, ErrNoSNI)
@@ -1304,7 +1328,7 @@ func TestPeekSNI_HomoglyphAttack(t *testing.T) {
 	opts.serverName = hostname
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 
 	// Non-ASCII bytes (UTF-8 encoded Cyrillic) are rejected.
 	require.ErrorIs(t, err, ErrNoSNI)
@@ -1333,7 +1357,7 @@ func TestPeekSNI_IntermediateESNIDraftCodes(t *testing.T) {
 			}
 			data := buildClientHello(opts)
 			br := bufio.NewReader(bytes.NewReader(data))
-			sni, _, err := PeekSNI(br)
+			sni, _, _, err := PeekSNI(br)
 
 			// These intermediate draft codes are NOT detected as ECH —
 			// the parser only checks 0xfe0d and 0xffce.
@@ -1362,7 +1386,7 @@ func TestPeekSNI_ECHGrease(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, err := PeekSNI(br)
+	_, _, _, err := PeekSNI(br)
 
 	require.ErrorIs(t, err, ErrECH,
 		"GREASE ECH must be detected — outer SNI is not trustworthy")
@@ -1441,4 +1465,132 @@ func TestMatchesAllowlist_CaseInsensitivity(t *testing.T) {
 	flexible := []*regexp.Regexp{regexp.MustCompile(`(?i)^example\.com$`)}
 	require.True(t, MatchesAllowlist("Example.COM", flexible))
 	require.True(t, MatchesAllowlist("EXAMPLE.COM", flexible))
+}
+
+// ---------------------------------------------------------------------------
+// K. Case normalization tests
+// ---------------------------------------------------------------------------
+
+func TestPeekSNI_MixedCaseNormalized(t *testing.T) {
+	data := buildClientHelloBytes("Example.COM")
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni, "mixed-case SNI should be lowercased by parser")
+
+	// Strict lowercase regex now matches because parser normalizes.
+	strict := []*regexp.Regexp{regexp.MustCompile(`^example\.com$`)}
+	require.True(t, MatchesAllowlist(sni, strict))
+}
+
+func TestPeekSNI_AllUpperCaseNormalized(t *testing.T) {
+	data := buildClientHelloBytes("EXAMPLE.COM")
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// ---------------------------------------------------------------------------
+// L. ALPN extraction tests
+// ---------------------------------------------------------------------------
+
+func TestPeekSNI_ALPNExtracted(t *testing.T) {
+	opts := defaultOpts()
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildALPNExtension(), // "h2", "http/1.1"
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, alpn, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+	require.Equal(t, []string{"h2", "http/1.1"}, alpn)
+}
+
+func TestPeekSNI_NoALPN(t *testing.T) {
+	opts := defaultOpts()
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, alpn, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+	require.Nil(t, alpn)
+}
+
+func TestPeekSNI_ALPNMalformed(t *testing.T) {
+	opts := defaultOpts()
+	// ALPN extension with truncated data (list length says 100 but only 2 bytes)
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		{typ: 0x0010, data: []byte{0x00, 0x64, 0x02}}, // list length 100 but only 1 byte of data
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, alpn, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+	require.Nil(t, alpn) // malformed ALPN returns nil, no error
+}
+
+func TestParseALPNExtension(t *testing.T) {
+	cases := []struct {
+		name     string
+		data     []byte
+		expected []string
+	}{
+		{
+			name: "H2AndHTTP11",
+			data: func() []byte {
+				ext := buildALPNExtension()
+				return ext.data
+			}(),
+			expected: []string{"h2", "http/1.1"},
+		},
+		{
+			name:     "Empty",
+			data:     []byte{},
+			expected: nil,
+		},
+		{
+			name:     "TooShort",
+			data:     []byte{0x00},
+			expected: nil,
+		},
+		{
+			name:     "ZeroLength",
+			data:     []byte{0x00, 0x00},
+			expected: nil,
+		},
+		{
+			name:     "ListLenOverflow",
+			data:     []byte{0xFF, 0xFF},
+			expected: nil,
+		},
+		{
+			name: "SingleProtocol",
+			data: func() []byte {
+				var buf bytes.Buffer
+				proto := "h2"
+				var list bytes.Buffer
+				list.WriteByte(byte(len(proto)))
+				list.WriteString(proto)
+				binary.Write(&buf, binary.BigEndian, uint16(list.Len()))
+				buf.Write(list.Bytes())
+				return buf.Bytes()
+			}(),
+			expected: []string{"h2"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseALPNExtension(tc.data)
+			require.Equal(t, tc.expected, got)
+		})
+	}
 }
