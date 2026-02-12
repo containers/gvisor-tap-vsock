@@ -1,6 +1,7 @@
 package forwarder
 
 import (
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -457,4 +458,37 @@ func TestTCPRoutingActionZeroGateway(t *testing.T) {
 	// blockAllOutbound still blocks everything
 	action = tcpRoutingAction(other, 443, true, true, zeroGateway)
 	require.Equal(t, tcpBlock, action)
+}
+
+// ---------------------------------------------------------------------------
+// SNI matches destination (DNS cross-check pure function)
+// ---------------------------------------------------------------------------
+
+func TestSNIMatchesDestination_ExactMatch(t *testing.T) {
+	dest := tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
+	resolved := []net.IPAddr{{IP: net.ParseIP("1.2.3.4")}}
+	require.True(t, sniMatchesDestination(dest, resolved))
+}
+
+func TestSNIMatchesDestination_NoMatch(t *testing.T) {
+	dest := tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
+	resolved := []net.IPAddr{{IP: net.ParseIP("5.6.7.8")}}
+	require.False(t, sniMatchesDestination(dest, resolved))
+}
+
+func TestSNIMatchesDestination_MultipleIPs(t *testing.T) {
+	dest := tcpip.AddrFrom4([4]byte{10, 0, 0, 1})
+	resolved := []net.IPAddr{
+		{IP: net.ParseIP("5.6.7.8")},
+		{IP: net.ParseIP("10.0.0.1")},
+		{IP: net.ParseIP("192.168.1.1")},
+	}
+	require.True(t, sniMatchesDestination(dest, resolved),
+		"should match when any resolved IP matches destination")
+}
+
+func TestSNIMatchesDestination_EmptyResolved(t *testing.T) {
+	dest := tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
+	require.False(t, sniMatchesDestination(dest, nil))
+	require.False(t, sniMatchesDestination(dest, []net.IPAddr{}))
 }

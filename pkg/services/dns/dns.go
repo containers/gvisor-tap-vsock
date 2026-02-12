@@ -138,7 +138,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 
 		// Check outbound allowlist before upstream resolution.
 		if len(h.outboundAllow) > 0 {
-			domain := strings.TrimSuffix(q.Name, ".")
+			domain := strings.ToLower(strings.TrimSuffix(q.Name, "."))
 			if !matchesAllowlist(domain, h.outboundAllow) {
 				log.Debugf("Blocking DNS query for %q (not in outboundAllow)", domain)
 				m.Rcode = dns.RcodeNameError
