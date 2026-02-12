@@ -1,8 +1,10 @@
 package virtualnetwork
 
 import (
+	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -24,12 +26,22 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	var natLock sync.Mutex
 	translation := parseNATTable(configuration)
 
-	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.BlockAllOutbound)
+	var outboundAllow []*regexp.Regexp
+	for _, pattern := range configuration.OutboundAllow {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid outboundAllow pattern %q: %w", pattern, err)
+		}
+		outboundAllow = append(outboundAllow, re)
+	}
+	gatewayIP := net.ParseIP(configuration.GatewayIP)
+
+	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.BlockAllOutbound, outboundAllow, gatewayIP)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.BlockAllOutbound)
+	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.BlockAllOutbound, outboundAllow, gatewayIP)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 
-	dnsMux, err := dnsServer(configuration, s)
+	dnsMux, err := dnsServer(configuration, s, outboundAllow)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +70,7 @@ func parseNATTable(configuration *types.Configuration) map[tcpip.Address]tcpip.A
 	return translation
 }
 
-func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {
+func dnsServer(configuration *types.Configuration, s *stack.Stack, outboundAllow []*regexp.Regexp) (http.Handler, error) {
 	udpConn, err := gonet.DialUDP(s, &tcpip.FullAddress{
 		NIC:  1,
 		Addr: tcpip.AddrFrom4Slice(net.ParseIP(configuration.GatewayIP).To4()),
@@ -77,7 +89,7 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler
 		return nil, err
 	}
 
-	server, err := dns.New(udpConn, tcpLn, configuration.DNS)
+	server, err := dns.New(udpConn, tcpLn, configuration.DNS, outboundAllow)
 	if err != nil {
 		return nil, err
 	}
