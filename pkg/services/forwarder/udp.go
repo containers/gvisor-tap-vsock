@@ -2,6 +2,7 @@ package forwarder
 
 import (
 	"net"
+	"regexp"
 	"strconv"
 	"sync"
 
@@ -15,13 +16,47 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, blockAllOutbound bool, filter func(types.DialRequest) error) *udp.Forwarder {
+type udpAction int
+
+const (
+	udpBlock udpAction = iota
+	udpDirect
+)
+
+func udpRoutingAction(
+	localAddress tcpip.Address,
+	blockAllOutbound bool,
+	allowlistActive bool,
+	gatewayAddr tcpip.Address,
+) udpAction {
+	if blockAllOutbound {
+		return udpBlock
+	}
+	if allowlistActive && localAddress != gatewayAddr {
+		return udpBlock
+	}
+	return udpDirect
+}
+
+func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, blockAllOutbound bool, outboundAllow []*regexp.Regexp, gatewayIP net.IP, filter func(types.DialRequest) error) *udp.Forwarder {
+	allowlistActive := len(outboundAllow) > 0
+	var gatewayAddr tcpip.Address
+	if gatewayIP != nil {
+		gatewayAddr = tcpip.AddrFrom4Slice(gatewayIP.To4())
+	}
+
 	return udp.NewForwarder(s, func(r *udp.ForwarderRequest) bool {
 		localAddress := r.ID().LocalAddress
 
-		if blockAllOutbound {
-			log.Debugf("Blocking outbound UDP to %s:%d (blockAllOutbound=true)",
-				localAddress.String(), r.ID().LocalPort)
+		action := udpRoutingAction(localAddress, blockAllOutbound, allowlistActive, gatewayAddr)
+		if action == udpBlock {
+			if blockAllOutbound {
+				log.Debugf("Blocking outbound UDP to %s:%d (blockAllOutbound=true)",
+					localAddress.String(), r.ID().LocalPort)
+			} else {
+				log.Debugf("Blocking outbound UDP to %s:%d (outboundAllow active, non-gateway)",
+					localAddress.String(), r.ID().LocalPort)
+			}
 			return true
 		}
 
@@ -47,7 +82,6 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 		ep, tcpErr := r.CreateEndpoint(&wq)
 		if tcpErr != nil {
 			if _, ok := tcpErr.(*tcpip.ErrConnectionRefused); ok {
-				// transient error
 				log.Debugf("r.CreateEndpoint() = %v", tcpErr)
 			} else {
 				log.Errorf("r.CreateEndpoint() = %v", tcpErr)

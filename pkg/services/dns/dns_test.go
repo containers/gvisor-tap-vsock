@@ -27,7 +27,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 	var server *Server
 
 	ginkgo.BeforeEach(func() {
-		server, _ = New(nil, nil, []types.Zone{})
+		server, _ = New(nil, nil, []types.Zone{}, nil)
 	})
 
 	ginkgo.It("should add dns zone with ip", func() {
@@ -170,7 +170,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 					},
 				},
 			},
-		})
+		}, nil)
 		gomega.Expect(server.addZone(types.Zone{
 			Name: "testing.",
 			Records: []types.Record{
@@ -244,7 +244,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 	ginkgo.It("should preserve Protected flag when merging into existing zone", func() {
 		server, _ = New(nil, nil, []types.Zone{
 			{Name: "system.internal.", Protected: true, DefaultIP: net.ParseIP("10.0.0.1")},
-		})
+		}, nil)
 		err := server.addZone(types.Zone{
 			Name:    "system.internal.",
 			Records: []types.Record{{Name: "api", IP: net.ParseIP("10.0.0.2")}},
@@ -279,7 +279,7 @@ var _ = ginkgo.Describe("dns zone validation", func() {
 				Protected: true,
 				DefaultIP: net.ParseIP("192.168.127.1"),
 			},
-		})
+		}, nil)
 	})
 
 	ginkgo.It("should reject empty zone name", func() {
@@ -480,7 +480,7 @@ var _ = ginkgo.Describe("TXT records", func() {
 			},
 		}
 
-		nameserver, cleanup, err = startDNSServer(upstream)
+		nameserver, cleanup, err = startDNSServer(upstream, nil)
 		gomega.Expect(err).To(gomega.BeNil())
 		time.Sleep(100 * time.Millisecond)
 
@@ -579,7 +579,7 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 				},
 			},
 		}
-		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream)
+		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream, nil)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
 		// Point the raw forwarder at the mock upstream server. Its AAAA
 		// response intentionally differs from the typed resolver's response.
@@ -726,7 +726,7 @@ var _ = ginkgo.Describe("upstream lookup errors", func() {
 	qtypes := []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeCNAME, dns.TypeMX, dns.TypeNS, dns.TypeSRV, dns.TypeTXT}
 
 	query := func(err error, qtype uint16) *dns.Msg {
-		server, newErr := NewWithUpstreamResolver(nil, nil, []types.Zone{}, &failingResolver{err: err})
+		server, newErr := NewWithUpstreamResolver(nil, nil, []types.Zone{}, &failingResolver{err: err}, nil)
 		gomega.Expect(newErr).ToNot(gomega.HaveOccurred())
 		m := new(dns.Msg)
 		m.SetQuestion("example.org.", qtype)
@@ -774,7 +774,7 @@ func TestDNS(t *testing.T) {
 		},
 	}
 
-	nameserver, cleanup, err := startDNSServer(upstream)
+	nameserver, cleanup, err := startDNSServer(upstream, nil)
 	require.NoError(t, err)
 	defer cleanup()
 	time.Sleep(100 * time.Millisecond)
@@ -810,7 +810,107 @@ func TestDNS(t *testing.T) {
 	}
 }
 
-func startDNSServer(upstream upstreamResolver) (string, func(), error) {
+func TestDNSOutboundAllowBlocked(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{
+			"allowed.example.com.": {
+				A: []string{"1.2.3.4"},
+			},
+			"blocked.com.": {
+				A: []string{"5.6.7.8"},
+			},
+		},
+	}
+
+	allowlist := []*regexp.Regexp{
+		regexp.MustCompile(`^.*\.example\.com$`),
+	}
+
+	nameserver, cleanup, err := startDNSServer(upstream, allowlist)
+	require.NoError(t, err)
+	defer cleanup()
+	time.Sleep(100 * time.Millisecond)
+
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 5 * time.Second}
+			return d.DialContext(ctx, network, nameserver)
+		},
+	}
+
+	// Blocked domain should fail.
+	_, err = r.LookupHost(context.Background(), "blocked.com")
+	require.Error(t, err, "blocked.com should be blocked by outboundAllow")
+}
+
+func TestDNSOutboundAllowAllowed(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{
+			"allowed.example.com.": {
+				A: []string{"1.2.3.4"},
+			},
+		},
+	}
+
+	allowlist := []*regexp.Regexp{
+		regexp.MustCompile(`^.*\.example\.com$`),
+	}
+
+	nameserver, cleanup, err := startDNSServer(upstream, allowlist)
+	require.NoError(t, err)
+	defer cleanup()
+	time.Sleep(100 * time.Millisecond)
+
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 5 * time.Second}
+			return d.DialContext(ctx, network, nameserver)
+		},
+	}
+
+	// Allowed domain should resolve.
+	ips, err := r.LookupHost(context.Background(), "allowed.example.com")
+	require.NoError(t, err)
+	require.Contains(t, ips, "1.2.3.4")
+}
+
+func TestDNSOutboundAllowLocalZoneNotAffected(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{},
+	}
+
+	allowlist := []*regexp.Regexp{
+		regexp.MustCompile(`^only-this\.com$`),
+	}
+
+	// Create a server with a local zone that would NOT match the allowlist.
+	server, err := NewWithUpstreamResolver(nil, nil, []types.Zone{
+		{
+			Name:      "internal.",
+			DefaultIP: net.ParseIP("192.168.1.1"),
+		},
+	}, upstream, allowlist)
+	require.NoError(t, err)
+
+	// Query for a domain in the local zone.
+	m := &dns.Msg{
+		Question: []dns.Question{{
+			Name:   "anything.internal.",
+			Qtype:  dns.TypeA,
+			Qclass: dns.ClassINET,
+		}},
+	}
+	m.SetReply(m)
+	server.handler.addAnswers(m)
+
+	// Local zone should still resolve (addLocalAnswers handles it before allowlist check).
+	require.NotEqual(t, dns.RcodeNameError, m.Rcode, "local zone query should not be blocked by outboundAllow")
+	require.NotEmpty(t, m.Answer, "local zone should return an answer")
+}
+
+func startDNSServer(upstream upstreamResolver, outboundAllow []*regexp.Regexp) (string, func(), error) {
 	udpConn, err := net.ListenPacket("udp", "127.0.0.1:5354")
 	if err != nil {
 		return "", nil, err
@@ -821,7 +921,7 @@ func startDNSServer(upstream upstreamResolver) (string, func(), error) {
 		return "", nil, err
 	}
 
-	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream)
+	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow)
 	if err != nil {
 		return "", nil, err
 	}
@@ -862,7 +962,7 @@ var _ = ginkgo.Describe("dns answer observer", func() {
 			},
 		}
 		var err error
-		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream)
+		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream, nil)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
 		seen = nil
 		server.SetAnswerObserver(func(name string, ips []net.IP) {
