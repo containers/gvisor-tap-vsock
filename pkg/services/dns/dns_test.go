@@ -465,6 +465,39 @@ func TestDNSOutboundAllowLocalZoneNotAffected(t *testing.T) {
 	require.NotEmpty(t, m.Answer, "local zone should return an answer")
 }
 
+func TestDNSOutboundAllowCaseNormalization(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{
+			"allowed.example.com.": {
+				A: []string{"1.2.3.4"},
+			},
+		},
+	}
+
+	// Lowercase allowlist pattern.
+	allowlist := []*regexp.Regexp{
+		regexp.MustCompile(`^allowed\.example\.com$`),
+	}
+
+	server, err := NewWithUpstreamResolver(nil, nil, nil, upstream, allowlist)
+	require.NoError(t, err)
+
+	// Simulate a mixed-case DNS query — the handler should normalize to lowercase
+	// before checking the allowlist.
+	m := &dns.Msg{
+		Question: []dns.Question{{
+			Name:   "Allowed.Example.COM.",
+			Qtype:  dns.TypeA,
+			Qclass: dns.ClassINET,
+		}},
+	}
+	m.SetReply(m)
+	server.handler.addAnswers(m)
+
+	require.NotEqual(t, dns.RcodeNameError, m.Rcode,
+		"mixed-case query should match lowercase allowlist after normalization")
+}
+
 func startDNSServer(upstream upstreamResolver, outboundAllow []*regexp.Regexp) (string, func(), error) {
 	udpConn, err := net.ListenPacket("udp", "127.0.0.1:5354")
 	if err != nil {

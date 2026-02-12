@@ -18,7 +18,10 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-const linkLocalSubnet = "169.254.0.0/16"
+const (
+	linkLocalSubnet     = "169.254.0.0/16"
+	sniDNSLookupTimeout = 3 * time.Second
+)
 
 type tcpAction int
 
@@ -153,7 +156,7 @@ func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip
 	// payload bytes, spanning up to 5 TLS records (each <=16384 payload
 	// + 5-byte header). Total: 65540 + 5*5 headers = 65565 bytes.
 	br := bufio.NewReaderSize(guestConn, maxClientHelloLen+5*5+4)
-	sni, _, err := PeekSNI(br)
+	sni, alpn, _, err := PeekSNI(br)
 
 	// Reset read deadline.
 	_ = guestConn.SetReadDeadline(time.Time{})
@@ -170,7 +173,25 @@ func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip
 		return
 	}
 
-	log.Debugf("Allowing TLS to %s: SNI %q matches allowlist", localAddress.String(), sni)
+	// DNS cross-check: verify the SNI resolves to the destination IP.
+	// This detects SNI spoofing where a client sends an allowed domain but
+	// connects to an unrelated IP.
+	dnsCtx, dnsCancel := context.WithTimeout(context.Background(), sniDNSLookupTimeout)
+	defer dnsCancel()
+	resolvedIPs, dnsErr := net.DefaultResolver.LookupIPAddr(dnsCtx, sni)
+	if dnsErr != nil {
+		log.Debugf("Blocking TLS to %s: SNI %q DNS lookup failed: %v", localAddress.String(), sni, dnsErr)
+		guestConn.Close()
+		return
+	}
+	if !sniMatchesDestination(localAddress, resolvedIPs) {
+		log.Debugf("Blocking TLS to %s: SNI %q resolves to %v, not %s (possible SNI spoofing)",
+			localAddress.String(), sni, resolvedIPs, localAddress.String())
+		guestConn.Close()
+		return
+	}
+
+	log.Debugf("Allowing TLS to %s: SNI %q ALPN %v", localAddress.String(), sni, alpn)
 
 	// NAT translation.
 	natLock.Lock()
@@ -203,6 +224,26 @@ func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip
 		},
 	}
 	remote.HandleConn(wrappedConn)
+}
+
+// sniMatchesDestination checks whether any of the resolved IPs for the SNI
+// hostname matches the destination address the guest is connecting to. This
+// detects SNI spoofing where a client claims an allowed domain but connects
+// to an unrelated IP.
+func sniMatchesDestination(destAddr tcpip.Address, resolvedIPs []net.IPAddr) bool {
+	for _, resolved := range resolvedIPs {
+		ip := resolved.IP
+		if ip4 := ip.To4(); ip4 != nil {
+			if tcpip.AddrFrom4Slice(ip4) == destAddr {
+				return true
+			}
+		} else if ip16 := ip.To16(); ip16 != nil {
+			if tcpip.AddrFrom16Slice(ip16) == destAddr {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func linkLocal() *tcpip.Subnet {
