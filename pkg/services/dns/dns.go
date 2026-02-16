@@ -59,26 +59,43 @@ func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
 	for _, zone := range h.zones {
 		zoneSuffix := fmt.Sprintf(".%s", zone.Name)
 		if strings.HasSuffix(q.Name, zoneSuffix) {
-			if q.Qtype != dns.TypeA {
+			if q.Qtype != dns.TypeA && q.Qtype != dns.TypeAAAA {
 				return false
 			}
+			withoutZone := strings.TrimSuffix(q.Name, zoneSuffix)
+			nameExists := false
 			for _, record := range zone.Records {
-				withoutZone := strings.TrimSuffix(q.Name, zoneSuffix)
-				if (record.Name != "" && record.Name == withoutZone) ||
-					(record.Regexp != nil && record.Regexp.MatchString(withoutZone)) {
-					m.Answer = append(m.Answer, &dns.A{
-						Hdr: dns.RR_Header{
-							Name:   q.Name,
-							Rrtype: dns.TypeA,
-							Class:  dns.ClassINET,
-							Ttl:    0,
-						},
-						A: record.IP,
-					})
-					return true
+				nameMatch := (record.Name != "" && record.Name == withoutZone) ||
+					(record.Regexp != nil && record.Regexp.MatchString(withoutZone))
+				if nameMatch {
+					nameExists = true
+					if q.Qtype == dns.TypeA && record.IP.To4() != nil {
+						m.Answer = append(m.Answer, &dns.A{
+							Hdr: dns.RR_Header{
+								Name:   q.Name,
+								Rrtype: dns.TypeA,
+								Class:  dns.ClassINET,
+								Ttl:    0,
+							},
+							A: record.IP.To4(),
+						})
+					} else if q.Qtype == dns.TypeAAAA && record.IP.To4() == nil {
+						m.Answer = append(m.Answer, &dns.AAAA{
+							Hdr: dns.RR_Header{
+								Name:   q.Name,
+								Rrtype: dns.TypeAAAA,
+								Class:  dns.ClassINET,
+								Ttl:    0,
+							},
+							AAAA: record.IP.To16(),
+						})
+					}
 				}
 			}
-			if !zone.DefaultIP.Equal(net.IP("")) {
+			if len(m.Answer) > 0 || nameExists {
+				return true
+			}
+			if q.Qtype == dns.TypeA && !zone.DefaultIP.Equal(net.IP("")) {
 				m.Answer = append(m.Answer, &dns.A{
 					Hdr: dns.RR_Header{
 						Name:   q.Name,
@@ -143,6 +160,42 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 					},
 					A: ip.IP.To4(),
 				})
+			}
+		case dns.TypeAAAA:
+			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
+			if err != nil {
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+			for _, ip := range ips {
+				if len(ip.IP) != net.IPv6len || ip.IP.To4() != nil {
+					continue
+				}
+				m.Answer = append(m.Answer, &dns.AAAA{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeAAAA,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					AAAA: ip.IP.To16(),
+				})
+			}
+			if len(m.Answer) == 0 {
+				for _, ip := range ips {
+					if ipv4 := ip.IP.To4(); ipv4 != nil {
+						ipv6 := net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, ipv4[0], ipv4[1], ipv4[2], ipv4[3]}
+						m.Answer = append(m.Answer, &dns.AAAA{
+							Hdr: dns.RR_Header{
+								Name:   q.Name,
+								Rrtype: dns.TypeAAAA,
+								Class:  dns.ClassINET,
+								Ttl:    0,
+							},
+							AAAA: ipv6,
+						})
+					}
+				}
 			}
 		case dns.TypeCNAME:
 			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
@@ -256,6 +309,9 @@ func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones [
 }
 
 func (s *Server) Serve() error {
+	if s.udpConn == nil {
+		return nil
+	}
 	mux := dns.NewServeMux()
 	mux.HandleFunc(".", s.handler.handleUDP)
 	srv := &dns.Server{
@@ -266,6 +322,9 @@ func (s *Server) Serve() error {
 }
 
 func (s *Server) ServeTCP() error {
+	if s.tcpLn == nil {
+		return nil
+	}
 	mux := dns.NewServeMux()
 	mux.HandleFunc(".", s.handler.handleTCP)
 	tcpSrv := &dns.Server{
