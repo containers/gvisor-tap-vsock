@@ -16,7 +16,9 @@ var (
 	// or the SNI hostname is empty.
 	ErrNoSNI = errors.New("no SNI extension found")
 	// ErrECH is returned when the ClientHello contains an Encrypted Client Hello
-	// (or legacy ESNI) extension, meaning the outer SNI cannot be trusted.
+	// (or legacy ESNI) extension. Deprecated: the parser no longer returns this
+	// error — ECH extensions are ignored and the outer SNI is returned normally
+	// per RFC 9849 Section 8.1.2. Kept for backward compatibility.
 	ErrECH = errors.New("encrypted client hello detected")
 	// ErrShortRead is returned when the data is too short to parse.
 	ErrShortRead = errors.New("short read")
@@ -49,8 +51,8 @@ const (
 // is left with all peeked bytes available for subsequent reads.
 //
 // The parser handles ClientHello messages split across multiple TLS records
-// (TLS record fragmentation), detects ECH/ESNI extensions, and performs
-// bounds checking at every field boundary.
+// (TLS record fragmentation) and performs bounds checking at every field
+// boundary. ECH/ESNI extensions are ignored per RFC 9849 Section 8.1.2.
 func PeekSNI(br *bufio.Reader) (sni string, alpn []string, peeked int, err error) {
 	// Peek at the first byte to check if it looks like TLS.
 	hdr, err := br.Peek(1)
@@ -169,9 +171,9 @@ func reassembleHandshake(data []byte) []byte {
 }
 
 // parseClientHello parses the ClientHello body (after the 4-byte handshake
-// header) and extracts the SNI hostname and ALPN protocols. It returns ErrECH
-// if an ECH or legacy ESNI extension is found, and ErrNoSNI if no SNI is
-// present.
+// header) and extracts the SNI hostname and ALPN protocols. It returns
+// ErrNoSNI if no SNI is present. ECH/ESNI extensions are silently ignored
+// per RFC 9849 Section 8.1.2.
 func parseClientHello(body []byte) (string, []string, error) {
 	off := 0
 
@@ -234,7 +236,6 @@ func parseClientHello(body []byte) (string, []string, error) {
 	extsEnd := off + extsLen
 	var foundSNI string
 	var foundALPN []string
-	hasECH := false
 
 	for off+4 <= extsEnd {
 		extType := binary.BigEndian.Uint16(body[off : off+2])
@@ -246,8 +247,6 @@ func parseClientHello(body []byte) (string, []string, error) {
 		extData := body[off : off+extLen]
 
 		switch extType {
-		case extEncryptedClientHello, extLegacyESNI:
-			hasECH = true
 		case extServerName:
 			if foundSNI == "" {
 				name, err := parseSNIExtension(extData)
@@ -264,9 +263,6 @@ func parseClientHello(body []byte) (string, []string, error) {
 		off += extLen
 	}
 
-	if hasECH {
-		return "", nil, ErrECH
-	}
 	if foundSNI == "" {
 		return "", nil, ErrNoSNI
 	}
