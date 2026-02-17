@@ -8,7 +8,7 @@ import (
 	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
 

@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	e2e "github.com/containers/gvisor-tap-vsock/test"
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
 
