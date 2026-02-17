@@ -148,6 +148,57 @@ func buildGREASEExtension(greaseType uint16) tlsExtension {
 	return tlsExtension{typ: greaseType, data: []byte{0x00}}
 }
 
+// ---------------------------------------------------------------------------
+// ECH extension helpers (RFC 9849 wire format)
+// ---------------------------------------------------------------------------
+
+// buildECHOuterExtension builds a spec-compliant ECH outer extension (type=0x00)
+// with HKDF-SHA256 (0x0001) + AES-128-GCM (0x0001) cipher suite.
+// Wire format: type(1) | kdf_id(2) | aead_id(2) | config_id(1) | enc_len(2) | enc(N) | payload_len(2) | payload(M)
+func buildECHOuterExtension(configID uint8, encLen, payloadLen int) tlsExtension {
+	return buildECHOuterExtensionWithCipher(configID, 0x0001, 0x0001, encLen, payloadLen)
+}
+
+// buildECHOuterExtensionWithCipher builds an ECH outer extension with explicit cipher suite.
+func buildECHOuterExtensionWithCipher(configID uint8, kdfID, aeadID uint16, encLen, payloadLen int) tlsExtension {
+	var buf bytes.Buffer
+	buf.WriteByte(0x00) // ECHClientHelloType: outer
+	binary.Write(&buf, binary.BigEndian, kdfID)
+	binary.Write(&buf, binary.BigEndian, aeadID)
+	buf.WriteByte(configID)
+	binary.Write(&buf, binary.BigEndian, uint16(encLen))
+	buf.Write(make([]byte, encLen))
+	binary.Write(&buf, binary.BigEndian, uint16(payloadLen))
+	buf.Write(make([]byte, payloadLen))
+	return tlsExtension{typ: 0xfe0d, data: buf.Bytes()}
+}
+
+// buildECHInnerExtension builds an ECH inner extension (type=0x01).
+// Inner ClientHellos should never appear on the wire from a client.
+func buildECHInnerExtension() tlsExtension {
+	return tlsExtension{typ: 0xfe0d, data: []byte{0x01}}
+}
+
+// buildChromeECHGreaseExtension builds a Chrome-inspired ECH GREASE extension.
+// Chrome-inspired ECH GREASE: HKDF-SHA256+AES-128-GCM, 32B enc, 288B payload (330B data).
+// Real Chrome uses random config_id and smaller payloads (144-240B).
+func buildChromeECHGreaseExtension() tlsExtension {
+	return buildECHOuterExtensionWithCipher(0x00, 0x0001, 0x0001, 32, 288)
+}
+
+// buildFirefoxECHGreaseExtension builds a Firefox-inspired ECH GREASE extension.
+// Firefox-inspired ECH GREASE: HKDF-SHA256+ChaCha20Poly1305, 32B enc, 224B payload (266B data).
+// Real Firefox defaults to ~100B payload (security.tls.ech.grease_size).
+func buildFirefoxECHGreaseExtension() tlsExtension {
+	return buildECHOuterExtensionWithCipher(0x42, 0x0001, 0x0003, 32, 224)
+}
+
+// buildLegacyESNIExtensionWithPayload builds a legacy ESNI extension (0xffce)
+// with configurable payload size.
+func buildLegacyESNIExtensionWithPayload(size int) tlsExtension {
+	return tlsExtension{typ: 0xffce, data: make([]byte, size)}
+}
+
 func buildClientHello(opts clientHelloOpts) []byte {
 	// Build extensions
 	exts := opts.extensions
@@ -274,7 +325,7 @@ func checkProperties(t *testing.T, data []byte, sni string, _ []string, peeked i
 	// P3: defined error types.
 	if err != nil {
 		require.True(t,
-			errors.Is(err, ErrNotTLS) || errors.Is(err, ErrNoSNI) || errors.Is(err, ErrECH) || errors.Is(err, ErrShortRead),
+			errors.Is(err, ErrNotTLS) || errors.Is(err, ErrNoSNI) || errors.Is(err, ErrShortRead),
 			"P3: unexpected error type: %v", err)
 	}
 	// P7: bounded peek.
@@ -688,7 +739,7 @@ func TestPeekSNI_ECHExtension(t *testing.T) {
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
 	_, _, _, err := PeekSNI(br)
-	require.ErrorIs(t, err, ErrECH)
+	require.ErrorIs(t, err, ErrNoSNI)
 }
 
 func TestPeekSNI_ECHWithSNI(t *testing.T) {
@@ -699,8 +750,9 @@ func TestPeekSNI_ECHWithSNI(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, _, err := PeekSNI(br)
-	require.ErrorIs(t, err, ErrECH)
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "outer.example.com", sni)
 }
 
 func TestPeekSNI_ESNILegacy(t *testing.T) {
@@ -711,8 +763,9 @@ func TestPeekSNI_ESNILegacy(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, _, err := PeekSNI(br)
-	require.ErrorIs(t, err, ErrECH)
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "outer.example.com", sni)
 }
 
 // ---------------------------------------------------------------------------
@@ -949,7 +1002,7 @@ func TestPeekSNI_FuzzMutated(t *testing.T) {
 		}
 		if err != nil {
 			require.True(t,
-				errors.Is(err, ErrNotTLS) || errors.Is(err, ErrNoSNI) || errors.Is(err, ErrECH) || errors.Is(err, ErrShortRead),
+				errors.Is(err, ErrNotTLS) || errors.Is(err, ErrNoSNI) || errors.Is(err, ErrShortRead),
 				"P3: unexpected error type: %v", err)
 		}
 	}
@@ -1015,6 +1068,27 @@ func FuzzPeekSNI(f *testing.F) {
 	f.Add([]byte{0x16, 0x03, 0x01})
 	f.Add([]byte{})
 	f.Add(make([]byte, 500))
+	// ECH corpus entries.
+	f.Add(func() []byte {
+		opts := defaultOpts()
+		opts.extensions = []tlsExtension{buildSNIExtension("example.com"), buildECHOuterExtension(0, 32, 256)}
+		return buildClientHello(opts)
+	}())
+	f.Add(func() []byte {
+		opts := defaultOpts()
+		opts.extensions = []tlsExtension{buildSNIExtension("example.com"), buildChromeECHGreaseExtension()}
+		return buildClientHello(opts)
+	}())
+	f.Add(func() []byte {
+		opts := defaultOpts()
+		opts.extensions = []tlsExtension{buildSNIExtension("example.com"), buildECHInnerExtension()}
+		return buildClientHello(opts)
+	}())
+	f.Add(func() []byte {
+		opts := defaultOpts()
+		opts.extensions = []tlsExtension{buildSNIExtension("example.com"), buildLegacyESNIExtensionWithPayload(512)}
+		return buildClientHello(opts)
+	}())
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		br := bufio.NewReader(bytes.NewReader(data))
@@ -1370,13 +1444,12 @@ func TestPeekSNI_IntermediateESNIDraftCodes(t *testing.T) {
 }
 
 // TestPeekSNI_ECHGrease verifies that GREASE ECH (sent by Chrome when ECH
-// is not available, to prevent ossification) is correctly detected and blocked.
-// GREASE ECH uses the same extension type 0xfe0d with random-looking data.
+// is not available, to prevent ossification) does not prevent SNI extraction.
+// Per RFC 9849 Section 8.1.2, the proxy acts based on the outer SNI.
 func TestPeekSNI_ECHGrease(t *testing.T) {
-	// Chrome sends GREASE ECH with config_id=0 and random payload
+	// Chrome sends GREASE ECH with random config_id and random payload
 	greaseECHData := make([]byte, 166)
 	rand.Read(greaseECHData)
-	// Set config_id to 0 (GREASE indicator)
 	greaseECHData[0] = 0x00
 
 	opts := defaultOpts()
@@ -1386,10 +1459,10 @@ func TestPeekSNI_ECHGrease(t *testing.T) {
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
-	_, _, _, err := PeekSNI(br)
+	sni, _, _, err := PeekSNI(br)
 
-	require.ErrorIs(t, err, ErrECH,
-		"GREASE ECH must be detected — outer SNI is not trustworthy")
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
 }
 
 // TestMatchesAllowlist_NullByteBypass verifies regex behavior with null bytes.
@@ -1593,4 +1666,523 @@ func TestParseALPNExtension(t *testing.T) {
 			require.Equal(t, tc.expected, got)
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// M. ECH spec-compliance tests (RFC 9849 / draft-ietf-tls-esni-25)
+//
+// These tests verify that ECH extensions (0xfe0d) and legacy ESNI (0xffce)
+// do not interfere with SNI extraction. Per RFC 9849 Section 8.1.2,
+// middleboxes act based on the outer SNI. The parser ignores these
+// extensions and returns the outer SNI normally. Security enforcement
+// is handled by the allowlist and DNS cross-validation in
+// handleTLSWithAllowlist.
+// ---------------------------------------------------------------------------
+
+// M1: SNI + spec-compliant ECH outer (config_id=42, 32B enc, 256B payload).
+func TestPeekSNI_ECHOuterWithSNI(t *testing.T) {
+	opts := defaultOpts()
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildECHOuterExtension(42, 32, 256),
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M2: No SNI + ECH outer. Verifies ErrNoSNI when no SNI is present, regardless of ECH.
+func TestPeekSNI_ECHOuterWithoutSNI(t *testing.T) {
+	opts := defaultOpts()
+	opts.serverName = ""
+	opts.extensions = []tlsExtension{
+		buildECHOuterExtension(42, 32, 256),
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	_, _, _, err := PeekSNI(br)
+	require.ErrorIs(t, err, ErrNoSNI)
+}
+
+// M3: SNI + ECH inner (type=0x01). Should never appear on wire from client.
+func TestPeekSNI_ECHInnerType(t *testing.T) {
+	opts := defaultOpts()
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildECHInnerExtension(),
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M4: Full Chrome-like ClientHello with GREASE ciphers, SNI, key_share,
+// supported_versions, ALPN, GREASE extensions, and Chrome-inspired ECH GREASE (330B).
+func TestPeekSNI_ECHGreaseChrome(t *testing.T) {
+	opts := clientHelloOpts{
+		version:            0x0301,
+		handshakeVersion:   0x0303,
+		sessionID:          make([]byte, 32),
+		cipherSuites:       []uint16{0x0a0a, 0x1301, 0x1302, 0x1303, 0xc02c, 0xc02b, 0xc030, 0xc02f, 0xcca9, 0xcca8, 0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035},
+		compressionMethods: []byte{0x00},
+		extensions: []tlsExtension{
+			buildGREASEExtension(0x0a0a),
+			buildSNIExtension("www.google.com"),
+			buildALPNExtension(),
+			buildSupportedGroupsExtension(),
+			buildGREASEExtension(0x1a1a),
+			buildSupportedVersionsExtension(0x0a0a, 0x0304, 0x0303),
+			buildKeyShareExtension(),
+			buildChromeECHGreaseExtension(),
+		},
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "www.google.com", sni)
+}
+
+// M5: Full Firefox-like ClientHello with Firefox-inspired ECH GREASE (266B).
+func TestPeekSNI_ECHGreaseFirefox(t *testing.T) {
+	opts := clientHelloOpts{
+		version:            0x0301,
+		handshakeVersion:   0x0303,
+		sessionID:          make([]byte, 32),
+		cipherSuites:       []uint16{0x1301, 0x1303, 0x1302, 0xc02c, 0xc02b, 0xc030, 0xc02f, 0xcca9, 0xcca8},
+		compressionMethods: []byte{0x00},
+		extensions: []tlsExtension{
+			buildSNIExtension("www.mozilla.org"),
+			buildSupportedVersionsExtension(0x0304, 0x0303),
+			buildKeyShareExtension(),
+			buildSupportedGroupsExtension(),
+			buildALPNExtension(),
+			buildFirefoxECHGreaseExtension(),
+		},
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "www.mozilla.org", sni)
+}
+
+// M6: Verify ECH presence does not prevent SNI extraction.
+// The outer SNI bytes are present in the raw data and the parser returns them.
+func TestPeekSNI_ECHGreaseOuterSNIIsParseable(t *testing.T) {
+	hostname := "www.google.com"
+	opts := clientHelloOpts{
+		version:            0x0301,
+		handshakeVersion:   0x0303,
+		sessionID:          make([]byte, 32),
+		cipherSuites:       []uint16{0x0a0a, 0x1301, 0x1302, 0x1303, 0xc02c, 0xc02b},
+		compressionMethods: []byte{0x00},
+		extensions: []tlsExtension{
+			buildGREASEExtension(0x0a0a),
+			buildSNIExtension(hostname),
+			buildKeyShareExtension(),
+			buildSupportedVersionsExtension(0x0304, 0x0303),
+			buildChromeECHGreaseExtension(),
+		},
+	}
+	data := buildClientHello(opts)
+
+	// Verify the SNI hostname bytes are present in the raw data.
+	require.True(t, bytes.Contains(data, []byte(hostname)),
+		"raw ClientHello should contain the outer SNI hostname bytes")
+
+	// PeekSNI returns the outer SNI, ignoring the ECH extension.
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, hostname, sni)
+}
+
+// M7: ECH extension with zero-length data.
+func TestPeekSNI_ECHEmptyPayload(t *testing.T) {
+	opts := defaultOpts()
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		{typ: 0xfe0d, data: []byte{}},
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M8: ECH with single byte payload (just outer type byte, truncated).
+func TestPeekSNI_ECHSingleBytePayload(t *testing.T) {
+	opts := defaultOpts()
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		{typ: 0xfe0d, data: []byte{0x00}},
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M9: Table-driven config_id values.
+func TestPeekSNI_ECHConfigIDs(t *testing.T) {
+	configIDs := []struct {
+		name     string
+		configID uint8
+	}{
+		{"Zero", 0},
+		{"One", 1},
+		{"Mid127", 127},
+		{"Mid128", 128},
+		{"Max255", 255},
+	}
+	for _, tc := range configIDs {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := defaultOpts()
+			opts.extensions = []tlsExtension{
+				buildSNIExtension("example.com"),
+				buildECHOuterExtension(tc.configID, 32, 128),
+			}
+			data := buildClientHello(opts)
+			br := bufio.NewReader(bytes.NewReader(data))
+			sni, _, _, err := PeekSNI(br)
+			require.NoError(t, err)
+			require.Equal(t, "example.com", sni)
+		})
+	}
+}
+
+// M10: Table-driven cipher suites.
+func TestPeekSNI_ECHCipherSuites(t *testing.T) {
+	suites := []struct {
+		name   string
+		kdfID  uint16
+		aeadID uint16
+	}{
+		{"SHA256_AES128", 0x0001, 0x0001},
+		{"SHA256_ChaCha", 0x0001, 0x0003},
+		{"SHA384_AES256", 0x0002, 0x0002},
+		{"Zero_Zero", 0x0000, 0x0000},
+		{"Max_Max", 0xFFFF, 0xFFFF},
+	}
+	for _, tc := range suites {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := defaultOpts()
+			opts.extensions = []tlsExtension{
+				buildSNIExtension("example.com"),
+				buildECHOuterExtensionWithCipher(42, tc.kdfID, tc.aeadID, 32, 128),
+			}
+			data := buildClientHello(opts)
+			br := bufio.NewReader(bytes.NewReader(data))
+			sni, _, _, err := PeekSNI(br)
+			require.NoError(t, err)
+			require.Equal(t, "example.com", sni)
+		})
+	}
+}
+
+// M11: Table-driven enc lengths.
+func TestPeekSNI_ECHEncLengths(t *testing.T) {
+	lengths := []struct {
+		name   string
+		encLen int
+	}{
+		{"Zero", 0},
+		{"One", 1},
+		{"X25519_32", 32},
+		{"P256_65", 65},
+		{"P384_97", 97},
+		{"Large256", 256},
+	}
+	for _, tc := range lengths {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := defaultOpts()
+			opts.extensions = []tlsExtension{
+				buildSNIExtension("example.com"),
+				buildECHOuterExtension(42, tc.encLen, 128),
+			}
+			data := buildClientHello(opts)
+			br := bufio.NewReader(bytes.NewReader(data))
+			sni, _, _, err := PeekSNI(br)
+			require.NoError(t, err)
+			require.Equal(t, "example.com", sni)
+		})
+	}
+}
+
+// M12: Table-driven payload lengths.
+func TestPeekSNI_ECHPayloadLengths(t *testing.T) {
+	lengths := []struct {
+		name       string
+		payloadLen int
+	}{
+		{"Tiny1", 1},
+		{"Small128", 128},
+		{"Medium256", 256},
+		{"Large512", 512},
+		{"XLarge1024", 1024},
+		{"Huge4096", 4096},
+	}
+	for _, tc := range lengths {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := defaultOpts()
+			opts.extensions = []tlsExtension{
+				buildSNIExtension("example.com"),
+				buildECHOuterExtension(42, 32, tc.payloadLen),
+			}
+			data := buildClientHello(opts)
+			br := bufio.NewReaderSize(bytes.NewReader(data), len(data)+1)
+			sni, _, _, err := PeekSNI(br)
+			require.NoError(t, err)
+			require.Equal(t, "example.com", sni)
+		})
+	}
+}
+
+// M13: Extension order: ECH first, then SNI. SNI extracted regardless of order.
+func TestPeekSNI_ECHBeforeSNI(t *testing.T) {
+	opts := defaultOpts()
+	opts.serverName = ""
+	opts.extensions = []tlsExtension{
+		buildECHOuterExtension(42, 32, 256),
+		buildSNIExtension("example.com"),
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M14: Extension order: SNI first, then ECH. SNI extracted regardless of order.
+func TestPeekSNI_ECHAfterSNI(t *testing.T) {
+	opts := defaultOpts()
+	opts.serverName = ""
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildECHOuterExtension(42, 32, 256),
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M15: Two ECH extensions (both 0xfe0d) + SNI. Adversarial duplicate.
+func TestPeekSNI_MultipleECHExtensions(t *testing.T) {
+	opts := defaultOpts()
+	opts.serverName = ""
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildECHOuterExtension(1, 32, 128),
+		buildECHOuterExtension(2, 32, 128),
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M16: SNI + ECH (0xfe0d) + ESNI (0xffce). Both extension types simultaneously.
+func TestPeekSNI_ECHAndESNIBothPresent(t *testing.T) {
+	opts := defaultOpts()
+	opts.serverName = ""
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildECHOuterExtension(42, 32, 256),
+		buildLegacyESNIExtensionWithPayload(64),
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M17: SNI + Chrome GREASE ECH, fragmented across 2 TLS records.
+func TestPeekSNI_ECHFragmented(t *testing.T) {
+	opts := defaultOpts()
+	opts.serverName = ""
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildChromeECHGreaseExtension(),
+	}
+	opts.fragmentAt = []int{50}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M18: Fragment at the ECH extension type/length boundary
+// (split between 2B type code and 2B length).
+func TestPeekSNI_ECHFragmentedAtExtHeader(t *testing.T) {
+	// Build unfragmented first to find the ECH extension position.
+	opts := defaultOpts()
+	opts.serverName = ""
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildChromeECHGreaseExtension(),
+	}
+	unfragmented := buildClientHello(opts)
+
+	// Find the ECH extension type bytes (0xfe, 0x0d) in the handshake payload.
+	echTypePos := bytes.Index(unfragmented[5:], []byte{0xfe, 0x0d})
+	require.Greater(t, echTypePos, 0, "ECH extension type should be present")
+
+	// Fragment between the 2-byte type code and the 2-byte length field.
+	splitPoint := echTypePos + 2
+	opts.fragmentAt = []int{splitPoint}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M19: SNI + Chrome GREASE ECH, 3 TLS record fragments.
+func TestPeekSNI_ECHThreeFragments(t *testing.T) {
+	opts := defaultOpts()
+	opts.serverName = ""
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildChromeECHGreaseExtension(),
+	}
+	opts.fragmentAt = []int{30, 100}
+	data := buildClientHello(opts)
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M20: Table-driven intermediate ECH draft codes 0xfe08-0xfe0c.
+// These should NOT trigger ErrECH — only 0xfe0d and 0xffce are detected.
+func TestPeekSNI_IntermediateECHDraftCodes_0xfe(t *testing.T) {
+	draftCodes := []struct {
+		name string
+		code uint16
+	}{
+		{"draft_0xfe08", 0xfe08},
+		{"draft_0xfe09", 0xfe09},
+		{"draft_0xfe0a", 0xfe0a},
+		{"draft_0xfe0b", 0xfe0b},
+		{"draft_0xfe0c", 0xfe0c},
+	}
+	for _, dc := range draftCodes {
+		t.Run(dc.name, func(t *testing.T) {
+			opts := defaultOpts()
+			opts.extensions = []tlsExtension{
+				buildSNIExtension("example.com"),
+				{typ: dc.code, data: []byte{0x00, 0x01, 0x02}},
+			}
+			data := buildClientHello(opts)
+			br := bufio.NewReader(bytes.NewReader(data))
+			sni, _, _, err := PeekSNI(br)
+			require.NoError(t, err, "intermediate draft code 0x%04x should not trigger ErrECH", dc.code)
+			require.Equal(t, "example.com", sni)
+		})
+	}
+}
+
+// M21: ECH outer with 32B enc + 16000B payload. Near TLS record maximum.
+func TestPeekSNI_ECHMaxPayload(t *testing.T) {
+	opts := defaultOpts()
+	opts.extensions = []tlsExtension{
+		buildSNIExtension("example.com"),
+		buildECHOuterExtension(42, 32, 16000),
+	}
+	data := buildClientHello(opts)
+	br := bufio.NewReaderSize(bytes.NewReader(data), len(data)+1)
+	sni, _, _, err := PeekSNI(br)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", sni)
+}
+
+// M22: Adjacent extension type codes — all are ignored, SNI is returned normally.
+func TestPeekSNI_ECHAdjacentExtensionTypes(t *testing.T) {
+	extTypes := []struct {
+		name    string
+		extType uint16
+	}{
+		{"0xfe0c", 0xfe0c},
+		{"0xfe0d", 0xfe0d},
+		{"0xfe0e", 0xfe0e},
+		{"0xffcd", 0xffcd},
+		{"0xffce", 0xffce},
+		{"0xffcf", 0xffcf},
+	}
+	for _, tc := range extTypes {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := defaultOpts()
+			opts.extensions = []tlsExtension{
+				buildSNIExtension("example.com"),
+				{typ: tc.extType, data: []byte{0x00, 0x01, 0x02, 0x03}},
+			}
+			data := buildClientHello(opts)
+			br := bufio.NewReader(bytes.NewReader(data))
+			sni, _, _, err := PeekSNI(br)
+			require.NoError(t, err, "extension 0x%04x should not prevent SNI extraction", tc.extType)
+			require.Equal(t, "example.com", sni)
+		})
+	}
+}
+
+// M23: Hand-built hex ClientHello mimicking Chrome 120 ECH GREASE,
+// with field-by-field comments.
+func TestPeekSNI_ECHGreaseGoldenHex(t *testing.T) {
+	hexData := "" +
+		"160301" + // TLS record: handshake, TLS 1.0
+		"00ab" + // record length: 171
+		"01" + // handshake type: ClientHello
+		"0000a7" + // handshake length: 167
+		"0303" + // version: TLS 1.2 (legacy)
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" + // random (32B)
+		"20" + // session ID length: 32
+		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" + // session ID (32B)
+		"000c" + // cipher suites length: 12 (6 suites)
+		"0a0a" + // GREASE cipher suite
+		"1301" + // TLS_AES_128_GCM_SHA256
+		"1302" + // TLS_AES_256_GCM_SHA384
+		"1303" + // TLS_CHACHA20_POLY1305_SHA256
+		"c02c" + // TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+		"c02b" + // TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+		"01" + // compression methods length: 1
+		"00" + // null compression
+		"0052" + // extensions total length: 82
+		// --- SNI extension ---
+		"0000" + // extension type: server_name
+		"0010" + // extension length: 16
+		"000e" + // server name list length: 14
+		"00" + // name type: host_name
+		"000b" + // name length: 11
+		"6578616d706c652e636f6d" + // "example.com"
+		// --- ECH GREASE extension (Chrome 120 style) ---
+		"fe0d" + // extension type: encrypted_client_hello
+		"003a" + // extension length: 58
+		"00" + // ECHClientHelloType: outer
+		"0001" + // kdf_id: HKDF-SHA256
+		"0001" + // aead_id: AES-128-GCM
+		"00" + // config_id: 0 (GREASE)
+		"0020" + // enc length: 32
+		"0000000000000000000000000000000000000000000000000000000000000000" + // enc (32B)
+		"0010" + // payload length: 16
+		"00000000000000000000000000000000" // payload (16B)
+
+	data, err := hex.DecodeString(hexData)
+	require.NoError(t, err, "invalid hex in golden test")
+
+	br := bufio.NewReader(bytes.NewReader(data))
+	sni, _, _, parseErr := PeekSNI(br)
+	require.NoError(t, parseErr)
+	require.Equal(t, "example.com", sni)
 }
