@@ -3,6 +3,7 @@ package dns
 import (
 	"context"
 	"net"
+	"regexp"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 	var server *Server
 
 	ginkgo.BeforeEach(func() {
-		server, _ = New(nil, nil, []types.Zone{})
+		server, _ = New(nil, nil, []types.Zone{}, nil)
 	})
 
 	ginkgo.It("should add dns zone with ip", func() {
@@ -167,7 +168,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 					},
 				},
 			},
-		})
+		}, nil)
 		server.addZone(types.Zone{
 			Name: "testing.",
 			Records: []types.Record{
@@ -250,7 +251,7 @@ var _ = ginkgo.Describe("TXT records", func() {
 			},
 		}
 
-		nameserver, cleanup, err = startDNSServer(upstream)
+		nameserver, cleanup, err = startDNSServer(upstream, nil)
 		gomega.Expect(err).To(gomega.BeNil())
 		time.Sleep(100 * time.Millisecond)
 
@@ -328,7 +329,7 @@ func TestDNS(t *testing.T) {
 		},
 	}
 
-	nameserver, cleanup, err := startDNSServer(upstream)
+	nameserver, cleanup, err := startDNSServer(upstream, nil)
 	require.NoError(t, err)
 	defer cleanup()
 	time.Sleep(100 * time.Millisecond)
@@ -364,7 +365,140 @@ func TestDNS(t *testing.T) {
 	}
 }
 
-func startDNSServer(upstream upstreamResolver) (string, func(), error) {
+func TestDNSOutboundAllowBlocked(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{
+			"allowed.example.com.": {
+				A: []string{"1.2.3.4"},
+			},
+			"blocked.com.": {
+				A: []string{"5.6.7.8"},
+			},
+		},
+	}
+
+	allowlist := []*regexp.Regexp{
+		regexp.MustCompile(`^.*\.example\.com$`),
+	}
+
+	nameserver, cleanup, err := startDNSServer(upstream, allowlist)
+	require.NoError(t, err)
+	defer cleanup()
+	time.Sleep(100 * time.Millisecond)
+
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 5 * time.Second}
+			return d.DialContext(ctx, network, nameserver)
+		},
+	}
+
+	// Blocked domain should fail.
+	_, err = r.LookupHost(context.Background(), "blocked.com")
+	require.Error(t, err, "blocked.com should be blocked by outboundAllow")
+}
+
+func TestDNSOutboundAllowAllowed(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{
+			"allowed.example.com.": {
+				A: []string{"1.2.3.4"},
+			},
+		},
+	}
+
+	allowlist := []*regexp.Regexp{
+		regexp.MustCompile(`^.*\.example\.com$`),
+	}
+
+	nameserver, cleanup, err := startDNSServer(upstream, allowlist)
+	require.NoError(t, err)
+	defer cleanup()
+	time.Sleep(100 * time.Millisecond)
+
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 5 * time.Second}
+			return d.DialContext(ctx, network, nameserver)
+		},
+	}
+
+	// Allowed domain should resolve.
+	ips, err := r.LookupHost(context.Background(), "allowed.example.com")
+	require.NoError(t, err)
+	require.Contains(t, ips, "1.2.3.4")
+}
+
+func TestDNSOutboundAllowLocalZoneNotAffected(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{},
+	}
+
+	allowlist := []*regexp.Regexp{
+		regexp.MustCompile(`^only-this\.com$`),
+	}
+
+	// Create a server with a local zone that would NOT match the allowlist.
+	server, err := NewWithUpstreamResolver(nil, nil, []types.Zone{
+		{
+			Name:      "internal.",
+			DefaultIP: net.ParseIP("192.168.1.1"),
+		},
+	}, upstream, allowlist)
+	require.NoError(t, err)
+
+	// Query for a domain in the local zone.
+	m := &dns.Msg{
+		Question: []dns.Question{{
+			Name:   "anything.internal.",
+			Qtype:  dns.TypeA,
+			Qclass: dns.ClassINET,
+		}},
+	}
+	m.SetReply(m)
+	server.handler.addAnswers(m)
+
+	// Local zone should still resolve (addLocalAnswers handles it before allowlist check).
+	require.NotEqual(t, dns.RcodeNameError, m.Rcode, "local zone query should not be blocked by outboundAllow")
+	require.NotEmpty(t, m.Answer, "local zone should return an answer")
+}
+
+func TestDNSOutboundAllowCaseNormalization(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{
+			"allowed.example.com.": {
+				A: []string{"1.2.3.4"},
+			},
+		},
+	}
+
+	// Lowercase allowlist pattern.
+	allowlist := []*regexp.Regexp{
+		regexp.MustCompile(`^allowed\.example\.com$`),
+	}
+
+	server, err := NewWithUpstreamResolver(nil, nil, nil, upstream, allowlist)
+	require.NoError(t, err)
+
+	// Simulate a mixed-case DNS query — the handler should normalize to lowercase
+	// before checking the allowlist.
+	m := &dns.Msg{
+		Question: []dns.Question{{
+			Name:   "Allowed.Example.COM.",
+			Qtype:  dns.TypeA,
+			Qclass: dns.ClassINET,
+		}},
+	}
+	m.SetReply(m)
+	server.handler.addAnswers(m)
+
+	require.NotEqual(t, dns.RcodeNameError, m.Rcode,
+		"mixed-case query should match lowercase allowlist after normalization")
+}
+
+func startDNSServer(upstream upstreamResolver, outboundAllow []*regexp.Regexp) (string, func(), error) {
 	udpConn, err := net.ListenPacket("udp", "127.0.0.1:5354")
 	if err != nil {
 		return "", nil, err
@@ -375,7 +509,7 @@ func startDNSServer(upstream upstreamResolver) (string, func(), error) {
 		return "", nil, err
 	}
 
-	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream)
+	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow)
 	if err != nil {
 		return "", nil, err
 	}
