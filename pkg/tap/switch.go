@@ -118,10 +118,12 @@ func (e *Switch) tx(pkt *stack.PacketBuffer) error {
 	return e.txPkt(pkt)
 }
 
-func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
-	e.connLock.Lock()
-	defer e.connLock.Unlock()
+type connTarget struct {
+	id   int
+	conn protocolConn
+}
 
+func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 	buf := pkt.ToView().AsSlice()
 	eth := header.Ethernet(buf)
 	dst := eth.DestinationAddress()
@@ -138,17 +140,24 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 			srcID = -1
 		}
 		e.camLock.RUnlock()
-		for id, conn := range e.conns {
-			if id == srcID {
-				continue
-			}
 
-			err := e.txBuf(conn, buf)
+		e.connLock.Lock()
+		targets := make([]connTarget, 0, len(e.conns))
+		for id, conn := range e.conns {
+			if id != srcID {
+				targets = append(targets, connTarget{id, conn})
+			}
+		}
+		e.connLock.Unlock()
+
+		for _, t := range targets {
+			err := e.txBuf(t.conn, buf)
 			if err != nil {
-				e.disconnect(id, conn)
+				e.connLock.Lock()
+				e.disconnect(t.id, t.conn)
+				e.connLock.Unlock()
 				return err
 			}
-
 			atomic.AddUint64(&e.Sent, uint64(size))
 		}
 	} else {
@@ -159,10 +168,19 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 			return nil
 		}
 		e.camLock.RUnlock()
-		conn := e.conns[id]
+
+		e.connLock.Lock()
+		conn, ok := e.conns[id]
+		e.connLock.Unlock()
+		if !ok {
+			return nil
+		}
+
 		err := e.txBuf(conn, buf)
 		if err != nil {
+			e.connLock.Lock()
 			e.disconnect(id, conn)
+			e.connLock.Unlock()
 			return err
 		}
 		atomic.AddUint64(&e.Sent, uint64(size))
