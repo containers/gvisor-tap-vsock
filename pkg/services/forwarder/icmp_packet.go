@@ -23,19 +23,6 @@ type echoRequestDetails struct {
 	dataBuf buffer.Buffer
 }
 
-// safeUint16 safely converts an int to uint16, clamping to valid range.
-// ICMP ID and sequence numbers are 16-bit values, so values outside this range
-// are invalid and will be clamped.
-func safeUint16(v int) uint16 {
-	if v < 0 {
-		return 0
-	}
-	if v > 0xFFFF {
-		return 0xFFFF
-	}
-	return uint16(v)
-}
-
 // handlePingRequest handles forwarding an ICMP echo request (PING) from the VM
 // to the external network and injecting the reply back into the VM.
 func handlePingRequest(s *stack.Stack, r *ICMPForwarderRequest, destAddr tcpip.Address, icmpHeader header.ICMPv4, pkt *stack.PacketBuffer) {
@@ -66,14 +53,16 @@ func handlePingRequest(s *stack.Stack, r *ICMPForwarderRequest, destAddr tcpip.A
 		return
 	}
 
-	// Validate the reply matches our request
-	if !validateEchoReply(echoReply, details.ident, details.seq) {
+	// Validate the reply matches our request (on Linux, kernel uses socket port as echo ID)
+	expectedIdent := getExpectedReplyIdent(conn, details.ident)
+	if !validateEchoReply(echoReply, expectedIdent, details.seq) {
 		return
 	}
 
-	// Forward the reply back to the VM's network stack
-	// Safely convert int to uint16 (ICMP ID and Seq are 16-bit values)
-	forwardEchoReply(s, r, details.srcAddr, destAddr, safeUint16(echoReply.ID), safeUint16(echoReply.Seq), echoReply.Data)
+	// Forward the reply back to the VM's network stack. Use the VM's original
+	// ident/seq so the VM's ping process can match the reply to its request
+	// (on Linux the host reply has kernel-assigned ID; we must rewrite to VM's).
+	forwardEchoReply(s, r, details.srcAddr, destAddr, details.ident, details.seq, echoReply.Data)
 }
 
 // extractEchoRequestDetails extracts the identifier, sequence, payload, and source address
