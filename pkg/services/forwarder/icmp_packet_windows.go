@@ -60,3 +60,9 @@ func extractICMPData(replyBytes []byte) ([]byte, error) {
 
 	return replyBytes[ihl:], nil
 }
+
+// getExpectedReplyIdent returns the ICMP echo identifier to expect in the reply.
+// On Windows (raw sockets) the kernel preserves the ID we send.
+func getExpectedReplyIdent(conn *netIcmp.PacketConn, sentIdent uint16) uint16 {
+	return sentIdent
+}

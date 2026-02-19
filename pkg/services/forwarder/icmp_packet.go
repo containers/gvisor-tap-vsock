@@ -66,14 +66,16 @@ func handlePingRequest(s *stack.Stack, r *ICMPForwarderRequest, destAddr tcpip.A
 		return
 	}
 
-	// Validate the reply matches our request
-	if !validateEchoReply(echoReply, details.ident, details.seq) {
+	// Validate the reply matches our request (on Linux, kernel uses socket port as echo ID)
+	expectedIdent := getExpectedReplyIdent(conn, details.ident)
+	if !validateEchoReply(echoReply, expectedIdent, details.seq) {
 		return
 	}
 
-	// Forward the reply back to the VM's network stack
-	// Safely convert int to uint16 (ICMP ID and Seq are 16-bit values)
-	forwardEchoReply(s, r, details.srcAddr, destAddr, safeUint16(echoReply.ID), safeUint16(echoReply.Seq), echoReply.Data)
+	// Forward the reply back to the VM's network stack. Use the VM's original
+	// ident/seq so the VM's ping process can match the reply to its request
+	// (on Linux the host reply has kernel-assigned ID; we must rewrite to VM's).
+	forwardEchoReply(s, r, details.srcAddr, destAddr, details.ident, details.seq, echoReply.Data)
 }
 
 // extractEchoRequestDetails extracts the identifier, sequence, payload, and source address

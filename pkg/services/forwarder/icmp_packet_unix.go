@@ -4,6 +4,7 @@ package forwarder
 
 import (
 	"net"
+	"runtime"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -39,4 +40,20 @@ func createDestinationAddr(dstIP net.IP) net.Addr {
 func extractICMPData(replyBytes []byte) ([]byte, error) {
 	// Linux/macOS unprivileged sockets return just the ICMP data
 	return replyBytes, nil
+}
+
+// getExpectedReplyIdent returns the ICMP echo identifier to expect in the reply.
+// On Linux, the kernel overwrites the echo ID with the socket's local port for
+// unprivileged ICMP sockets, so we must use that for validation. On macOS the
+// kernel preserves the ID we send.
+func getExpectedReplyIdent(conn *netIcmp.PacketConn, sentIdent uint16) uint16 {
+	if runtime.GOOS != "linux" {
+		return sentIdent
+	}
+	addr := conn.LocalAddr()
+	udpAddr, ok := addr.(*net.UDPAddr)
+	if !ok || udpAddr == nil {
+		return sentIdent
+	}
+	return uint16(udpAddr.Port)
 }
