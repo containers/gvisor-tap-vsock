@@ -90,11 +90,7 @@ func (e *Switch) Accept(ctx context.Context, rawConn net.Conn, protocol types.Pr
 
 	}
 
-	defer func() {
-		e.connLock.Lock()
-		defer e.connLock.Unlock()
-		e.disconnect(id, conn)
-	}()
+	defer e.disconnect(id, conn)
 	if err := e.rx(ctx, id, conn); err != nil {
 		err := fmt.Errorf("cannot receive packets from %s, disconnecting: %w", conn.RemoteAddr().String(), err)
 		log.Error(err)
@@ -153,9 +149,7 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 		for _, t := range targets {
 			err := e.txBuf(t.conn, buf)
 			if err != nil {
-				e.connLock.Lock()
 				e.disconnect(t.id, t.conn)
-				e.connLock.Unlock()
 				return err
 			}
 			atomic.AddUint64(&e.Sent, uint64(size))
@@ -178,9 +172,7 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 
 		err := e.txBuf(conn, buf)
 		if err != nil {
-			e.connLock.Lock()
 			e.disconnect(id, conn)
-			e.connLock.Unlock()
 			return err
 		}
 		atomic.AddUint64(&e.Sent, uint64(size))
@@ -212,6 +204,9 @@ func (e *Switch) txBuf(conn protocolConn, buf []byte) error {
 }
 
 func (e *Switch) disconnect(id int, conn net.Conn) {
+	e.connLock.Lock()
+	defer e.connLock.Unlock()
+
 	e.camLock.Lock()
 	defer e.camLock.Unlock()
 
