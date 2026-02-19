@@ -297,6 +297,57 @@ func (s *Server) Mux() http.Handler {
 		s.addZone(req)
 		w.WriteHeader(http.StatusOK)
 	})
+
+	mux.HandleFunc("/remove", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "post only", http.StatusBadRequest)
+			return
+		}
+		var req types.Zone
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		if !s.removeZone(req.Name) {
+			http.Error(w, "zone not found", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("/remove/record", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "post only", http.StatusBadRequest)
+			return
+		}
+		var req removeRecordRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		if req.Record.Name == "" {
+			http.Error(w, "record name is required", http.StatusBadRequest)
+			return
+		}
+		zoneFound, removed := s.removeRecord(req.Name, req.Record)
+		if !zoneFound {
+			http.Error(w, "zone not found", http.StatusNotFound)
+			return
+		}
+		if !removed {
+			http.Error(w, "record not found", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 	return mux
 }
 
@@ -312,4 +363,61 @@ func (s *Server) addZone(req types.Zone) {
 	}
 	// No existing zone for req.Name, add new one
 	s.handler.zones = append(s.handler.zones, req)
+}
+
+func (s *Server) removeZone(name string) bool {
+	s.handler.zonesLock.Lock()
+	defer s.handler.zonesLock.Unlock()
+	for i, zone := range s.handler.zones {
+		if zone.Name == name {
+			s.handler.zones = append(s.handler.zones[:i], s.handler.zones[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// removeRecordRequest is the JSON body for /remove/record.
+type removeRecordRequest struct {
+	Name   string       `json:"name"` // zone name
+	Record types.Record `json:"record"`
+}
+
+// recordMatches returns true if r matches the target (by Name and IP when provided).
+func recordMatches(r, target types.Record) bool {
+	if r.Name != target.Name {
+		return false
+	}
+	if len(target.IP) != 0 && !r.IP.Equal(target.IP) {
+		return false
+	}
+	return true
+}
+
+// removeRecord removes from the zone named zoneName any record matching record.
+// It returns (zoneFound, removed).
+func (s *Server) removeRecord(zoneName string, record types.Record) (zoneFound, removed bool) {
+	s.handler.zonesLock.Lock()
+	defer s.handler.zonesLock.Unlock()
+	for i, zone := range s.handler.zones {
+		if zone.Name != zoneName {
+			continue
+		}
+		zoneFound = true
+		newRecords := make([]types.Record, 0, len(zone.Records))
+		for _, r := range zone.Records {
+			if recordMatches(r, record) {
+				removed = true
+				continue
+			}
+			newRecords = append(newRecords, r)
+		}
+		if removed {
+			z := s.handler.zones[i]
+			z.Records = newRecords
+			s.handler.zones[i] = z
+		}
+		return zoneFound, removed
+	}
+	return false, false
 }

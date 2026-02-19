@@ -154,6 +154,76 @@ func (c *Client) AddDNS(req *types.Zone) error {
 	return nil
 }
 
+// RemoveDNS removes a DNS zone by name from the built-in DNS server
+//
+// Request:
+// POST /services/dns/remove
+// {"Name":"test.internal."}
+// Response:
+// HTTP Status Code
+func (c *Client) RemoveDNS(req *types.Zone) error {
+	if req == nil || req.Name == "" {
+		return errors.New("zone name is required")
+	}
+	bin, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	res, err := c.client.Post(fmt.Sprintf("%s%s", c.base, "/services/dns/remove"), "application/json", bytes.NewReader(bin))
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		body, readErr := io.ReadAll(res.Body)
+		if readErr != nil {
+			return fmt.Errorf("error while reading error message: %v", readErr)
+		}
+		return errors.New(strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+// removeDNSRecordRequest is the JSON body for /services/dns/remove/record
+type removeDNSRecordRequest struct {
+	Name   string       `json:"name"`
+	Record types.Record `json:"record"`
+}
+
+// RemoveDNSRecord removes a record from a DNS zone
+//
+// Request:
+// POST /services/dns/remove/record
+// {"name":"dynamic.internal.","record":{"Name":"test","IP":"192.168.127.254"}}
+// Response:
+// HTTP Status Code
+func (c *Client) RemoveDNSRecord(zoneName string, record *types.Record) error {
+	if zoneName == "" {
+		return errors.New("zone name is required")
+	}
+	if record == nil || record.Name == "" {
+		return errors.New("record name is required")
+	}
+	req := removeDNSRecordRequest{Name: zoneName, Record: *record}
+	bin, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	res, err := c.client.Post(fmt.Sprintf("%s%s", c.base, "/services/dns/remove/record"), "application/json", bytes.NewReader(bin))
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		body, readErr := io.ReadAll(res.Body)
+		if readErr != nil {
+			return fmt.Errorf("error while reading error message: %v", readErr)
+		}
+		return errors.New(strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 // ListDHCPLeases shows the configuration of the built-in DNS server
 //
 // Request:
