@@ -146,8 +146,9 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 				continue
 			}
 
-			err := e.txBuf(id, conn, buf)
+			err := e.txBuf(conn, buf)
 			if err != nil {
+				e.disconnect(id, conn)
 				return err
 			}
 
@@ -162,8 +163,9 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 		}
 		e.camLock.RUnlock()
 		conn := e.conns[id]
-		err := e.txBuf(id, conn, buf)
+		err := e.txBuf(conn, buf)
 		if err != nil {
+			e.disconnect(id, conn)
 			return err
 		}
 		atomic.AddUint64(&e.Sent, uint64(size))
@@ -171,7 +173,7 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 	return nil
 }
 
-func (e *Switch) txBuf(id int, conn protocolConn, buf []byte) error {
+func (e *Switch) txBuf(conn protocolConn, buf []byte) error {
 	if conn.protocolImpl.Stream() {
 		size := conn.protocolImpl.(streamProtocol).Buf()
 		conn.protocolImpl.(streamProtocol).Write(size, len(buf))
@@ -185,7 +187,6 @@ func (e *Switch) txBuf(id int, conn protocolConn, buf []byte) error {
 				// https://github.com/containers/gvisor-tap-vsock/issues/367
 				continue
 			}
-			e.disconnect(id, conn)
 			return err
 		}
 		return nil
