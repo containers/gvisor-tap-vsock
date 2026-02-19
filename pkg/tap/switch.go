@@ -119,9 +119,6 @@ func (e *Switch) tx(pkt *stack.PacketBuffer) error {
 }
 
 func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
-	e.writeLock.Lock()
-	defer e.writeLock.Unlock()
-
 	e.connLock.Lock()
 	defer e.connLock.Unlock()
 
@@ -174,6 +171,9 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 }
 
 func (e *Switch) txBuf(conn protocolConn, buf []byte) error {
+	e.writeLock.Lock()
+	defer e.writeLock.Unlock()
+
 	if conn.protocolImpl.Stream() {
 		size := conn.protocolImpl.(streamProtocol).Buf()
 		conn.protocolImpl.(streamProtocol).Write(size, len(buf))
