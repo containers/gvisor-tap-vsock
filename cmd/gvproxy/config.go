@@ -18,11 +18,8 @@ import (
 )
 
 const (
-	// 	gatewayIP   = "192.168.127.1"
-	sshHostPort = "192.168.127.2:22"
-	hostIP      = "192.168.127.254"
-	host        = "host"
-	gateway     = "gateway"
+	host    = "host"
+	gateway = "gateway"
 )
 
 type GvproxyArgs struct {
@@ -31,6 +28,10 @@ type GvproxyArgs struct {
 	debug              bool
 	mtu                int
 	sshPort            int
+	subnet             string
+	gatewayIP          string
+	deviceIP           string
+	hostIP             string
 	vpnkitSocket       string
 	qemuSocket         string
 	bessSocket         string
@@ -119,6 +120,10 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.StringVar(&args.pcapFile, "pcap", "", "Capture network traffic to a pcap file")
 	flagSet.IntVar(&args.mtu, "mtu", 0, "Set the MTU (default: 1500)")
 	flagSet.IntVar(&args.sshPort, "ssh-port", 2222, "Port to access the guest virtual machine. Must be between 1024 and 65535")
+	flagSet.StringVar(&args.subnet, "subnet", "192.168.127.0/24", "Subnet address in CIDR format, e.g. 192.168.127.0/24")
+	flagSet.StringVar(&args.gatewayIP, "gatewayIP", "", "Gateway IP address, default is first usable address of subnet")
+	flagSet.StringVar(&args.deviceIP, "deviceIP", "", "Device IP address, default is second usable address of subnet")
+	flagSet.StringVar(&args.hostIP, "hostIP", "", "Host IP address, default is last usable address of subnet")
 	flagSet.StringVar(&args.vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
 	flagSet.StringVar(&args.qemuSocket, "listen-qemu", "", "Socket to be used by Qemu")
 	flagSet.StringVar(&args.bessSocket, "listen-bess", "", "unixpacket socket to be used by Bess-compatible applications")
@@ -181,37 +186,82 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		config.Stack.MTU = 1500
 	}
 	if config.Stack.Subnet == "" {
-		config.Stack.Subnet = "192.168.127.0/24"
+		config.Stack.Subnet = args.subnet
 	}
 
 	// Parse subnet address for further use
-	naddr, err := netip.ParsePrefix(config.Stack.Subnet)
+	subnet, err := netip.ParsePrefix(config.Stack.Subnet)
 	if err != nil {
 		return config, fmt.Errorf("failed to parse subnet: %w", err)
 	}
-	fuaddr, err := getFirstUsableIPFromSubnet(naddr)
-	if err != nil {
-		return config, fmt.Errorf("failed to identify first usable address in subnet: %w", err)
+
+	// Set addresses to either default values for subnet or user-specified ones
+	if config.Stack.GatewayIP == "" {
+		if args.gatewayIP == "" {
+			// if user did not set the IP in the flag, we get it from the subnet
+			fuaddr, err := getFirstUsableIPFromSubnet(subnet)
+			if err != nil {
+				return config, fmt.Errorf("failed to identify usable gateway IP address in subnet: %w", err)
+			}
+			config.Stack.GatewayIP = fuaddr.String() // for default subnet: 192.168.127.1
+		} else {
+			config.Stack.GatewayIP = args.gatewayIP
+		}
 	}
-	luaddr, err := getLastUsableIPFromSubnet(naddr)
-	if err != nil {
-		return config, fmt.Errorf("failed to identify last usable address in subnet: %w", err)
+	if config.Stack.DeviceIP == "" {
+		if args.deviceIP == "" {
+			firstIP, err := getFirstUsableIPFromSubnet(subnet)
+			if err != nil {
+				return config, fmt.Errorf("failed to identify usable device IP address in subnet: %w", err)
+			}
+			nextIP, err := getNextUsableIPFromSubnet(subnet, firstIP)
+			if err != nil {
+				return config, fmt.Errorf("failed to identify usable device IP address in subnet: %w", err)
+			}
+			config.Stack.DeviceIP = nextIP.String() // for default subnet: 192.168.127.2
+		} else {
+			config.Stack.DeviceIP = args.deviceIP
+		}
+	}
+	if config.Stack.HostIP == "" {
+		if args.hostIP == "" {
+			luaddr, err := getLastUsableIPFromSubnet(subnet)
+			if err != nil {
+				return config, fmt.Errorf("failed to identify usable host IP address in subnet: %w", err)
+			}
+			config.Stack.HostIP = luaddr.String() // for default subnet: 192.168.127.254
+		} else {
+			config.Stack.HostIP = args.hostIP
+		}
 	}
 
-	if config.Stack.GatewayIP == "" {
-		config.Stack.GatewayIP = fuaddr.String()
+	// Check whether all configured IPs are valid and can be parsed
+	if err := validateConfigIPs(config.Stack); err != nil {
+		return config, fmt.Errorf("failed to validate configuration IPs: %w", err)
 	}
+
+	// Check whether configured IPs are inside the subnet
+	if !subnetContains(subnet, config.Stack.GatewayIP) {
+		return config, fmt.Errorf("gateway IP (%s) not in subnet (%s)", config.Stack.GatewayIP, subnet)
+	}
+	if !subnetContains(subnet, config.Stack.DeviceIP) {
+		return config, fmt.Errorf("device IP (%s) not in subnet (%s)", config.Stack.DeviceIP, subnet)
+	}
+	if !subnetContains(subnet, config.Stack.HostIP) {
+		return config, fmt.Errorf("host IP (%s) not in subnet (%s)", config.Stack.HostIP, subnet)
+	}
+
 	if config.Stack.GatewayMacAddress == "" {
 		config.Stack.GatewayMacAddress = "5a:94:ef:e4:0c:dd"
 	}
 	if len(config.Stack.NAT) == 0 {
 		config.Stack.NAT = map[string]string{
-			luaddr.String(): "127.0.0.1",
+			config.Stack.HostIP: "127.0.0.1",
 		}
 	}
 	if len(config.Stack.GatewayVirtualIPs) == 0 {
 		config.Stack.GatewayVirtualIPs = []string{
-			luaddr.String(),
+			config.Stack.HostIP,
 		}
 	}
 
@@ -311,7 +361,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 
 	if args.config != "" {
 		if slices.Contains(os.Args, "-ssh-port") || slices.Contains(os.Args, "--ssh-port") {
-			log.Warningf("CLI argument \"-ssh-port\" is unavailable with config file. You need to add \"127.0.0.1:%d: 192.168.127.2:22\" entry into .stack.forwards in \"\" instead", args.sshPort)
+			log.Warningf("CLI argument \"-ssh-port\" is unavailable with config file. You need to add \"127.0.0.1:%d: %s:22\" entry into .stack.forwards in \"\" instead", args.sshPort, config.Stack.DeviceIP)
 		}
 	}
 
@@ -329,6 +379,8 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	if InDebugMode() {
 		config.Stack.Debug = true
 	}
+
+	sshHostPort := net.JoinHostPort(config.Stack.DeviceIP, "22")
 
 	// Handle the default behavior without config
 	if args.config == "" {
@@ -348,7 +400,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 					},
 					{
 						Name: host,
-						IP:   net.ParseIP(hostIP),
+						IP:   net.ParseIP(config.Stack.HostIP),
 					},
 				},
 			},
@@ -361,7 +413,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 					},
 					{
 						Name: host,
-						IP:   net.ParseIP(hostIP),
+						IP:   net.ParseIP(config.Stack.HostIP),
 					},
 				},
 			},
@@ -369,7 +421,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		config.Stack.DNSSearchDomains = searchDomains()
 		config.Stack.Forwards = getForwardsMap(args.sshPort, sshHostPort)
 		config.Stack.DHCPStaticLeases = map[string]string{
-			"192.168.127.2": "5a:94:ef:e4:0c:ee",
+			config.Stack.DeviceIP: "5a:94:ef:e4:0c:ee",
 		}
 		config.Stack.VpnKitUUIDMacAddresses = map[string]string{
 			"c3d68012-0208-11ea-9fd7-f2189899ab08": "5a:94:ef:e4:0c:ee",
@@ -402,33 +454,42 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	return config, nil
 }
 
-func getFirstUsableIPFromSubnet(network netip.Prefix) (netip.Addr, error) {
-	// The network must have at least 5 IP addresses: network, broadcast, gateway, guest, and preferably host
+func getFirstUsableIPFromSubnet(subnet netip.Prefix) (netip.Addr, error) {
+	// The subnet must have at least 5 IP addresses: network, broadcast, gateway, guest, and preferably host
 	// v4/30 has only 2 devices, thus prefer at least v4/29 CIDR. This code works also for IPv6, just in case
-	if (network.Bits() + 3) > network.Addr().BitLen() {
-		return netip.Addr{}, errors.New("too small network")
+	if subnet.Bits()+3 > subnet.Addr().BitLen() {
+		return netip.Addr{}, errors.New("subnet too small")
 	}
 
-	b := network.Masked().Addr().AsSlice()
-	b[len(b)-1] += 1
+	// First IP in the prefix (subnet address)
+	base := subnet.Masked().Addr()
 
-	addr, ok := netip.AddrFromSlice(b)
-	if !ok {
-		return netip.Addr{}, errors.New("bad ip address")
+	// Next address after subnet
+	first := base.Next()
+
+	if !first.IsValid() || !subnet.Contains(first) {
+		return netip.Addr{}, errors.New("no usable IP in subnet")
 	}
 
-	return addr, nil
+	return first, nil
 }
 
-func getLastUsableIPFromSubnet(network netip.Prefix) (netip.Addr, error) {
-	// The network must have at least 5 IP addresses: network, broadcast, gateway, guest, and preferably host
-	// v4/30 has only 2 devices, thus prefer at least v4/29 CIDR. This code works also for IPv6, just in case
-	if (network.Bits() + 3) > network.Addr().BitLen() {
-		return netip.Addr{}, errors.New("too small network")
+func getNextUsableIPFromSubnet(subnet netip.Prefix, addr netip.Addr) (netip.Addr, error) {
+	nextIP := addr.Next()
+	if !nextIP.IsValid() || !subnet.Contains(nextIP) {
+		return netip.Addr{}, errors.New("no usable IP in subnet")
 	}
+	return nextIP, nil
+}
 
-	var b = network.Masked().Addr().AsSlice()
-	for i, v := range net.CIDRMask(network.Bits(), network.Addr().BitLen()) {
+func getLastUsableIPFromSubnet(subnet netip.Prefix) (netip.Addr, error) {
+	// The subnet must have at least 5 IP addresses: network, broadcast, gateway, guest, and preferably host
+	// v4/30 has only 2 devices, thus prefer at least v4/29 CIDR. This code works also for IPv6, just in case
+	if subnet.Bits()+3 > subnet.Addr().BitLen() {
+		return netip.Addr{}, errors.New("subnet too small")
+	}
+	var b = subnet.Masked().Addr().AsSlice()
+	for i, v := range net.CIDRMask(subnet.Bits(), subnet.Addr().BitLen()) {
 		b[i] += ^v
 	}
 	b[len(b)-1] -= 1
@@ -439,4 +500,29 @@ func getLastUsableIPFromSubnet(network netip.Prefix) (netip.Addr, error) {
 	}
 
 	return addr, nil
+}
+
+func isValidIP(ip string) bool {
+	_, err := netip.ParseAddr(ip)
+	return err == nil
+}
+
+func validateConfigIPs(config types.Configuration) error {
+	if _, err := netip.ParsePrefix(config.Subnet); err != nil {
+		return fmt.Errorf("failed to parse subnet: %w", err)
+	}
+
+	ips := []string{config.GatewayIP, config.DeviceIP, config.HostIP}
+	for _, ip := range ips {
+		if !isValidIP(ip) {
+			return fmt.Errorf("invalid ip address: %s", ip)
+		}
+	}
+	return nil
+}
+
+// This function expects that the checkIP address is already valid.
+func subnetContains(subnet netip.Prefix, checkIP string) bool {
+	ip, _ := netip.ParseAddr(checkIP)
+	return subnet.Contains(ip)
 }

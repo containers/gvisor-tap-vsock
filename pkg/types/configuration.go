@@ -22,6 +22,12 @@ type Configuration struct {
 	// IP address of the virtual gateway
 	GatewayIP string `yaml:"gatewayIP,omitempty"`
 
+	// IP address of the device in the virtual network
+	DeviceIP string `yaml:"deviceIP,omitempty"`
+
+	// IP address of the host in the virtual network
+	HostIP string `yaml:"hostIP,omitempty"`
+
 	// MAC address of the virtual gateway
 	GatewayMacAddress string `yaml:"gatewayMacAddress,omitempty"`
 
