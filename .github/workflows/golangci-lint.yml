@@ -15,6 +15,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: 'stable'
+          # Pin to 1.24.x so only one of gvisor's runtime_constants_go125/go126 is built.
+          # With Go 1.26+, both go1.25 and go1.26 build tags are true and the two files
+          # redeclare the same constants, breaking typecheck.
+          go-version: '1.24.x'
       - name: golangci-lint
         run: make cross-lint
