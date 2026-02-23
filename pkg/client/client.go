@@ -127,6 +127,27 @@ func (c *Client) ListDNS() ([]types.Zone, error) {
 	return dnsZone, nil
 }
 
+// dnsPost sends a POST request to a DNS API path with a JSON body and returns an error on non-200.
+func (c *Client) dnsPost(path string, req interface{}) error {
+	bin, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	res, err := c.client.Post(fmt.Sprintf("%s%s", c.base, path), "application/json", bytes.NewReader(bin))
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		body, readErr := io.ReadAll(res.Body)
+		if readErr != nil {
+			return fmt.Errorf("error while reading error message: %v", readErr)
+		}
+		return errors.New(strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 // AddDNS adds a new DNS zone to the built-in DNS server
 //
 // Request:
@@ -135,23 +156,39 @@ func (c *Client) ListDNS() ([]types.Zone, error) {
 // Response:
 // HTTP Status Code
 func (c *Client) AddDNS(req *types.Zone) error {
-	bin, err := json.Marshal(req)
-	if err != nil {
-		return err
+	return c.dnsPost("/services/dns/add", req)
+}
+
+// RemoveDNS removes a DNS zone by name from the built-in DNS server
+//
+// Request:
+// POST /services/dns/remove
+// {"Name":"test.internal."}
+// Response:
+// HTTP Status Code
+func (c *Client) RemoveDNS(req *types.Zone) error {
+	return c.dnsPost("/services/dns/remove", req)
+}
+
+// removeDNSRecordRequest is the JSON body for /services/dns/remove/record
+type removeDNSRecordRequest struct {
+	Name   string       `json:"name"`
+	Record types.Record `json:"record"`
+}
+
+// RemoveDNSRecord removes a record from a DNS zone
+//
+// Request:
+// POST /services/dns/remove/record
+// {"name":"dynamic.internal.","record":{"Name":"test","IP":"192.168.127.254"}}
+// Response:
+// HTTP Status Code
+func (c *Client) RemoveDNSRecord(zoneName string, record *types.Record) error {
+	if zoneName == "" {
+		return errors.New("zone name is required")
 	}
-	res, err := c.client.Post(fmt.Sprintf("%s%s", c.base, "/services/dns/add"), "application/json", bytes.NewReader(bin))
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		err, readErr := io.ReadAll(res.Body)
-		if readErr != nil {
-			return fmt.Errorf("error while reading error message: %v", readErr)
-		}
-		return errors.New(strings.TrimSpace(string(err)))
-	}
-	return nil
+	req := removeDNSRecordRequest{Name: zoneName, Record: *record}
+	return c.dnsPost("/services/dns/remove/record", req)
 }
 
 // ListDHCPLeases shows the configuration of the built-in DNS server
