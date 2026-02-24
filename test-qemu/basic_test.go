@@ -56,19 +56,22 @@ var _ = ginkgo.Describe("command-line format", func() {
 
 var _ = ginkgo.Describe("ping with gvproxy", func() {
 	ginkgo.It("should succeed to ping a known domain", func() {
+		ginkgo.Skip("this test is not run in CI, because on Azure ICMP is blocked by default")
 		out, err := sshExec("ping -w2 crc.dev")
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	})
+	ginkgo.It("should succeed to ping a known IP", func() {
+		ginkgo.Skip("this test is not run in CI, because on Azure ICMP is blocked by default")
+		out, err := sshExec("ping -w2 1.1.1.1")
+		log.Infof("ping: %s", out)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	})
+
 	ginkgo.It("should fail to ping an unknown domain", func() {
 		out, err := sshExec("ping -w2 unknown.crc.dev")
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).To(gomega.HaveOccurred())
-	})
-	ginkgo.It("should succeed to ping a known IP", func() {
-		out, err := sshExec("ping -w2 1.1.1.1")
-		log.Infof("ping: %s", out)
-		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	})
 	ginkgo.It("should fail to ping an unknown IP", func() {
 		out, err := sshExec("ping -w2 7.7.7.7")
