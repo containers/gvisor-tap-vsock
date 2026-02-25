@@ -16,6 +16,7 @@ import (
 	e2e "github.com/containers/gvisor-tap-vsock/test"
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
+	log "github.com/sirupsen/logrus"
 )
 
 var _ = ginkgo.Describe("connectivity with vfkit", func() {
@@ -100,5 +101,32 @@ var _ = ginkgo.Describe("upload and download with vfkit", func() {
 		}
 		// Set tmpDir to dlTmpDir for cleanup in AfterEach
 		tmpDir = dlTmpDir
+	})
+})
+var _ = ginkgo.Describe("ping with gvproxy and vfkit", func() {
+	ginkgo.It("should succeed to ping a known domain", func() {
+		out, err := sshExec("ping -w2 crc.dev")
+		log.Infof("ping: %s", out)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	})
+	ginkgo.It("should fail to ping an unknown domain", func() {
+		out, err := sshExec("ping -w2 unknown.crc.dev")
+		log.Infof("ping: %s", out)
+		gomega.Expect(err).To(gomega.HaveOccurred())
+	})
+	ginkgo.It("should succeed to ping a known IP", func() {
+		out, err := sshExec("ping -w2 1.1.1.1")
+		log.Infof("ping: %s", out)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	})
+	ginkgo.It("should fail to ping an unknown IP", func() {
+		out, err := sshExec("ping -w2 7.7.7.7")
+		log.Infof("ping: %s", out)
+		gomega.Expect(err).To(gomega.HaveOccurred())
+	})
+	ginkgo.It("should succeed to ping an localhost", func() {
+		out, err := sshExec("ping -w2 127.0.0.1")
+		log.Infof("ping: %s", out)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	})
 })
