@@ -2,6 +2,6 @@
 
 package e2eqemu
 
-func efiArgs() (string, error) {
-	return "", nil
+func efiArgs() ([]string, error) {
+	return nil, nil
 }

@@ -3,7 +3,7 @@ package e2eqemu
 import (
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	e2e "github.com/containers/gvisor-tap-vsock/test"
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
 
