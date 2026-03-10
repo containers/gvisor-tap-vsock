@@ -319,7 +319,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		dest := &url.URL{
 			Scheme: "ssh",
 			User:   url.User(config.Forwards[i].User),
-			Host:   sshHostPort,
+			Host:   net.JoinHostPort(config.Stack.DeviceIP, "22"),
 			Path:   config.Forwards[i].Dest,
 		}
 		j := i
