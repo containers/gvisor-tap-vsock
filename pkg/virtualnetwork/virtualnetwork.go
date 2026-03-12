@@ -15,6 +15,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -27,6 +28,7 @@ type VirtualNetwork struct {
 	networkSwitch *tap.Switch
 	servicesMux   http.Handler
 	ipPool        *tap.IPPool
+	ipv6Pool      *tap.IPPool
 }
 
 func (n *VirtualNetwork) SetNotificationSender(notificationSender *notification.NotificationSender) {
@@ -47,11 +49,25 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		ipPool.Reserve(net.ParseIP(ip), mac)
 	}
 
+	// Parse IPv6 subnet and create IPPool
+	var ipv6Pool *tap.IPPool
+	if configuration.SubnetIPv6 != "" {
+		_, subnetIPv6, err := net.ParseCIDR(configuration.SubnetIPv6)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse IPv6 subnet cidr: %w", err)
+		}
+		ipv6Pool = tap.NewIPPool(subnetIPv6)
+		// Reserve gateway IPv6 address
+		if configuration.GatewayIPv6 != "" {
+			ipv6Pool.Reserve(net.ParseIP(configuration.GatewayIPv6), "gateway")
+		}
+	}
+
 	mtu := configuration.MTU
 	if mtu < 0 || mtu > math.MaxInt32 {
 		return nil, errors.New("mtu is out of range")
 	}
-	tapEndpoint, err := tap.NewLinkEndpoint(configuration.Debug, uint32(mtu), configuration.GatewayMacAddress, configuration.GatewayIP, configuration.GatewayVirtualIPs)
+	tapEndpoint, err := tap.NewLinkEndpoint(configuration.Debug, uint32(mtu), configuration.GatewayMacAddress, configuration.GatewayIP, configuration.GatewayIPv6, configuration.SubnetIPv6, configuration.GatewayVirtualIPs)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create tap endpoint: %w", err)
 	}
@@ -78,7 +94,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		return nil, fmt.Errorf("cannot create network stack: %w", err)
 	}
 
-	mux, err := addServices(configuration, stack, ipPool)
+	mux, err := addServices(configuration, stack, ipPool, ipv6Pool)
 	if err != nil {
 		return nil, fmt.Errorf("cannot add network services: %w", err)
 	}
@@ -89,6 +105,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		networkSwitch: networkSwitch,
 		servicesMux:   mux,
 		ipPool:        ipPool,
+		ipv6Pool:      ipv6Pool,
 	}, nil
 }
 
@@ -109,6 +126,7 @@ func (n *VirtualNetwork) BytesReceived() uint64 {
 func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint) (*stack.Stack, error) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
+			ipv6.NewProtocol,
 			ipv4.NewProtocol,
 			arp.NewProtocol,
 		},
@@ -116,6 +134,7 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 			tcp.NewProtocol,
 			udp.NewProtocol,
 			icmp.NewProtocol4,
+			icmp.NewProtocol6,
 		},
 	})
 
@@ -126,6 +145,15 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 	if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddrFrom4Slice(net.ParseIP(configuration.GatewayIP).To4()).WithPrefix(),
+	}, stack.AddressProperties{}); err != nil {
+		return nil, errors.New(err.String())
+	}
+	if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{
+		Protocol: ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFrom16Slice(net.ParseIP(configuration.GatewayIPv6)),
+			PrefixLen: 64,
+		},
 	}, stack.AddressProperties{}); err != nil {
 		return nil, errors.New(err.String())
 	}
@@ -142,13 +170,32 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse subnet: %w", err)
 	}
-	s.SetRouteTable([]tcpip.Route{
+
+	routes := []tcpip.Route{
 		{
 			Destination: subnet,
 			Gateway:     tcpip.Address{},
 			NIC:         1,
 		},
-	})
+	}
+
+	if configuration.SubnetIPv6 != "" {
+		_, parsedSubnetIPv6, err := net.ParseCIDR(configuration.SubnetIPv6)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse IPv6 cidr: %w", err)
+		}
+		subnetIPv6, err := tcpip.NewSubnet(tcpip.AddrFromSlice(parsedSubnetIPv6.IP), tcpip.MaskFromBytes(parsedSubnetIPv6.Mask))
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse IPv6 subnet: %w", err)
+		}
+		routes = append(routes, tcpip.Route{
+			Destination: subnetIPv6,
+			Gateway:     tcpip.Address{},
+			NIC:         1,
+		})
+	}
+
+	s.SetRouteTable(routes)
 
 	return s, nil
 }
