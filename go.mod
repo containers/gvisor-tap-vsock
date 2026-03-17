@@ -6,7 +6,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/containers/winquit v1.1.0
-	github.com/coreos/stream-metadata-go v0.4.10
+	github.com/coreos/stream-metadata-go v0.4.11
 	github.com/dustin/go-humanize v1.0.1
 	github.com/foxcpp/go-mockdns v1.2.0
 	github.com/google/gopacket v1.1.19
