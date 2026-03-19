@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/notification"
+	"github.com/containers/gvisor-tap-vsock/pkg/services/forwarder"
 	"github.com/containers/gvisor-tap-vsock/pkg/tap"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -27,10 +28,14 @@ type VirtualNetwork struct {
 	networkSwitch *tap.Switch
 	servicesMux   http.Handler
 	ipPool        *tap.IPPool
+	networkFilter *forwarder.SharedFilter
 }
 
 func (n *VirtualNetwork) SetNotificationSender(notificationSender *notification.NotificationSender) {
 	n.networkSwitch.SetNotificationSender(notificationSender)
+	if n.networkFilter != nil {
+		n.networkFilter.SetNotifyFunc(notificationSender.Send)
+	}
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {
@@ -78,7 +83,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		return nil, fmt.Errorf("cannot create network stack: %w", err)
 	}
 
-	mux, err := addServices(configuration, stack, ipPool)
+	mux, filter, err := addServices(configuration, stack, ipPool)
 	if err != nil {
 		return nil, fmt.Errorf("cannot add network services: %w", err)
 	}
@@ -89,6 +94,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		networkSwitch: networkSwitch,
 		servicesMux:   mux,
 		ipPool:        ipPool,
+		networkFilter: filter,
 	}, nil
 }
 

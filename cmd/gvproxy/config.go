@@ -46,6 +46,8 @@ type GvproxyArgs struct {
 	logFile            string
 	servicesEndpoint   string
 	ec2MetadataAccess  bool
+	networkPolicyFile  string
+	secureMode         bool
 }
 
 type GvproxyConfig struct {
@@ -132,6 +134,8 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.StringVar(&args.logFile, "log-file", "", "Output log messages (logrus) to a given file path")
 	flagSet.StringVar(&args.servicesEndpoint, "services", "", "Exposes the same HTTP API as the --listen flag, without the /connect endpoint")
 	flagSet.BoolVar(&args.ec2MetadataAccess, "ec2-metadata-access", false, "Permits access to EC2 Metadata Service (TCP only)")
+	flagSet.StringVar(&args.networkPolicyFile, "network-policy", "", "Path to a YAML file defining outbound network policy (ACL and DNS filtering)")
+	flagSet.BoolVar(&args.secureMode, "secure-mode", false, "Deny all outbound traffic by default. Connections are held pending for interactive approval via the services HTTP API and notification socket")
 	flagSet.StringVar(&args.notificationSocket, "notification", "", "Socket to be used to send network-ready notifications")
 	if err := flagSet.Parse(argv); err != nil {
 		return nil, err
@@ -259,6 +263,28 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	}
 	if args.ec2MetadataAccess {
 		config.Ec2MetadataAccess = true
+	}
+	if args.secureMode {
+		config.Stack.NetworkPolicy = &types.NetworkPolicy{
+			DefaultAction: "deny",
+			Interactive:   true,
+			DNSPolicy: &types.DNSPolicy{
+				DefaultAction: "deny",
+			},
+		}
+		log.Info("secure mode enabled: all outbound traffic denied by default, interactive approval required")
+	}
+	if args.networkPolicyFile != "" {
+		policyContent, err := os.ReadFile(args.networkPolicyFile)
+		if err != nil {
+			return config, fmt.Errorf("failed to read network policy file: %w", err)
+		}
+		var policy types.NetworkPolicy
+		if err := yaml.Unmarshal(policyContent, &policy); err != nil {
+			return config, fmt.Errorf("failed to parse network policy file: %w", err)
+		}
+		config.Stack.NetworkPolicy = &policy
+		log.Infof("loaded network policy from %s (default action: %s)", args.networkPolicyFile, policy.DefaultAction)
 	}
 	if args.mtu != 0 {
 		config.Stack.MTU = args.mtu

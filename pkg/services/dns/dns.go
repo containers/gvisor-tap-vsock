@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/forwarder"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -24,9 +25,11 @@ type upstreamResolver interface {
 }
 
 type dnsHandler struct {
-	zones     []types.Zone
-	zonesLock sync.RWMutex
-	upstream  upstreamResolver
+	zones         []types.Zone
+	zonesLock     sync.RWMutex
+	upstream      upstreamResolver
+	filter        *DNSFilter
+	networkFilter *forwarder.SharedFilter
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
@@ -122,6 +125,11 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 			return
 		}
 
+		if h.filter != nil && !h.filter.Allow(q.Name) {
+			m.Rcode = dns.RcodeNameError
+			return
+		}
+
 		resolver := h.upstream
 		switch q.Qtype {
 		case dns.TypeA:
@@ -143,6 +151,11 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 					},
 					A: ip.IP.To4(),
 				})
+				// Auto-allow resolved IPs in the network filter so the
+				// user doesn't have to approve both DNS and TCP separately.
+				if h.networkFilter != nil {
+					h.networkFilter.AutoAllowIP(ip.IP.To4(), q.Name)
+				}
 			}
 		case dns.TypeCNAME:
 			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
@@ -243,15 +256,19 @@ type Server struct {
 	handler *dnsHandler
 }
 
-func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Server, error) {
+func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, dnsPolicy *types.DNSPolicy, networkFilter *forwarder.SharedFilter) (*Server, error) {
 	upstream := &net.Resolver{
 		PreferGo: false,
 	}
-	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream)
+	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream, dnsPolicy, networkFilter)
 }
 
-func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver) (*Server, error) {
-	handler := &dnsHandler{zones: zones, upstream: upstream}
+func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver, dnsPolicy *types.DNSPolicy, networkFilter *forwarder.SharedFilter) (*Server, error) {
+	dnsFilter := NewDNSFilter(dnsPolicy)
+	if dnsFilter != nil {
+		dnsFilter.SetNetworkFilter(networkFilter)
+	}
+	handler := &dnsHandler{zones: zones, upstream: upstream, filter: dnsFilter, networkFilter: networkFilter}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
 }
 
@@ -297,6 +314,38 @@ func (s *Server) Mux() http.Handler {
 		s.addZone(req)
 		w.WriteHeader(http.StatusOK)
 	})
+
+	// DNS filter endpoints
+	mux.HandleFunc("/pending", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(s.handler.filter.DeniedDomains())
+	})
+
+	mux.HandleFunc("/allowed", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(s.handler.filter.DynamicAllowed())
+	})
+
+	mux.HandleFunc("/allow", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "post only", http.StatusBadRequest)
+			return
+		}
+		var req struct {
+			Domain string `json:"domain"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Domain == "" {
+			http.Error(w, "domain is required", http.StatusBadRequest)
+			return
+		}
+		s.handler.filter.AddAllowed(req.Domain)
+		w.WriteHeader(http.StatusOK)
+	})
+
 	return mux
 }
 
