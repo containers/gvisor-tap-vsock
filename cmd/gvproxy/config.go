@@ -237,6 +237,9 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	if args.vpnkitSocket != "" {
 		config.Interfaces.VPNKit = args.vpnkitSocket
 	}
+	if args.stdioSocket != "" {
+		config.Interfaces.Stdio = args.stdioSocket
+	}
 	if args.pidFile != "" {
 		config.PIDFile = args.pidFile
 	}
