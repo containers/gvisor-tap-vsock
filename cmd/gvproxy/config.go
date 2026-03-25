@@ -402,33 +402,36 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	return config, nil
 }
 
-func getFirstUsableIPFromSubnet(network netip.Prefix) (netip.Addr, error) {
-	// The network must have at least 5 IP addresses: network, broadcast, gateway, guest, and preferably host
+func getFirstUsableIPFromSubnet(subnet netip.Prefix) (netip.Addr, error) {
+	// The subnet must have at least 5 IP addresses: network, broadcast, gateway, guest, and preferably host
 	// v4/30 has only 2 devices, thus prefer at least v4/29 CIDR. This code works also for IPv6, just in case
-	if (network.Bits() + 3) > network.Addr().BitLen() {
-		return netip.Addr{}, errors.New("too small network")
+	if subnet.Bits()+3 > subnet.Addr().BitLen() {
+		return netip.Addr{}, errors.New("subnet too small")
 	}
 
-	b := network.Masked().Addr().AsSlice()
-	b[len(b)-1] += 1
+	// First IP in the prefix (subnet address)
+	base := subnet.Masked().Addr()
 
-	addr, ok := netip.AddrFromSlice(b)
-	if !ok {
-		return netip.Addr{}, errors.New("bad ip address")
-	}
-
-	return addr, nil
+	// Next address after subnet
+	return getNextUsableIPFromSubnet(subnet, base)
 }
 
-func getLastUsableIPFromSubnet(network netip.Prefix) (netip.Addr, error) {
-	// The network must have at least 5 IP addresses: network, broadcast, gateway, guest, and preferably host
-	// v4/30 has only 2 devices, thus prefer at least v4/29 CIDR. This code works also for IPv6, just in case
-	if (network.Bits() + 3) > network.Addr().BitLen() {
-		return netip.Addr{}, errors.New("too small network")
+func getNextUsableIPFromSubnet(subnet netip.Prefix, addr netip.Addr) (netip.Addr, error) {
+	nextIP := addr.Next()
+	if !nextIP.IsValid() || !subnet.Contains(nextIP) {
+		return netip.Addr{}, errors.New("no usable IP in subnet")
 	}
+	return nextIP, nil
+}
 
-	var b = network.Masked().Addr().AsSlice()
-	for i, v := range net.CIDRMask(network.Bits(), network.Addr().BitLen()) {
+func getLastUsableIPFromSubnet(subnet netip.Prefix) (netip.Addr, error) {
+	// The subnet must have at least 5 IP addresses: network, broadcast, gateway, guest, and preferably host
+	// v4/30 has only 2 devices, thus prefer at least v4/29 CIDR. This code works also for IPv6, just in case
+	if subnet.Bits()+3 > subnet.Addr().BitLen() {
+		return netip.Addr{}, errors.New("subnet too small")
+	}
+	var b = subnet.Masked().Addr().AsSlice()
+	for i, v := range net.CIDRMask(subnet.Bits(), subnet.Addr().BitLen()) {
 		b[i] += ^v
 	}
 	b[len(b)-1] -= 1
