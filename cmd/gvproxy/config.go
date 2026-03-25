@@ -18,11 +18,8 @@ import (
 )
 
 const (
-	// 	gatewayIP   = "192.168.127.1"
-	sshHostPort = "192.168.127.2:22"
-	hostIP      = "192.168.127.254"
-	host        = "host"
-	gateway     = "gateway"
+	host    = "host"
+	gateway = "gateway"
 )
 
 type GvproxyArgs struct {
@@ -31,6 +28,10 @@ type GvproxyArgs struct {
 	debug              bool
 	mtu                int
 	sshPort            int
+	subnet             string
+	gatewayIP          string
+	deviceIP           string
+	hostIP             string
 	vpnkitSocket       string
 	qemuSocket         string
 	bessSocket         string
@@ -119,6 +120,10 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.StringVar(&args.pcapFile, "pcap", "", "Capture network traffic to a pcap file")
 	flagSet.IntVar(&args.mtu, "mtu", 0, "Set the MTU (default: 1500)")
 	flagSet.IntVar(&args.sshPort, "ssh-port", 2222, "Port to access the guest virtual machine. Must be between 1024 and 65535")
+	flagSet.StringVar(&args.subnet, "subnet", "192.168.127.0/24", "Subnet address in CIDR format, e.g. 192.168.127.0/24")
+	flagSet.StringVar(&args.gatewayIP, "gatewayIP", "", "Gateway IP address, default is first usable address of subnet")
+	flagSet.StringVar(&args.deviceIP, "deviceIP", "", "Device IP address, default is second usable address of subnet")
+	flagSet.StringVar(&args.hostIP, "hostIP", "", "Host IP address, default is last usable address of subnet")
 	flagSet.StringVar(&args.vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
 	flagSet.StringVar(&args.qemuSocket, "listen-qemu", "", "Socket to be used by Qemu")
 	flagSet.StringVar(&args.bessSocket, "listen-bess", "", "unixpacket socket to be used by Bess-compatible applications")
@@ -181,37 +186,71 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		config.Stack.MTU = 1500
 	}
 	if config.Stack.Subnet == "" {
-		config.Stack.Subnet = "192.168.127.0/24"
+		config.Stack.Subnet = args.subnet
 	}
 
 	// Parse subnet address for further use
-	naddr, err := netip.ParsePrefix(config.Stack.Subnet)
+	subnet, err := netip.ParsePrefix(config.Stack.Subnet)
 	if err != nil {
 		return config, fmt.Errorf("failed to parse subnet: %w", err)
 	}
-	fuaddr, err := getFirstUsableIPFromSubnet(naddr)
-	if err != nil {
-		return config, fmt.Errorf("failed to identify first usable address in subnet: %w", err)
+
+	// Set addresses to either default values for subnet or user-specified ones
+	if config.Stack.GatewayIP == "" {
+		if args.gatewayIP == "" {
+			// if user did not set the IP in the flag, we get it from the subnet
+			fuaddr, err := getFirstUsableIPFromSubnet(subnet)
+			if err != nil {
+				return config, fmt.Errorf("failed to identify usable gateway IP address in subnet: %w", err)
+			}
+			config.Stack.GatewayIP = fuaddr.String() // for default subnet: 192.168.127.1
+		} else {
+			config.Stack.GatewayIP = args.gatewayIP
+		}
 	}
-	luaddr, err := getLastUsableIPFromSubnet(naddr)
-	if err != nil {
-		return config, fmt.Errorf("failed to identify last usable address in subnet: %w", err)
+	if config.Stack.DeviceIP == "" {
+		if args.deviceIP == "" {
+			firstIP, err := getFirstUsableIPFromSubnet(subnet)
+			if err != nil {
+				return config, fmt.Errorf("failed to identify usable device IP address in subnet: %w", err)
+			}
+			nextIP, err := getNextUsableIPFromSubnet(subnet, firstIP)
+			if err != nil {
+				return config, fmt.Errorf("failed to identify usable device IP address in subnet: %w", err)
+			}
+			config.Stack.DeviceIP = nextIP.String() // for default subnet: 192.168.127.2
+		} else {
+			config.Stack.DeviceIP = args.deviceIP
+		}
+	}
+	if config.Stack.HostIP == "" {
+		if args.hostIP == "" {
+			luaddr, err := getLastUsableIPFromSubnet(subnet)
+			if err != nil {
+				return config, fmt.Errorf("failed to identify usable host IP address in subnet: %w", err)
+			}
+			config.Stack.HostIP = luaddr.String() // for default subnet: 192.168.127.254
+		} else {
+			config.Stack.HostIP = args.hostIP
+		}
 	}
 
-	if config.Stack.GatewayIP == "" {
-		config.Stack.GatewayIP = fuaddr.String()
+	// Perform various checks on the supplied IPs
+	if err := validateConfigIPs(config.Stack); err != nil {
+		return config, fmt.Errorf("failed to validate configuration IPs: %w", err)
 	}
+
 	if config.Stack.GatewayMacAddress == "" {
 		config.Stack.GatewayMacAddress = "5a:94:ef:e4:0c:dd"
 	}
 	if len(config.Stack.NAT) == 0 {
 		config.Stack.NAT = map[string]string{
-			luaddr.String(): "127.0.0.1",
+			config.Stack.HostIP: "127.0.0.1",
 		}
 	}
 	if len(config.Stack.GatewayVirtualIPs) == 0 {
 		config.Stack.GatewayVirtualIPs = []string{
-			luaddr.String(),
+			config.Stack.HostIP,
 		}
 	}
 
@@ -311,7 +350,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 
 	if args.config != "" {
 		if slices.Contains(os.Args, "-ssh-port") || slices.Contains(os.Args, "--ssh-port") {
-			log.Warningf("CLI argument \"-ssh-port\" is unavailable with config file. You need to add \"127.0.0.1:%d: 192.168.127.2:22\" entry into .stack.forwards in \"\" instead", args.sshPort)
+			log.Warningf("CLI argument \"-ssh-port\" is unavailable with config file. You need to add \"127.0.0.1:%d: %s:22\" entry into .stack.forwards in \"\" instead", args.sshPort, config.Stack.DeviceIP)
 		}
 	}
 
@@ -329,6 +368,8 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	if InDebugMode() {
 		config.Stack.Debug = true
 	}
+
+	sshHostPort := net.JoinHostPort(config.Stack.DeviceIP, "22")
 
 	// Handle the default behavior without config
 	if args.config == "" {
@@ -348,7 +389,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 					},
 					{
 						Name: host,
-						IP:   net.ParseIP(hostIP),
+						IP:   net.ParseIP(config.Stack.HostIP),
 					},
 				},
 			},
@@ -361,7 +402,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 					},
 					{
 						Name: host,
-						IP:   net.ParseIP(hostIP),
+						IP:   net.ParseIP(config.Stack.HostIP),
 					},
 				},
 			},
@@ -369,7 +410,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		config.Stack.DNSSearchDomains = searchDomains()
 		config.Stack.Forwards = getForwardsMap(args.sshPort, sshHostPort)
 		config.Stack.DHCPStaticLeases = map[string]string{
-			"192.168.127.2": "5a:94:ef:e4:0c:ee",
+			config.Stack.DeviceIP: "5a:94:ef:e4:0c:ee",
 		}
 		config.Stack.VpnKitUUIDMacAddresses = map[string]string{
 			"c3d68012-0208-11ea-9fd7-f2189899ab08": "5a:94:ef:e4:0c:ee",
@@ -438,8 +479,53 @@ func getLastUsableIPFromSubnet(subnet netip.Prefix) (netip.Addr, error) {
 
 	addr, ok := netip.AddrFromSlice(b)
 	if !ok {
-		return netip.Addr{}, errors.New("bad ip address")
+		return netip.Addr{}, errors.New("bad IP address")
 	}
 
 	return addr, nil
+}
+
+func validateConfigIPs(config types.Configuration) error {
+	subnet, err := netip.ParsePrefix(config.Subnet)
+	if err != nil {
+		return fmt.Errorf("failed to parse subnet: %w", err)
+	}
+
+	lastPrev, err := getLastUsableIPFromSubnet(subnet)
+	if err != nil {
+		return err
+	}
+	last, err := getNextUsableIPFromSubnet(subnet, lastPrev)
+	if err != nil {
+		return err
+	}
+
+	// Check for IP validity and whether it's different from subnet or broadcast addresses
+	// and inside the subnet
+	ips := []string{config.GatewayIP, config.DeviceIP, config.HostIP}
+	for _, ip := range ips {
+		ipParsed, err := netip.ParseAddr(ip)
+		if err != nil {
+			return fmt.Errorf("invalid IP address: %s", ip)
+		}
+
+		if !subnet.Contains(ipParsed) {
+			return fmt.Errorf("IP (%s) not in subnet (%s)", ip, subnet)
+		}
+
+		if ip == subnet.Addr().String() {
+			return fmt.Errorf("IP must not be address of subnet: %s", ip)
+		}
+		if ip == last.String() {
+			return fmt.Errorf("IP must not be broadcast address: %s", ip)
+		}
+	}
+
+	// Check whether all three IPs are different
+	ipMap := map[string]bool{config.GatewayIP: true, config.DeviceIP: true, config.HostIP: true}
+	if len(ipMap) != 3 {
+		return fmt.Errorf("IP addresses need to be distinct")
+	}
+
+	return nil
 }
