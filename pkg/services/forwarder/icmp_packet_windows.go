@@ -36,33 +36,29 @@ func createDestinationAddr(dstIP net.IP) net.Addr {
 }
 
 // extractICMPData extracts ICMP data from the received bytes.
-// On Windows with raw sockets, it skips the IP header.
+// Some Windows stacks return IPv4 with the IP header; others return ICMP only (e.g. echo
+// reply type 0 makes the first byte 0x00, which is not IPv4 version 4). If the buffer
+// starts with an IPv4 header, strip it; otherwise return the payload as-is.
 func extractICMPData(replyBytes []byte) ([]byte, error) {
-	// Raw sockets on Windows include the IP header, so we need to skip it
-	if len(replyBytes) < 20 {
-		log.Debugf("Reply packet too short: %d bytes", len(replyBytes))
-		return nil, fmt.Errorf("reply packet too short: %d bytes", len(replyBytes))
+	if len(replyBytes) == 0 {
+		return nil, fmt.Errorf("reply packet empty")
 	}
-
-	// Check if it's IPv4 (first byte: version and IHL)
 	version := (replyBytes[0] >> 4) & 0x0F
 	if version != 4 {
-		log.Debugf("Unexpected IP version: %d", version)
-		return nil, fmt.Errorf("unexpected IP version: %d", version)
+		return replyBytes, nil
 	}
-
-	// Get IP header length (IHL is in the lower 4 bits of first byte, in 4-byte units)
+	if len(replyBytes) < 20 {
+		return nil, fmt.Errorf("reply packet too short for IPv4: %d bytes", len(replyBytes))
+	}
 	ihl := int(replyBytes[0]&0x0F) * 4
 	if ihl < 20 || ihl > len(replyBytes) {
-		log.Debugf("Invalid IP header length: %d", ihl)
 		return nil, fmt.Errorf("invalid IP header length: %d", ihl)
 	}
-
 	return replyBytes[ihl:], nil
 }
 
 // getExpectedReplyIdent returns the ICMP echo identifier to expect in the reply.
 // On Windows (raw sockets) the kernel preserves the ID we send.
-func getExpectedReplyIdent(conn *netIcmp.PacketConn, sentIdent uint16) uint16 {
+func getExpectedReplyIdent(_ *netIcmp.PacketConn, sentIdent uint16) uint16 {
 	return sentIdent
 }
