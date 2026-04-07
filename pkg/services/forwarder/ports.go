@@ -213,8 +213,12 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		if err != nil {
 			return err
 		}
-		p, err := NewUDPProxy(listener, func() (net.Conn, error) {
-			return gonet.DialUDP(f.stack, nil, &address, ipv4.ProtocolNumber)
+		p, err := NewUDPProxy(listener, func(from net.Addr) (net.Conn, error) {
+			var bindAddr *tcpip.FullAddress
+			if a, ok := from.(*net.UDPAddr); ok {
+				bindAddr = sourceBindAddr(a.IP, a.Port)
+			}
+			return gonet.DialUDP(f.stack, bindAddr, &address, ipv4.ProtocolNumber)
 		})
 		if err != nil {
 			return err
@@ -236,7 +240,13 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		p.AddRoute(local, &tcpproxy.DialProxy{
 			Addr: remote,
 			DialContext: func(ctx context.Context, _, _ string) (conn net.Conn, e error) {
-				return gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
+				var bindAddr tcpip.FullAddress
+				if a, ok := ctx.Value(tcpproxy.SourceAddrContextKey).(*net.TCPAddr); ok {
+					if b := sourceBindAddr(a.IP, a.Port); b != nil {
+						bindAddr = *b
+					}
+				}
+				return gonet.DialTCPWithBind(ctx, f.stack, bindAddr, address, ipv4.ProtocolNumber)
 			},
 		})
 		if err := p.Start(); err != nil {
@@ -360,6 +370,24 @@ func remote(req types.ExposeRequest, ip string) (string, error) {
 		return fmt.Sprintf("%s%s", host, req.Remote), nil
 	}
 	return req.Remote, nil
+}
+
+// sourceBindAddr returns the gvisor-stack bind address used to propagate a
+// client's source IP to the guest, or nil when the source IP must not be
+// propagated (so the caller falls back to the default gateway source).
+//
+// Loopback and unspecified addresses are skipped: the guest sends its replies
+// back to the source IP via the gateway, and gvisor drops those replies as
+// martian packets when their destination is a loopback address on the
+// (non-loopback) tap NIC. This notably covers host-local forwards such as
+// 127.0.0.1:2222 -> 192.168.127.2:22.
+func sourceBindAddr(ip net.IP, port int) *tcpip.FullAddress {
+	v4 := ip.To4()
+	if v4 == nil || ip.IsLoopback() || ip.IsUnspecified() {
+		return nil
+	}
+	//#nosec G115 -- port originates from a net.Addr and always fits in a uint16
+	return &tcpip.FullAddress{NIC: 1, Addr: tcpip.AddrFrom4Slice(v4), Port: uint16(port)}
 }
 
 // helper function for parsed URL query strings
