@@ -1,16 +1,26 @@
 package e2eutils
 
 import (
+	"archive/zip"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/sirupsen/logrus"
 )
+
+type decompressMeta struct {
+	CompressedSHA256 string `json:"compressed_sha256"`
+	UncompressedSize int64  `json:"uncompressed_size"`
+}
 
 // DownloadVMImage downloads a VM image from url to given path
 // with download status
@@ -49,20 +59,92 @@ func DownloadVMImage(downloadURL string, localImagePath string) error {
 	return nil
 }
 
-func Decompress(localPath string) (string, error) {
-	uncompressedPath := ""
-	if strings.HasSuffix(localPath, ".xz") {
-		uncompressedPath = strings.TrimSuffix(localPath, ".xz")
-	} else if strings.HasSuffix(localPath, ".gz") {
-		uncompressedPath = strings.TrimSuffix(localPath, ".gz")
+// DownloadVMImageIfMissing downloads the VM image only when localImagePath is missing or empty.
+// A non-empty existing file is treated as a valid cached copy to speed up repeated test runs.
+func DownloadVMImageIfMissing(downloadURL string, localImagePath string) error {
+	if fi, err := os.Stat(localImagePath); err == nil && fi.Size() > 0 {
+		logrus.Infof("Using cached VM image archive %s (%d bytes)", localImagePath, fi.Size())
+		return nil
 	}
+	return DownloadVMImage(downloadURL, localImagePath)
+}
 
-	if uncompressedPath == "" {
+func decompressMetaPath(compressedPath string) string {
+	return compressedPath + ".decompress_meta"
+}
+
+func sha256OfFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func readDecompressMeta(path string) (decompressMeta, error) {
+	var m decompressMeta
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return m, err
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return m, err
+	}
+	return m, nil
+}
+
+func writeDecompressMeta(path string, m decompressMeta) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0600)
+}
+
+func uncompressedPathForArchive(localPath string) (string, error) {
+	switch {
+	case strings.HasSuffix(localPath, ".xz"):
+		return strings.TrimSuffix(localPath, ".xz"), nil
+	case strings.HasSuffix(localPath, ".gz"):
+		return strings.TrimSuffix(localPath, ".gz"), nil
+	case strings.HasSuffix(localPath, ".zip"):
+		return strings.TrimSuffix(localPath, ".zip"), nil
+	default:
 		return "", fmt.Errorf("unsupported compression for %s", localPath)
 	}
+}
 
-	// we remove the uncompressed file if already exists. Maybe it has been used earlier and can affect the tests result
-	os.Remove(uncompressedPath)
+// Decompress unpacks a compressed VM image when the output is missing or does not match
+// the cached metadata for this archive (SHA-256 of the compressed file + uncompressed size).
+// That keeps repeated test runs fast while ensuring a full re-extract after archive updates
+// or failed/partial unpacks.
+func Decompress(localPath string) (string, error) {
+	uncompressedPath, err := uncompressedPathForArchive(localPath)
+	if err != nil {
+		return "", err
+	}
+
+	metaPath := decompressMetaPath(localPath)
+	sha, err := sha256OfFile(localPath)
+	if err != nil {
+		return "", err
+	}
+
+	if fi, err := os.Stat(uncompressedPath); err == nil {
+		meta, rerr := readDecompressMeta(metaPath)
+		if rerr == nil && meta.CompressedSHA256 == sha && meta.UncompressedSize == fi.Size() {
+			logrus.Infof("Using cached uncompressed image %s (%d bytes)", uncompressedPath, fi.Size())
+			return uncompressedPath, nil
+		}
+	}
+
+	_ = os.Remove(uncompressedPath)
+	_ = os.Remove(metaPath)
 
 	uncompressedFileWriter, err := os.OpenFile(uncompressedPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
@@ -71,13 +153,32 @@ func Decompress(localPath string) (string, error) {
 
 	fmt.Printf("Extracting %s\n", localPath)
 	if strings.HasSuffix(localPath, ".xz") {
-		err = decompressXZ(localPath, uncompressedFileWriter)
-	} else {
+		finished := make(chan bool)
+		err = decompressXZ(localPath, uncompressedFileWriter, finished)
+		<-finished
+	} else if strings.HasSuffix(localPath, ".gz") {
 		err = decompressGZ(localPath, uncompressedFileWriter)
+	} else if strings.HasSuffix(localPath, ".zip") {
+		err = decompressZip(localPath, uncompressedFileWriter)
 	}
 
 	if err != nil {
+		_ = uncompressedFileWriter.Close()
 		return "", err
+	}
+	if err := uncompressedFileWriter.Close(); err != nil {
+		return "", err
+	}
+
+	outFi, err := os.Stat(uncompressedPath)
+	if err != nil {
+		return "", err
+	}
+	if err := writeDecompressMeta(metaPath, decompressMeta{
+		CompressedSHA256: sha,
+		UncompressedSize: outFi.Size(),
+	}); err != nil {
+		logrus.Warnf("could not write decompress metadata: %v", err)
 	}
 	return uncompressedPath, nil
 }
@@ -85,19 +186,53 @@ func Decompress(localPath string) (string, error) {
 // Will error out if file without .xz already exists
 // Maybe extracting then renameing is a good idea here..
 // depends on xz: not pre-installed on mac, so it becomes a brew dependency
-func decompressXZ(src string, output io.Writer) error {
-	cmd := exec.Command("xzcat", "-T0", "-k", src)
-	stdOut, err := cmd.StdoutPipe()
+func decompressXZ(src string, output io.Writer, finished chan bool) error {
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("..\\tools\\bin\\gxz.exe", "-d", "-c", src)
+		stdOut, err := cmd.StdoutPipe()
+		if err != nil {
+			return err
+		}
+		cmd.Stderr = os.Stderr
+		go func() {
+			if _, err := io.Copy(output, stdOut); err != nil {
+				logrus.Error(err)
+			}
+			finished <- true
+		}()
+		return cmd.Run()
+	} else {
+		cmd := exec.Command("xzcat", "-T0", "-k", src)
+		stdOut, err := cmd.StdoutPipe()
+		if err != nil {
+			return err
+		}
+		cmd.Stderr = os.Stderr
+		go func() {
+			if _, err := io.Copy(output, stdOut); err != nil {
+				logrus.Error(err)
+			}
+			finished <- true
+		}()
+		return cmd.Run()
+	}
+}
+
+func decompressZip(src string, output io.Writer) error {
+	zipReader, err := zip.OpenReader(src)
 	if err != nil {
 		return err
 	}
-	cmd.Stderr = os.Stderr
-	go func() {
-		if _, err := io.Copy(output, stdOut); err != nil {
-			logrus.Error(err)
+	defer zipReader.Close()
+	for _, file := range zipReader.File {
+		rc, err := file.Open()
+		if err != nil {
+			return err
 		}
-	}()
-	return cmd.Run()
+		defer rc.Close()
+		_, err = io.Copy(output, rc)
+	}
+	return nil
 }
 
 func decompressGZ(src string, output io.Writer) error {
