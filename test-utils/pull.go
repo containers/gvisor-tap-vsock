@@ -6,10 +6,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/sirupsen/logrus"
+	"github.com/ulikunitz/xz"
 )
 
 // DownloadVMImage downloads a VM image from url to given path
@@ -82,22 +82,28 @@ func Decompress(localPath string) (string, error) {
 	return uncompressedPath, nil
 }
 
-// Will error out if file without .xz already exists
-// Maybe extracting then renameing is a good idea here..
-// depends on xz: not pre-installed on mac, so it becomes a brew dependency
 func decompressXZ(src string, output io.Writer) error {
-	cmd := exec.Command("xzcat", "-T0", "-k", src)
-	stdOut, err := cmd.StdoutPipe()
+	file, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	cmd.Stderr = os.Stderr
-	go func() {
-		if _, err := io.Copy(output, stdOut); err != nil {
-			logrus.Error(err)
+	defer file.Close()
+
+	reader, err := xz.NewReader(file)
+	if err != nil {
+		return err
+	}
+
+	for {
+		_, err := io.CopyN(output, reader, 1024*1024)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
 		}
-	}()
-	return cmd.Run()
+	}
+	return nil
 }
 
 func decompressGZ(src string, output io.Writer) error {
