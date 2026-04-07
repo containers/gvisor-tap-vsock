@@ -73,6 +73,9 @@ github.com/insomniacslk/dhcp/dhcpv4/server4
 github.com/insomniacslk/dhcp/iana
 github.com/insomniacslk/dhcp/interfaces
 github.com/insomniacslk/dhcp/rfc1035label
+# github.com/kdomanski/iso9660 v0.4.0
+## explicit; go 1.19
+github.com/kdomanski/iso9660
 # github.com/lufia/plan9stats v0.0.0-20240909124753-873cd0166683
 ## explicit; go 1.16
 github.com/lufia/plan9stats
