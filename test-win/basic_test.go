@@ -17,7 +17,14 @@ import (
 )
 
 func sshExec(cmd ...string) ([]byte, error) {
-	return sshCommand(cmd...).Output()
+	out, err := sshCommand(cmd...).Output()
+	if err != nil {
+		// Convert ExitError with byte array stderr to readable error
+		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+			return out, fmt.Errorf("%w\nStderr: %s", err, string(exitErr.Stderr))
+		}
+	}
+	return out, err
 }
 
 func sshCommand(cmd ...string) *exec.Cmd {
