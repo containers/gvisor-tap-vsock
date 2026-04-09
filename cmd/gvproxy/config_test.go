@@ -15,10 +15,10 @@ import (
 func TestIPAddressConversions(t *testing.T) {
 	t.Parallel()
 	cases := [][]string{
-		{"192.168.127.1/24", "192.168.127.1", "192.168.127.254"},
-		{"10.10.0.0/16", "10.10.0.1", "10.10.255.254"},
-		{"172.16.16.16/12", "172.16.0.1", "172.31.255.254"},
-		{"fc00::fff/64", "fc00::1", "fc00::ffff:ffff:ffff:fffe"},
+		{"192.168.127.1/24", "192.168.127.1", "192.168.127.254", "192.168.127.2"},
+		{"10.10.0.0/16", "10.10.0.1", "10.10.255.254", "10.10.0.2"},
+		{"172.16.16.16/12", "172.16.0.1", "172.31.255.254", "172.16.0.2"},
+		{"fc00::fff/64", "fc00::1", "fc00::ffff:ffff:ffff:fffe", "fc00::2"},
 	}
 	for _, v := range cases {
 		naddr, _ := netip.ParsePrefix(v[0])
@@ -29,8 +29,12 @@ func TestIPAddressConversions(t *testing.T) {
 		luaddr, err := getLastUsableIPFromSubnet(naddr)
 		require.NoError(t, err, "getLastUsableIPFromSubnet returns error for \"%s\" -> \"%s\"", v[0], luaddr)
 
+		nextIP, err := getNextUsableIPFromSubnet(naddr, fuaddr)
+		require.NoError(t, err, "getNextUsableIPFromSubnet returns error for \"%s\" -> \"%s\"", v[0], nextIP)
+
 		assert.Equal(t, v[1], fuaddr.String(), "getFirstUsableIPFromSubnet returns wrong result: expects \"%s\", got \"%s\"", v[1], fuaddr)
 		assert.Equal(t, v[2], luaddr.String(), "getLastUsableIPFromSubnet returns wrong result: expects \"%s\", got \"%s\"", v[2], luaddr)
+		assert.Equal(t, v[3], nextIP.String(), "getNextUsableIPFromSubnet returns wrong result: expects \"%s\", got \"%s\"", v[3], nextIP)
 	}
 }
 
@@ -96,6 +100,73 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
+    gatewayMacAddress: 5a:94:ef:e4:0c:dd
+    dns:
+        - name: containers.internal.
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+        - name: docker.internal.
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+    forwards:
+        127.0.0.1:2222: 192.168.127.2:22
+    nat:
+        192.168.127.254: 127.0.0.1
+    gatewayVirtualIPs:
+        - 192.168.127.254
+    dhcpStaticLeases:
+        192.168.127.2: 5a:94:ef:e4:0c:ee
+    vpnKitUUIDMacAddresses:
+        c3d68012-0208-11ea-9fd7-f2189899ab08: 5a:94:ef:e4:0c:ee
+`,
+		},
+		{
+			CaseName: "Legacy with no args and no gatewayIP/deviceIP/hostIP",
+			Args:     []string{},
+			InputConfig: `log-level: info
+stack:
+    mtu: 1500
+    subnet: 192.168.127.0/24
+    gatewayMacAddress: 5a:94:ef:e4:0c:dd
+    dns:
+        - name: containers.internal.
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+        - name: docker.internal.
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+    forwards:
+        127.0.0.1:2222: 192.168.127.2:22
+    nat:
+        192.168.127.254: 127.0.0.1
+    gatewayVirtualIPs:
+        - 192.168.127.254
+    dhcpStaticLeases:
+        192.168.127.2: 5a:94:ef:e4:0c:ee
+    vpnKitUUIDMacAddresses:
+        c3d68012-0208-11ea-9fd7-f2189899ab08: 5a:94:ef:e4:0c:ee
+`,
+			ResultConfig: `log-level: info
+stack:
+    mtu: 1500
+    subnet: 192.168.127.0/24
+    gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
@@ -133,6 +204,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
@@ -173,6 +246,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
@@ -213,6 +288,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
@@ -253,6 +330,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
@@ -293,6 +372,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
@@ -330,6 +411,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     nat:
         192.168.127.254: 127.0.0.1
@@ -352,6 +435,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     nat:
         192.168.127.254: 127.0.0.1
@@ -379,6 +464,8 @@ stack:
     mtu: 1480
     subnet: 10.0.0.0/16
     gatewayIP: 10.0.0.1
+    deviceIP: 10.0.0.2
+    hostIP: 10.0.255.254
     gatewayMacAddress: "10:11:11:11:11:00"
     nat:
         10.0.255.254: 127.0.0.1
@@ -401,6 +488,8 @@ stack:
     mtu: 1500
     subnet: 10.0.0.0/16
     gatewayIP: 10.0.0.1
+    deviceIP: 10.0.0.2
+    hostIP: 10.0.255.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     nat:
         10.0.255.254: 127.0.0.1
@@ -427,6 +516,8 @@ stack:
     mtu: 1500
     subnet: 10.0.0.0/16
     gatewayIP: 10.0.0.1
+    deviceIP: 10.0.0.2
+    hostIP: 10.0.255.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     forwards:
         127.0.0.1:59022: 192.168.127.2:22
@@ -454,6 +545,8 @@ stack:
     mtu: 1500
     subnet: 10.0.0.0/16
     gatewayIP: 10.0.0.1
+    deviceIP: 10.0.0.2
+    hostIP: 10.0.255.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     nat:
         10.0.255.254: 127.0.0.1
@@ -477,6 +570,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     nat:
         192.168.127.254: 127.0.0.1
@@ -494,6 +589,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     nat:
         192.168.127.254: 127.0.0.1
@@ -512,6 +609,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
