@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/services/dhcp"
+	"github.com/containers/gvisor-tap-vsock/pkg/services/dhcpv6"
 	"github.com/containers/gvisor-tap-vsock/pkg/services/dns"
 	"github.com/containers/gvisor-tap-vsock/pkg/services/forwarder"
 	"github.com/containers/gvisor-tap-vsock/pkg/tap"
@@ -15,12 +16,14 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool) (http.Handler, error) {
+// ipv6Pool can be nil
+func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool, ipv6Pool *tap.IPPool) (http.Handler, error) {
 	var natLock sync.Mutex
 	translation := parseNATTable(configuration)
 
@@ -46,6 +49,13 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	mux := http.NewServeMux()
 	mux.Handle("/forwarder/", http.StripPrefix("/forwarder", forwarderMux))
 	mux.Handle("/dhcp/", http.StripPrefix("/dhcp", dhcpMux))
+	if ipv6Pool != nil {
+		dhcpv6Mux, err := dhcpv6Server(configuration, s, ipv6Pool)
+		if err != nil {
+			return nil, err
+		}
+		mux.Handle("/dhcpv6/", http.StripPrefix("/dhcpv6", dhcpv6Mux))
+	}
 	mux.Handle("/dns/", http.StripPrefix("/dns", dnsMux))
 	return mux, nil
 }
@@ -92,11 +102,70 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler
 			log.Error(err)
 		}
 	}()
+
+	if configuration.GatewayIPv6 != "" {
+		gatewayIPv6 := net.ParseIP(configuration.GatewayIPv6)
+		if gatewayIPv6 != nil {
+			udpConn6, err := gonet.DialUDP(s, &tcpip.FullAddress{
+				NIC:  1,
+				Addr: tcpip.AddrFrom16Slice(gatewayIPv6.To16()),
+				Port: uint16(53),
+			}, nil, ipv6.ProtocolNumber)
+			if err != nil {
+				log.Warnf("dns: failed to bind IPv6 UDP on %s: %v", gatewayIPv6, err)
+			} else {
+				server6, err := dns.New(udpConn6, nil, configuration.DNS)
+				if err != nil {
+					log.Warnf("dns: failed to create IPv6 server: %v", err)
+				} else {
+					go func() {
+						if err := server6.Serve(); err != nil {
+							log.Error(err)
+						}
+					}()
+					log.Infof("dns: listening on [%s]:53 (IPv6 UDP)", gatewayIPv6)
+				}
+			}
+
+			tcpLn6, err := gonet.ListenTCP(s, tcpip.FullAddress{
+				NIC:  1,
+				Addr: tcpip.AddrFrom16Slice(gatewayIPv6.To16()),
+				Port: uint16(53),
+			}, ipv6.ProtocolNumber)
+			if err != nil {
+				log.Warnf("dns: failed to bind IPv6 TCP on %s: %v", gatewayIPv6, err)
+			} else {
+				server6tcp, err := dns.New(nil, tcpLn6, configuration.DNS)
+				if err != nil {
+					log.Warnf("dns: failed to create IPv6 TCP server: %v", err)
+				} else {
+					go func() {
+						if err := server6tcp.ServeTCP(); err != nil {
+							log.Error(err)
+						}
+					}()
+					log.Infof("dns: listening on [%s]:53 (IPv6 TCP)", gatewayIPv6)
+				}
+			}
+		}
+	}
+
 	return server.Mux(), nil
 }
 
 func dhcpServer(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool) (http.Handler, error) {
 	server, err := dhcp.New(configuration, s, ipPool)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		log.Error(server.Serve())
+	}()
+	return server.Mux(), nil
+}
+
+func dhcpv6Server(configuration *types.Configuration, s *stack.Stack, ipv6Pool *tap.IPPool) (http.Handler, error) {
+	server, err := dhcpv6.New(configuration, s, ipv6Pool)
 	if err != nil {
 		return nil, err
 	}
