@@ -59,6 +59,10 @@ type Configuration struct {
 
 	// EC2 Metadata Service Access
 	Ec2MetadataAccess bool `yaml:"ec2MetadataAccess,omitempty"`
+
+	// NetworkPolicy controls outbound network filtering.
+	// If unset, all outbound traffic is allowed (current default behavior).
+	NetworkPolicy *NetworkPolicy `yaml:"networkPolicy,omitempty"`
 }
 
 type Protocol string
@@ -86,4 +90,42 @@ type Record struct {
 	Name   string         `yaml:"name,omitempty"`
 	IP     net.IP         `yaml:"ip,omitempty"`
 	Regexp *regexp.Regexp `json:",omitempty" yaml:"regexp,omitempty"`
+}
+
+// NetworkPolicy controls outbound network access from the virtual machine.
+type NetworkPolicy struct {
+	// DefaultAction is "allow" or "deny". Defaults to "allow" (no filtering).
+	DefaultAction string `yaml:"defaultAction,omitempty"`
+	// Rules are evaluated in order. First match wins.
+	Rules []NetworkRule `yaml:"rules,omitempty"`
+	// DNSPolicy controls DNS-level filtering. If unset, DNS is not filtered.
+	DNSPolicy *DNSPolicy `yaml:"dns,omitempty"`
+	// Interactive enables interactive approval mode. When a connection is
+	// denied by the policy, it is held pending and a notification is sent
+	// to the notification socket. An external process can then approve or
+	// deny the connection via the HTTP API.
+	Interactive bool `yaml:"interactive,omitempty"`
+	// ApprovalTimeout is the number of seconds to wait for an interactive
+	// approval before denying the connection. Defaults to 30.
+	ApprovalTimeout int `yaml:"approvalTimeout,omitempty"`
+}
+
+type NetworkRule struct {
+	// Action is "allow" or "deny".
+	Action string `yaml:"action"`
+	// CIDR to match (e.g. "0.0.0.0/0", "10.0.0.0/8"). If empty, matches all IPs.
+	CIDR string `yaml:"cidr,omitempty"`
+	// Ports to match. If empty, matches all ports.
+	Ports []int `yaml:"ports,omitempty"`
+	// Protocol: "tcp", "udp", or empty for both.
+	Protocol string `yaml:"protocol,omitempty"`
+}
+
+type DNSPolicy struct {
+	// DefaultAction is "allow" or "deny" for upstream DNS resolution.
+	DefaultAction string `yaml:"defaultAction,omitempty"`
+	// AllowedDomains is a list of domain patterns (supports leading wildcard like "*.github.com").
+	AllowedDomains []string `yaml:"allowedDomains,omitempty"`
+	// BlockedDomains is a list of domain patterns to block.
+	BlockedDomains []string `yaml:"blockedDomains,omitempty"`
 }

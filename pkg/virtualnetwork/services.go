@@ -20,34 +20,36 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool) (http.Handler, error) {
+func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool) (http.Handler, *forwarder.SharedFilter, error) {
 	var natLock sync.Mutex
 	translation := parseNATTable(configuration)
 
-	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess)
+	filter := forwarder.NewSharedFilter(configuration.NetworkPolicy)
+	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess, filter)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := forwarder.UDP(s, translation, &natLock)
+	udpForwarder := forwarder.UDP(s, translation, &natLock, filter)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 
-	dnsMux, err := dnsServer(configuration, s)
+	dnsMux, err := dnsServer(configuration, s, filter)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	dhcpMux, err := dhcpServer(configuration, s, ipPool)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	forwarderMux, err := forwardHostVM(configuration, s)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/forwarder/", http.StripPrefix("/forwarder", forwarderMux))
 	mux.Handle("/dhcp/", http.StripPrefix("/dhcp", dhcpMux))
 	mux.Handle("/dns/", http.StripPrefix("/dns", dnsMux))
-	return mux, nil
+	mux.Handle("/network/", http.StripPrefix("/network", filter.Mux()))
+	return mux, filter, nil
 }
 
 func parseNATTable(configuration *types.Configuration) map[tcpip.Address]tcpip.Address {
@@ -58,7 +60,7 @@ func parseNATTable(configuration *types.Configuration) map[tcpip.Address]tcpip.A
 	return translation
 }
 
-func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {
+func dnsServer(configuration *types.Configuration, s *stack.Stack, networkFilter *forwarder.SharedFilter) (http.Handler, error) {
 	udpConn, err := gonet.DialUDP(s, &tcpip.FullAddress{
 		NIC:  1,
 		Addr: tcpip.AddrFrom4Slice(net.ParseIP(configuration.GatewayIP).To4()),
@@ -77,7 +79,11 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler
 		return nil, err
 	}
 
-	server, err := dns.New(udpConn, tcpLn, configuration.DNS)
+	var dnsPolicy *types.DNSPolicy
+	if configuration.NetworkPolicy != nil {
+		dnsPolicy = configuration.NetworkPolicy.DNSPolicy
+	}
+	server, err := dns.New(udpConn, tcpLn, configuration.DNS, dnsPolicy, networkFilter)
 	if err != nil {
 		return nil, err
 	}
