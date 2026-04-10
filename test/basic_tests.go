@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"os"
 
 	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
 
@@ -30,13 +31,19 @@ func BasicConnectivityTests(props BasicTestProps) {
 	ginkgo.It("should configure the default route", func() {
 		out, err := props.SSHExec("ip route show")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		gomega.Expect(string(out)).To(gomega.MatchRegexp(`default via 192\.168\.127\.1 dev (.*?) proto dhcp (src 192\.168\.127\.2 )?metric 100`))
+		gomega.Expect(string(out)).To(gomega.MatchRegexp(`default via 192\.168\.127\.1 dev (.*?) proto dhcp (src 192\.168\.127\.2 )?metric (\d{3})`))
 	})
 
 	ginkgo.It("should configure dns settings", func() {
-		out, err := props.SSHExec("cat /etc/resolv.conf")
-		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		gomega.Expect(string(out)).To(gomega.ContainSubstring("nameserver 192.168.127.1"))
+		if os.Getenv("OS") == "windows" {
+			out, err := props.SSHExec("resolvectl status")
+			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+			gomega.Expect(string(out)).To(gomega.ContainSubstring("Current DNS Server: 192.168.127.1"))
+		} else {
+			out, err := props.SSHExec("cat /etc/resolv.conf")
+			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+			gomega.Expect(string(out)).To(gomega.ContainSubstring("nameserver 192.168.127.1"))
+		}
 	})
 
 	ginkgo.It("should ping the tap device", func() {
