@@ -646,6 +646,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
@@ -684,6 +686,8 @@ stack:
     mtu: 1500
     subnet: 192.168.127.0/24
     gatewayIP: 192.168.127.1
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     nat:
         192.168.127.254: 127.0.0.1
