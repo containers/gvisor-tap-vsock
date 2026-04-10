@@ -65,7 +65,7 @@ func TestConfigInit(t *testing.T) {
 		result, errMarshal := yaml.Marshal(cnf)
 		require.NoErrorf(t, errMarshal, "%s: unmarshallable config", v.CaseName)
 
-		assert.YAMLEq(t, v.ResultConfig, string(result), "%s: resulted and expected config mismatch", v.CaseName)
+		assert.YAMLEq(t, v.ResultConfig, string(result), "%s: mismatch between generated and expected config", v.CaseName)
 	}
 }
 
