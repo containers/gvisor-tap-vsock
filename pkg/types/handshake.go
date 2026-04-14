@@ -21,8 +21,9 @@ type UnexposeRequest struct {
 }
 
 type NotificationMessage struct {
-	NotificationType NotificationType `json:"notification_type"`
-	MacAddress       string           `json:"mac_address,omitempty"`
+	NotificationType NotificationType  `json:"notification_type"`
+	MacAddress       string            `json:"mac_address,omitempty"`
+	Details          map[string]string `json:"details,omitempty"`
 }
 
 type NotificationType string
@@ -32,4 +33,5 @@ const (
 	ConnectionEstablished NotificationType = "connection_established"
 	HypervisorError       NotificationType = "hypervisor_error"
 	ConnectionClosed      NotificationType = "connection_closed"
+	NetworkPolicyPending  NotificationType = "network_policy_pending"
 )
