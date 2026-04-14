@@ -148,10 +148,6 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		config.LogFile = args.logFile
 	}
 
-	if args.logFile != "" {
-		config.LogFile = args.logFile
-	}
-
 	if config.LogLevel == "" {
 		config.LogLevel = "info"
 	}
