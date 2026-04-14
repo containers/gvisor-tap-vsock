@@ -29,6 +29,7 @@ const (
 	FuncSigArgType
 	ErrFuncActualArgType
 	GomegaParamArgType
+	TBParamArgType
 	MultiRetsArgType
 	ErrorMethodArgType
 
