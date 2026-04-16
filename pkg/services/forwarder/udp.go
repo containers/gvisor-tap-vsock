@@ -2,6 +2,7 @@ package forwarder
 
 import (
 	"net"
+	"regexp"
 	"strconv"
 	"sync"
 
@@ -14,9 +15,51 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex) *udp.Forwarder {
+type udpAction int
+
+const (
+	udpBlock udpAction = iota
+	udpDirect
+)
+
+// udpRoutingAction decides what to do with an inbound UDP packet based on
+// the destination address and active filtering configuration.
+func udpRoutingAction(
+	localAddress tcpip.Address,
+	blockAllOutbound bool,
+	allowlistActive bool,
+	gatewayAddr tcpip.Address,
+) udpAction {
+	if blockAllOutbound {
+		return udpBlock
+	}
+	if allowlistActive && localAddress != gatewayAddr {
+		return udpBlock
+	}
+	return udpDirect
+}
+
+func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, blockAllOutbound bool, outboundAllow []*regexp.Regexp, gatewayIP net.IP) *udp.Forwarder {
+	allowlistActive := len(outboundAllow) > 0
+	var gatewayAddr tcpip.Address
+	if gatewayIP != nil {
+		gatewayAddr = tcpip.AddrFrom4Slice(gatewayIP.To4())
+	}
+
 	return udp.NewForwarder(s, func(r *udp.ForwarderRequest) {
 		localAddress := r.ID().LocalAddress
+
+		action := udpRoutingAction(localAddress, blockAllOutbound, allowlistActive, gatewayAddr)
+		if action == udpBlock {
+			if blockAllOutbound {
+				log.Debugf("Blocking outbound UDP to %s:%d (blockAllOutbound=true)",
+					localAddress.String(), r.ID().LocalPort)
+			} else {
+				log.Debugf("Blocking outbound UDP to %s:%d (outboundAllow active, non-gateway)",
+					localAddress.String(), r.ID().LocalPort)
+			}
+			return
+		}
 
 		if linkLocal().Contains(localAddress) || localAddress == header.IPv4Broadcast {
 			return
