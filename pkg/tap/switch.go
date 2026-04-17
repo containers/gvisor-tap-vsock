@@ -90,11 +90,7 @@ func (e *Switch) Accept(ctx context.Context, rawConn net.Conn, protocol types.Pr
 
 	}
 
-	defer func() {
-		e.connLock.Lock()
-		defer e.connLock.Unlock()
-		e.disconnect(id, conn)
-	}()
+	defer e.disconnect(id, conn)
 	if err := e.rx(ctx, id, conn); err != nil {
 		err := fmt.Errorf("cannot receive packets from %s, disconnecting: %w", conn.RemoteAddr().String(), err)
 		log.Error(err)
@@ -118,13 +114,12 @@ func (e *Switch) tx(pkt *stack.PacketBuffer) error {
 	return e.txPkt(pkt)
 }
 
+type connTarget struct {
+	id   int
+	conn protocolConn
+}
+
 func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
-	e.writeLock.Lock()
-	defer e.writeLock.Unlock()
-
-	e.connLock.Lock()
-	defer e.connLock.Unlock()
-
 	buf := pkt.ToView().AsSlice()
 	eth := header.Ethernet(buf)
 	dst := eth.DestinationAddress()
@@ -141,16 +136,22 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 			srcID = -1
 		}
 		e.camLock.RUnlock()
-		for id, conn := range e.conns {
-			if id == srcID {
-				continue
-			}
 
-			err := e.txBuf(id, conn, buf)
+		e.connLock.Lock()
+		targets := make([]connTarget, 0, len(e.conns))
+		for id, conn := range e.conns {
+			if id != srcID {
+				targets = append(targets, connTarget{id, conn})
+			}
+		}
+		e.connLock.Unlock()
+
+		for _, t := range targets {
+			err := e.txBuf(t.conn, buf)
 			if err != nil {
+				e.disconnect(t.id, t.conn)
 				return err
 			}
-
 			atomic.AddUint64(&e.Sent, uint64(size))
 		}
 	} else {
@@ -161,9 +162,17 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 			return nil
 		}
 		e.camLock.RUnlock()
-		conn := e.conns[id]
-		err := e.txBuf(id, conn, buf)
+
+		e.connLock.Lock()
+		conn, ok := e.conns[id]
+		e.connLock.Unlock()
+		if !ok {
+			return nil
+		}
+
+		err := e.txBuf(conn, buf)
 		if err != nil {
+			e.disconnect(id, conn)
 			return err
 		}
 		atomic.AddUint64(&e.Sent, uint64(size))
@@ -171,7 +180,10 @@ func (e *Switch) txPkt(pkt *stack.PacketBuffer) error {
 	return nil
 }
 
-func (e *Switch) txBuf(id int, conn protocolConn, buf []byte) error {
+func (e *Switch) txBuf(conn protocolConn, buf []byte) error {
+	e.writeLock.Lock()
+	defer e.writeLock.Unlock()
+
 	if conn.protocolImpl.Stream() {
 		size := conn.protocolImpl.(streamProtocol).Buf()
 		conn.protocolImpl.(streamProtocol).Write(size, len(buf))
@@ -185,7 +197,6 @@ func (e *Switch) txBuf(id int, conn protocolConn, buf []byte) error {
 				// https://github.com/containers/gvisor-tap-vsock/issues/367
 				continue
 			}
-			e.disconnect(id, conn)
 			return err
 		}
 		return nil
@@ -193,6 +204,9 @@ func (e *Switch) txBuf(id int, conn protocolConn, buf []byte) error {
 }
 
 func (e *Switch) disconnect(id int, conn net.Conn) {
+	e.connLock.Lock()
+	defer e.connLock.Unlock()
+
 	e.camLock.Lock()
 	defer e.camLock.Unlock()
 
