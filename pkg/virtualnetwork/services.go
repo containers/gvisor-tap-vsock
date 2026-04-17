@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/dnscache"
 	"github.com/containers/gvisor-tap-vsock/pkg/services/dhcp"
 	"github.com/containers/gvisor-tap-vsock/pkg/services/dns"
 	"github.com/containers/gvisor-tap-vsock/pkg/services/forwarder"
@@ -32,7 +33,8 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	icmpForwarder := forwarder.ICMP(s, translation, &natLock)
 	s.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
 
-	dnsMux, err := dnsServer(configuration, s)
+	dnsCache := dnscache.New(dnscache.DefaultMaxEntries, dnscache.DefaultTTL)
+	dnsMux, err := dnsServer(configuration, s, dnsCache)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +63,7 @@ func parseNATTable(configuration *types.Configuration) map[tcpip.Address]tcpip.A
 	return translation
 }
 
-func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {
+func dnsServer(configuration *types.Configuration, s *stack.Stack, cache *dnscache.DNSCache) (http.Handler, error) {
 	udpConn, err := gonet.DialUDP(s, &tcpip.FullAddress{
 		NIC:  1,
 		Addr: tcpip.AddrFrom4Slice(net.ParseIP(configuration.GatewayIP).To4()),
@@ -80,7 +82,7 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler
 		return nil, err
 	}
 
-	server, err := dns.New(udpConn, tcpLn, configuration.DNS)
+	server, err := dns.New(udpConn, tcpLn, configuration.DNS, cache)
 	if err != nil {
 		return nil, err
 	}
