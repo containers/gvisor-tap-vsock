@@ -51,3 +51,5 @@ require (
 	golang.org/x/tools v0.43.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 )
+
+replace github.com/inetaf/tcpproxy => ../tcpproxy
