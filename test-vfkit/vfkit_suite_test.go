@@ -11,11 +11,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	e2e_utils "github.com/containers/gvisor-tap-vsock/test-utils"
+	vfkit "github.com/crc-org/vfkit/pkg/config"
 
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
 
@@ -30,6 +31,7 @@ func TestSuite(t *testing.T) {
 const (
 	sock         = "/tmp/gvproxy-api-vfkit.sock"
 	vfkitSock    = "/tmp/vfkit.sock"
+	ignitionSock = "/tmp/ignition.sock"
 	sshPort      = 2223
 	ignitionUser = "test"
 	// #nosec "test" (for manual usage)
@@ -60,6 +62,43 @@ func init() {
 	cmdDir = "../cmd"
 }
 
+func gvproxyCmd() *exec.Cmd {
+	cmd := types.NewGvproxyCommand()
+	cmd.AddEndpoint(fmt.Sprintf("unix://%s", sock))
+	cmd.AddVfkitSocket("unixgram://" + vfkitSock)
+	cmd.SSHPort = sshPort
+
+	return cmd.Cmd(filepath.Join(binDir, "gvproxy"))
+}
+
+func vfkitCmd(diskImage string) (*exec.Cmd, error) {
+	bootloader := vfkit.NewEFIBootloader(efiStore, true)
+	vm := vfkit.NewVirtualMachine(2, 2048, bootloader)
+	disk, err := vfkit.VirtioBlkNew(diskImage)
+	if err != nil {
+		return nil, err
+	}
+	err = vm.AddDevice(disk)
+	if err != nil {
+		return nil, err
+	}
+	net, err := vfkit.VirtioNetNew("5a:94:ef:e4:0c:ee")
+	if err != nil {
+		return nil, err
+	}
+	net.SetUnixSocketPath(vfkitSock)
+	err = vm.AddDevice(net)
+	if err != nil {
+		return nil, err
+	}
+	ignition, err := vfkit.IgnitionNew(ignFile, ignitionSock)
+	if err != nil {
+		return nil, err
+	}
+	vm.Ignition = ignition
+	return vm.Cmd(vfkitExecutable())
+}
+
 var _ = ginkgo.BeforeSuite(func() {
 	// clear the environment before running the tests. It may happen the tests were abruptly stopped earlier leaving a dirty env
 	cleanup()
@@ -85,81 +124,27 @@ var _ = ginkgo.BeforeSuite(func() {
 	err = e2e_utils.CreateIgnition(ignFile, publicKey, ignitionUser, ignitionPasswordHash)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-	errors := make(chan error)
-
-outer:
-	for panics := 0; ; panics++ {
-		_ = os.Remove(sock)
-		_ = os.Remove(vfkitSock)
-
-		gvproxyArgs := []string{fmt.Sprintf("--ssh-port=%d", sshPort), fmt.Sprintf("--listen=unix://%s", sock), fmt.Sprintf("--listen-vfkit=unixgram://%s", vfkitSock)}
-		if *debugEnabled {
-			dlvArgs := []string{"debug", "--headless", "--listen=:2345", "--api-version=2", "--accept-multiclient", filepath.Join(cmdDir, "gvproxy"), "--"}
-			dlvArgs = append(dlvArgs, gvproxyArgs...)
-			host = exec.Command("dlv", dlvArgs...)
-		} else {
-			// #nosec
-			host = exec.Command(filepath.Join(binDir, "gvproxy"), gvproxyArgs...)
-		}
-
-		host.Stderr = os.Stderr
-		host.Stdout = os.Stdout
-		gomega.Expect(host.Start()).Should(gomega.Succeed())
-		go func() {
-			if err := host.Wait(); err != nil {
-				log.Error(err)
-				errors <- err
-			}
-		}()
-
-		for {
-			_, err := os.Stat(sock)
-			if os.IsNotExist(err) {
-				log.Info("waiting for vfkit-api socket")
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			_, err = os.Stat(vfkitSock)
-			if os.IsNotExist(err) {
-				log.Info("waiting for vfkit socket")
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			break
-		}
-
-		vfkitArgs := `--cpus 2 --memory 2048 --bootloader efi,variable-store=%s,create --device virtio-blk,path=%s --ignition %s  --device virtio-net,unixSocketPath=%s,mac=5a:94:ef:e4:0c:ee`
-		// #nosec
-		client = exec.Command(vfkitExecutable(), strings.Split(fmt.Sprintf(vfkitArgs, efiStore, fcosImage, ignFile, vfkitSock), " ")...)
-		client.Stderr = os.Stderr
-		client.Stdout = os.Stdout
-		gomega.Expect(client.Start()).Should(gomega.Succeed())
-		go func() {
-			if err := client.Wait(); err != nil {
-				log.Error(err)
-				errors <- err
-			}
-		}()
-
-		for {
-			_, err := sshExec("whoami")
-			if err == nil {
-				break outer
-			}
-
-			select {
-			case err := <-errors:
-				log.Errorf("Error %v", err)
-				// this expect will always fail so the tests stop
-				gomega.Expect(err).To(gomega.Equal(nil))
-				break outer
-			case <-time.After(1 * time.Second):
-				log.Infof("waiting for client to connect: %v", err)
-			}
-		}
+	host = gvproxyCmd()
+	if *debugEnabled {
+		gvproxyArgs := host.Args[1:]
+		dlvArgs := []string{"debug", "--headless", "--listen=:2345", "--api-version=2", "--accept-multiclient", filepath.Join(cmdDir, "gvproxy"), "--"}
+		dlvArgs = append(dlvArgs, gvproxyArgs...)
+		host = exec.Command("dlv", dlvArgs...)
 	}
 
-	time.Sleep(5 * time.Second)
+	host.Stderr = os.Stderr
+	host.Stdout = os.Stdout
+	gomega.Expect(host.Start()).Should(gomega.Succeed())
+	err = e2e_utils.WaitGvproxy(host, sock, vfkitSock)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+	client, err = vfkitCmd(fcosImage)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+	client.Stderr = os.Stderr
+	client.Stdout = os.Stdout
+	gomega.Expect(client.Start()).Should(gomega.Succeed())
+	err = e2e_utils.WaitSSH(client, sshExec)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 })
 
 func vfkitVersion() (float64, error) {
@@ -212,7 +197,7 @@ func cleanup() {
 	_ = os.Remove(sock)
 	_ = os.Remove(vfkitSock)
 
-	// this should be handled by vfkit once https://github.com/crc-org/vfkit/pull/230 gets merged
+	// this is handled by vfkit since vfkit v0.6.1 released in March 2025
 	// it removes the ignition.sock file
 	socketPath := filepath.Join(os.TempDir(), "ignition.sock")
 	_ = os.Remove(socketPath)
