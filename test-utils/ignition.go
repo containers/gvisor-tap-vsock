@@ -15,8 +15,7 @@ var (
 	no      = false
 )
 
-func CreateIgnition(ignitionFile string, publicKey string, user string, password string) error {
-
+func buildIgnitionConfig(publicKey string, user string, password string, additionalUnits []Unit) Config {
 	linger := `[Unit]
 Description=Activate podman socket
 Wants=podman.socket
@@ -24,18 +23,24 @@ Wants=podman.socket
 ExecStart=/usr/bin/sleep infinity
 `
 
-	systemd := Systemd{
-		Units: []Unit{
-			{
-				Name:    "systemd-resolved.service",
-				Enabled: &no,
-				Mask:    &yes,
-			},
-			{
-				Name:    "podman.socket",
-				Enabled: &yes,
-			},
+	// Start with default units
+	defaultUnits := []Unit{
+		{
+			Name:    "systemd-resolved.service",
+			Enabled: &no,
+			Mask:    &yes,
 		},
+		{
+			Name:    "podman.socket",
+			Enabled: &yes,
+		},
+	}
+
+	// Merge default units with additional units
+	defaultUnits = append(defaultUnits, additionalUnits...)
+
+	systemd := Systemd{
+		Units: defaultUnits,
 	}
 
 	passwd := Passwd{
@@ -129,12 +134,16 @@ ExecStart=/usr/bin/sleep infinity
 		},
 	}
 
-	config := Config{
+	return Config{
 		Ignition: Ignition{Version: "3.2.0"},
 		Systemd:  systemd,
 		Passwd:   passwd,
 		Storage:  storage,
 	}
+}
+
+func CreateIgnition(ignitionFile string, publicKey string, user string, password string) error {
+	config := buildIgnitionConfig(publicKey, user, password, nil)
 
 	contents, err := json.Marshal(config)
 	if err != nil {
@@ -143,6 +152,11 @@ ExecStart=/usr/bin/sleep infinity
 
 	// #nosec
 	return os.WriteFile(ignitionFile, contents, 0644)
+}
+
+func CreateIgnitionConfig(publicKey string, user string, password string, additionalUnits []Unit) (Config, error) {
+	config := buildIgnitionConfig(publicKey, user, password, additionalUnits)
+	return config, nil
 }
 
 func dir(path string) Directory {
