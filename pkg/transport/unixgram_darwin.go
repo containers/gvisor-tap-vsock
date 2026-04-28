@@ -21,10 +21,10 @@ func connectListeningUnixgramConn(conn *net.UnixConn, remoteAddr *net.UnixAddr) 
 		return nil, err
 	}
 	err = rawConn.Control(func(fd uintptr) {
-		if err = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_SNDBUF, 1*1024*1024); err != nil {
+		if err = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_SNDBUF, 1*1024*1024); err != nil { // #nosec G115 - fd always fits in int
 			return
 		}
-		if err = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, 4*1024*1024); err != nil {
+		if err = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, 4*1024*1024); err != nil { // #nosec G115 - fd always fits in int
 			return
 		}
 	})
@@ -57,7 +57,7 @@ func peekAddress(listeningConn *net.UnixConn) (*net.UnixAddr, error) {
 
 	magic := make([]byte, 4)
 	getRemoteAddr := func(fd uintptr) bool {
-		_, vfkitSockaddr, getRemoteAddrErr = syscall.Recvfrom(int(fd), magic, syscall.MSG_PEEK|syscall.MSG_TRUNC)
+		_, vfkitSockaddr, getRemoteAddrErr = syscall.Recvfrom(int(fd), magic, syscall.MSG_PEEK|syscall.MSG_TRUNC) // #nosec G115 - fd always fits in int
 
 		return !errors.Is(getRemoteAddrErr, syscall.EAGAIN)
 	}
