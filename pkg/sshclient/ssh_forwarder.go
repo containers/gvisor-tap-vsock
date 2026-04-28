@@ -116,7 +116,7 @@ func listenUnix(socketURI *url.URL) (net.Listener, error) {
 		path = strings.TrimPrefix(path, "/")
 	}
 
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) { // #nosec G703 - validated URL path for socket cleanup
 		return nil, err
 	}
 
