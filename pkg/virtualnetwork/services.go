@@ -27,7 +27,7 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 
 	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := forwarder.UDP(s, translation, &natLock)
+	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.Ec2MetadataAccess)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 	icmpForwarder := forwarder.ICMP(s, translation, &natLock)
 	s.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
