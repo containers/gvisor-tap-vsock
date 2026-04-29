@@ -18,7 +18,7 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 	return udp.NewForwarder(s, func(r *udp.ForwarderRequest) bool {
 		localAddress := r.ID().LocalAddress
 
-		if (!ec2MetadataAccess) && (linkLocal().Contains(localAddress) || localAddress == header.IPv4Broadcast) {
+		if (!ec2MetadataAccess) && linkLocal().Contains(localAddress) || (localAddress == header.IPv4Broadcast) {
 			return true
 		}
 
