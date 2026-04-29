@@ -212,8 +212,12 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		if err != nil {
 			return err
 		}
-		p, err := NewUDPProxy(listener, func() (net.Conn, error) {
-			return gonet.DialUDP(f.stack, nil, &address, ipv4.ProtocolNumber)
+		p, err := NewUDPProxy(listener, func(from net.Addr) (net.Conn, error) {
+			var local *tcpip.FullAddress
+			if a, ok := from.(*net.UDPAddr); ok && a.IP.To4() != nil {
+				local = &tcpip.FullAddress{NIC: 1, Addr: tcpip.AddrFrom4Slice(a.IP.To4()), Port: uint16(a.Port)}
+			}
+			return gonet.DialUDP(f.stack, local, &address, ipv4.ProtocolNumber)
 		})
 		if err != nil {
 			return err
@@ -235,7 +239,11 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		p.AddRoute(local, &tcpproxy.DialProxy{
 			Addr: remote,
 			DialContext: func(ctx context.Context, _, _ string) (conn net.Conn, e error) {
-				return gonet.DialContextTCP(ctx, f.stack, address, ipv4.ProtocolNumber)
+				var local tcpip.FullAddress
+				if a, ok := ctx.Value(tcpproxy.SourceAddrContextKey).(*net.TCPAddr); ok && a.IP.To4() != nil {
+					local = tcpip.FullAddress{NIC: 1, Addr: tcpip.AddrFrom4Slice(a.IP.To4()), Port: uint16(a.Port)}
+				}
+				return gonet.DialTCPWithBind(ctx, f.stack, local, address, ipv4.ProtocolNumber)
 			},
 		})
 		if err := p.Start(); err != nil {
