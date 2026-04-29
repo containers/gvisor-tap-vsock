@@ -7,6 +7,7 @@ require (
 	github.com/apparentlymart/go-cidr v1.1.1
 	github.com/containers/winquit v1.1.0
 	github.com/coreos/stream-metadata-go v0.4.11
+	github.com/crc-org/vfkit v0.6.3
 	github.com/dustin/go-humanize v1.0.1
 	github.com/foxcpp/go-mockdns v1.2.0
 	github.com/google/gopacket v1.1.19
@@ -15,7 +16,7 @@ require (
 	github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
 	github.com/mdlayher/vsock v1.2.1
 	github.com/miekg/dns v1.1.72
-	github.com/onsi/ginkgo v1.16.5
+	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/sirupsen/logrus v1.9.4
@@ -33,15 +34,18 @@ require (
 )
 
 require (
-	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/fsnotify/fsnotify v1.8.0 // indirect
+	github.com/Masterminds/semver/v3 v3.4.0 // indirect
+	github.com/containers/common v0.64.2 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
-	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/pierrec/lz4/v4 v4.1.14 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
@@ -49,5 +53,4 @@ require (
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.43.0 // indirect
-	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 )
