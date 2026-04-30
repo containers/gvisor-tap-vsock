@@ -65,7 +65,7 @@ func TestConfigInit(t *testing.T) {
 		result, errMarshal := yaml.Marshal(cnf)
 		require.NoErrorf(t, errMarshal, "%s: unmarshallable config", v.CaseName)
 
-		assert.YAMLEq(t, v.ResultConfig, string(result), "%s: resulted and expected config mismatch", v.CaseName)
+		assert.YAMLEq(t, v.ResultConfig, string(result), "%s: mismatch between generated and expected config", v.CaseName)
 	}
 }
 
@@ -536,6 +536,62 @@ stack:
         192.168.127.2: 5a:94:ef:e4:0c:ee
     vpnKitUUIDMacAddresses:
         c3d68012-0208-11ea-9fd7-f2189899ab08: 5a:94:ef:e4:0c:ee
+`,
+		},
+		{
+			CaseName:    "Legacy: stdio",
+			Args:        []string{"-listen-stdio", "accept"},
+			InputConfig: "",
+			ResultConfig: `log-level: info
+stack:
+    mtu: 1500
+    subnet: 192.168.127.0/24
+    gatewayIP: 192.168.127.1
+    gatewayMacAddress: 5a:94:ef:e4:0c:dd
+    dns:
+        - name: containers.internal.
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+        - name: docker.internal.
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+    forwards:
+        127.0.0.1:2222: 192.168.127.2:22
+    nat:
+        192.168.127.254: 127.0.0.1
+    gatewayVirtualIPs:
+        - 192.168.127.254
+    dhcpStaticLeases:
+        192.168.127.2: 5a:94:ef:e4:0c:ee
+    vpnKitUUIDMacAddresses:
+        c3d68012-0208-11ea-9fd7-f2189899ab08: 5a:94:ef:e4:0c:ee
+interfaces:
+    stdio: accept
+`,
+		},
+		{
+			CaseName: "config: stdio",
+			Args:     []string{"-config", "config.yaml"},
+			InputConfig: `interfaces:
+    stdio: accept`,
+			ResultConfig: `log-level: info
+stack:
+    mtu: 1500
+    subnet: 192.168.127.0/24
+    gatewayIP: 192.168.127.1
+    gatewayMacAddress: 5a:94:ef:e4:0c:dd
+    nat:
+        192.168.127.254: 127.0.0.1
+    gatewayVirtualIPs:
+        - 192.168.127.254
+interfaces:
+    stdio: accept
 `,
 		},
 	}

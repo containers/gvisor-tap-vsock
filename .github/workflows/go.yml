@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ["1.24.x", "1.25.x"]
+        go-version: ["1.25.x", "1.26.x"]
     steps:
     - uses: actions/checkout@v6
       with:
@@ -31,8 +31,8 @@ jobs:
         make cross qemu-wrapper vm win-gvproxy win-sshproxy image
         mv bin/gvproxy.exe bin/gvproxy-windowsgui.exe
 
-    - uses: actions/upload-artifact@v6
-      if: matrix.go-version == '1.24.x'
+    - uses: actions/upload-artifact@v7
+      if: matrix.go-version == '1.25.x'
       with:
         name: gvisor-tap-vsock-binaries
         path: bin/*
@@ -59,7 +59,7 @@ jobs:
       run: |
         sudo -s -u ${USER} bash -c 'make test'
 
-    - uses: actions/upload-artifact@v6
+    - uses: actions/upload-artifact@v7
       if: always()
       with:
         name: qcon
