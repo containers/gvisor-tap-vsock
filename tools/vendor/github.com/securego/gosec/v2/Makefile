@@ -16,7 +16,7 @@ GOBIN ?= $(GOPATH)/bin
 GOSEC ?= $(GOBIN)/gosec
 GO_MINOR_VERSION = $(shell $(GO) version | cut -c 14- | cut -d' ' -f1 | cut -d'.' -f2)
 GOVULN_MIN_VERSION = 17
-GO_VERSION = 1.25
+GO_VERSION = 1.26
 LDFLAGS = -ldflags "\
 	-X 'main.Version=$(shell git describe --tags --always)' \
 	-X 'main.GitTag=$(shell git describe --tags --abbrev=0)' \
@@ -33,6 +33,9 @@ install-govulncheck:
 test: build-race fmt vet sec govulncheck
 	go run github.com/onsi/ginkgo/v2/ginkgo -- --ginkgo.v --ginkgo.fail-fast
 
+test-nocache: build-race fmt vet sec govulncheck
+	go test -count=1 -v ./...
+
 fmt:
 	@echo "FORMATTING"
 	@FORMATTED=`$(GO) fmt ./...`
@@ -48,7 +51,7 @@ golangci:
 
 sec:
 	@echo "SECURITY SCANNING"
-	./$(BIN) ./...
+	./$(BIN) -exclude-dir=testdata ./...
 
 govulncheck: install-govulncheck
 	@echo "CHECKING VULNERABILITIES"
@@ -57,7 +60,7 @@ govulncheck: install-govulncheck
 	fi
 
 test-coverage:
-	go test -race -v -count=1 -coverprofile=coverage.out ./...
+	go test -race -v -count=1 -coverpkg=./... -coverprofile=coverage.out ./...
 
 build:
 	go build $(LDFLAGS) -o $(BIN) ./cmd/gosec/
@@ -65,9 +68,15 @@ build:
 build-race:
 	go build -race $(LDFLAGS) -o $(BIN) ./cmd/gosec/
 
+build-debug:
+	go build -tags debug $(LDFLAGS) -o $(BIN)-debug ./cmd/gosec/
+
+build-debug-race:
+	go build -race -tags debug $(LDFLAGS) -o $(BIN)-debug ./cmd/gosec/
+
 clean:
 	rm -rf build vendor dist coverage.out
-	rm -f release image $(BIN)
+	rm -f release image $(BIN) $(BIN)-debug
 
 release:
 	@echo "Releasing the gosec binary..."
@@ -93,4 +102,4 @@ tlsconfig:
 perf-diff:
 	./perf-diff.sh
 
-.PHONY: test build clean release image image-push tlsconfig perf-diff
+.PHONY: test test-nocache build clean release image image-push tlsconfig perf-diff
