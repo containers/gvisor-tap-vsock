@@ -6,20 +6,25 @@ import (
 	"path/filepath"
 )
 
-func efiArgs() (string, error) {
+func efiArgs() ([]string, error) {
 	// file may not exist, that's ok
 	_ = os.Remove("ovmf_vars.fd")
 	ovmfVars, err := os.Create("ovmf_vars.fd")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer ovmfVars.Close()
 	if err := ovmfVars.Truncate(67108864); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	edk2Path := getEdk2CodeFd("edk2-aarch64-code.fd")
-	return fmt.Sprintf(`-drive file=%s,if=pflash,format=raw,readonly=on -drive file=%s,if=pflash,format=raw `, edk2Path, ovmfVars.Name()), nil
+	return []string{
+		"-drive",
+		fmt.Sprintf("file=%s,if=pflash,format=raw,readonly=on", edk2Path),
+		"-drive",
+		fmt.Sprintf("file=%s,if=pflash,format=raw", ovmfVars.Name()),
+	}, nil
 }
 
 /*
