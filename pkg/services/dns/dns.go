@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -282,10 +283,12 @@ func (s *Server) ServeTCP() error {
 
 func (s *Server) Mux() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/all", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/all", func(w http.ResponseWriter, r *http.Request) {
 		s.handler.zonesLock.RLock()
-		_ = json.NewEncoder(w).Encode(s.handler.zones)
+		zones := s.handler.zones
+		_ = json.NewEncoder(w).Encode(zones)
 		s.handler.zonesLock.RUnlock()
+		apilog.LogEvent(r, "/services/dns/all", "success", nil)
 	})
 
 	mux.HandleFunc("/add", func(w http.ResponseWriter, r *http.Request) {
@@ -308,6 +311,9 @@ func (s *Server) Mux() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		apilog.LogEvent(r, "/services/dns/add", "success", log.Fields{
+			"zone": req.Name,
+		})
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux

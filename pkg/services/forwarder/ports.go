@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/inetaf/tcpproxy"
@@ -286,7 +287,7 @@ func (f *PortsForwarder) Unexpose(protocol types.TransportProtocol, local string
 
 func (f *PortsForwarder) Mux() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/all", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/all", func(w http.ResponseWriter, r *http.Request) {
 		f.proxiesLock.Lock()
 		defer f.proxiesLock.Unlock()
 		ret := make([]proxy, 0)
@@ -300,6 +301,7 @@ func (f *PortsForwarder) Mux() http.Handler {
 			return ret[i].Local < ret[j].Local
 		})
 		_ = json.NewEncoder(w).Encode(ret)
+		apilog.LogEvent(r, "/services/forwarder/all", "success", nil)
 	})
 	mux.HandleFunc("/expose", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -332,6 +334,11 @@ func (f *PortsForwarder) Mux() http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		apilog.LogEvent(r, "/services/forwarder/expose", "success", log.Fields{
+			"protocol": req.Protocol,
+			"local":    req.Local,
+			"remote":   remoteAddr,
+		})
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.HandleFunc("/unexpose", func(w http.ResponseWriter, r *http.Request) {
@@ -351,6 +358,10 @@ func (f *PortsForwarder) Mux() http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		apilog.LogEvent(r, "/services/forwarder/unexpose", "success", log.Fields{
+			"protocol": req.Protocol,
+			"local":    req.Local,
+		})
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux
