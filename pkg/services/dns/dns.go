@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -295,6 +296,9 @@ func (s *Server) Mux() http.Handler {
 		}
 
 		s.addZone(req)
+		apilog.LogEvent(r, "/services/dns/add", "add_zone", "success", log.Fields{
+			"zone": req.Name,
+		})
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux

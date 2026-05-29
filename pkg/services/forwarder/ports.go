@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/inetaf/tcpproxy"
@@ -322,6 +323,11 @@ func (f *PortsForwarder) Mux() http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		apilog.LogEvent(r, "/services/forwarder/expose", "expose", "success", log.Fields{
+			"protocol": req.Protocol,
+			"local":    req.Local,
+			"remote":   remoteAddr,
+		})
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.HandleFunc("/unexpose", func(w http.ResponseWriter, r *http.Request) {
@@ -341,6 +347,10 @@ func (f *PortsForwarder) Mux() http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		apilog.LogEvent(r, "/services/forwarder/unexpose", "unexpose", "success", log.Fields{
+			"protocol": req.Protocol,
+			"local":    req.Local,
+		})
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux

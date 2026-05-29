@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/tap"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/insomniacslk/dhcp/dhcpv4"
@@ -130,7 +131,8 @@ func (s *Server) Serve() error {
 
 func (s *Server) Mux() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/leases", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/leases", func(w http.ResponseWriter, r *http.Request) {
+		apilog.LogEvent(r, "/services/dhcp/leases", "list_leases", "success", nil)
 		_ = json.NewEncoder(w).Encode(s.IPPool.Leases())
 	})
 	return mux

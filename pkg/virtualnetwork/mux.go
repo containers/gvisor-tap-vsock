@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/inetaf/tcpproxy"
 	log "github.com/sirupsen/logrus"
@@ -24,7 +25,8 @@ func (n *VirtualNetwork) ServicesMux() *http.ServeMux {
 	mux.HandleFunc("/cam", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(n.networkSwitch.CAM())
 	})
-	mux.HandleFunc("/leases", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/leases", func(w http.ResponseWriter, r *http.Request) {
+		apilog.LogEvent(r, "/leases", "list_leases", "success", nil)
 		_ = json.NewEncoder(w).Encode(n.ipPool.Leases())
 	})
 	mux.HandleFunc("/tunnel", func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +64,10 @@ func (n *VirtualNetwork) ServicesMux() *http.ServeMux {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		apilog.LogEvent(r, "/tunnel", "open_tunnel", "success", log.Fields{
+			"ip":   ip,
+			"port": port16,
+		})
 
 		remote := tcpproxy.DialProxy{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
