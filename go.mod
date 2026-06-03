@@ -13,6 +13,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/inetaf/tcpproxy v0.0.0-20250222171855-c4b9df066048
 	github.com/insomniacslk/dhcp v0.0.0-20240710054256-ddd8a41251c9
+	github.com/kdomanski/iso9660 v0.4.0
 	github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
 	github.com/mdlayher/vsock v1.3.0
 	github.com/miekg/dns v1.1.72
@@ -24,6 +25,7 @@ require (
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/stretchr/testify v1.11.1
 	github.com/vishvananda/netlink v1.3.1
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/crypto v0.52.0
 	golang.org/x/mod v0.36.0
 	golang.org/x/net v0.55.0
@@ -48,7 +50,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
