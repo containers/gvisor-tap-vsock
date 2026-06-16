@@ -77,9 +77,9 @@ cross: $(TOOLS_BINDIR)/makefat
 test-companion:
 	GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/test-companion ./cmd/test-companion
 
-PHONY: test
+.PHONY: test
 test: gvproxy test-companion
-	go test -timeout 20m -v ./...
+	go test -timeout 20m -v $$(go list ./... | grep -v /test-performance-)
 
 .PHONY: test-qemu
 test-qemu: gvproxy test-companion
@@ -93,3 +93,11 @@ test-mac: gvproxy
 test-mac-debug:
 	go test -timeout 20m  -v ./test-vfkit --debug
 	rm -f ./test-vfkit/__debug_bin*
+
+.PHONY: test-perf-mac
+test-perf-mac: gvproxy test-companion
+	go test -timeout 30m -v ./test-performance-vfkit
+
+.PHONY: test-perf-qemu
+test-perf-qemu: gvproxy test-companion
+	go test -timeout 30m -v ./test-performance-qemu
