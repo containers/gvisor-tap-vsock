@@ -4,23 +4,16 @@ package e2evfkit
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	e2e_utils "github.com/containers/gvisor-tap-vsock/test-utils"
-	vfkit "github.com/crc-org/vfkit/pkg/config"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	log "github.com/sirupsen/logrus"
-
-	"golang.org/x/mod/semver"
 )
 
 func TestSuite(t *testing.T) {
@@ -29,210 +22,90 @@ func TestSuite(t *testing.T) {
 }
 
 const (
-	sock         = "/tmp/gvproxy-api-vfkit.sock"
-	vfkitSock    = "/tmp/vfkit.sock"
-	ignitionSock = "/tmp/ignition.sock"
-	sshPort      = 2223
+	sock               = "/tmp/gvproxy-api-vfkit.sock"
+	vfkitSock          = "/tmp/vfkit.sock"
+	ignitionSock       = "/tmp/ignition.sock"
+	sshPort            = 2223
+	efiStore           = "efi-variable-store"
+	vfkitVersionNeeded = 0.6
+
 	ignitionUser = "test"
 	// #nosec "test" (for manual usage)
 	ignitionPasswordHash = "$y$j9T$TqJWt3/mKJbH0sYi6B/LD1$QjVRuUgntjTHjAdAkqhkr4F73m.Be4jBXdAaKw98sPC" // notsecret
-	efiStore             = "efi-variable-store"
-	vfkitVersionNeeded   = 0.6
 )
 
 var (
-	tmpDir         string
-	binDir         string
-	host           *exec.Cmd
-	client         *exec.Cmd
-	privateKeyFile string
-	publicKeyFile  string
-	ignFile        string
-	cmdDir         string
+	debugEnabled = flag.Bool("debug", false, "enable debugger")
+	cmdDir       = "../cmd"
 )
 
-var debugEnabled = flag.Bool("debug", false, "enable debugger")
-
-func init() {
-	flag.StringVar(&tmpDir, "tmpDir", "../tmp", "temporary working directory")
-	flag.StringVar(&binDir, "bin", "../bin", "directory with compiled binaries")
-	privateKeyFile = filepath.Join(tmpDir, "id_test_vfkit")
-	publicKeyFile = privateKeyFile + ".pub"
-	ignFile = filepath.Join(tmpDir, "test.ign")
-	cmdDir = "../cmd"
-}
-
-func gvproxyCmd() *exec.Cmd {
-	cmd := types.NewGvproxyCommand()
-	cmd.AddEndpoint(fmt.Sprintf("unix://%s", sock))
-	cmd.AddVfkitSocket("unixgram://" + vfkitSock)
-	cmd.SSHPort = sshPort
-
-	return cmd.Cmd(filepath.Join(binDir, "gvproxy"))
-}
-
-func vfkitCmd(diskImage string) (*exec.Cmd, error) {
-	bootloader := vfkit.NewEFIBootloader(efiStore, true)
-	vm := vfkit.NewVirtualMachine(2, 2048, bootloader)
-	disk, err := vfkit.VirtioBlkNew(diskImage)
-	if err != nil {
-		return nil, err
-	}
-	err = vm.AddDevice(disk)
-	if err != nil {
-		return nil, err
-	}
-	net, err := vfkit.VirtioNetNew("5a:94:ef:e4:0c:ee")
-	if err != nil {
-		return nil, err
-	}
-	net.SetUnixSocketPath(vfkitSock)
-	err = vm.AddDevice(net)
-	if err != nil {
-		return nil, err
-	}
-	ignition, err := vfkit.IgnitionNew(ignFile, ignitionSock)
-	if err != nil {
-		return nil, err
-	}
-	vm.Ignition = ignition
-	return vm.Cmd(vfkitExecutable())
-}
-
-var _ = ginkgo.BeforeSuite(func() {
-	// clear the environment before running the tests. It may happen the tests were abruptly stopped earlier leaving a dirty env
-	cleanup()
-
-	// check if vfkit version is greater than v0.5 (ignition support is available starting from v0.6)
-	version, err := vfkitVersion()
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-	gomega.Expect(version >= vfkitVersionNeeded).Should(gomega.BeTrue())
-
-	// check if ssh port is free
-	gomega.Expect(e2e_utils.IsPortAvailable(sshPort)).Should(gomega.BeTrue())
-
-	gomega.Expect(os.MkdirAll(filepath.Join(tmpDir, "disks"), os.ModePerm)).Should(gomega.Succeed())
-
-	downloader, err := e2e_utils.NewFcosDownloader(filepath.Join(tmpDir, "disks"))
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-	fcosImage, err := downloader.DownloadImage("applehv", "raw.gz")
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-
-	publicKey, err := e2e_utils.CreateSSHKeys(publicKeyFile, privateKeyFile)
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-
-	err = e2e_utils.CreateIgnition(ignFile, publicKey, ignitionUser, ignitionPasswordHash)
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-
-	host = gvproxyCmd()
-	if *debugEnabled {
-		gvproxyArgs := host.Args[1:]
+var helper = e2e_utils.NewSuiteHelper(e2e_utils.SuiteConfig{
+	Sock:         sock,
+	SSHPort:      sshPort,
+	IgnitionUser: ignitionUser,
+	PasswordHash: ignitionPasswordHash,
+	KeyPrefix:    "id_test_vfkit",
+	IgnPrefix:    "test",
+	ArtifactType: "applehv",
+	FormatType:   "raw.gz",
+	ConfigureGvproxy: func(cmd *types.GvproxyCommand) {
+		cmd.AddVfkitSocket("unixgram://" + vfkitSock)
+	},
+	ModifyGvproxyCmd: func(cmd *exec.Cmd) *exec.Cmd {
+		if !*debugEnabled {
+			return cmd
+		}
+		gvproxyArgs := cmd.Args[1:]
 		dlvArgs := []string{"debug", "--headless", "--listen=:2345", "--api-version=2", "--accept-multiclient", filepath.Join(cmdDir, "gvproxy"), "--"}
 		dlvArgs = append(dlvArgs, gvproxyArgs...)
-		host = exec.Command("dlv", dlvArgs...)
-	}
+		return exec.Command("dlv", dlvArgs...) // #nosec G204
+	},
+	SetupVM: func(imagePath, ignFile string) (*exec.Cmd, error) {
+		return e2e_utils.VfkitCmd(e2e_utils.VfkitVMConfig{
+			DiskImage:    imagePath,
+			EFIStore:     efiStore,
+			VfkitSock:    vfkitSock,
+			IgnFile:      ignFile,
+			IgnitionSock: ignitionSock,
+		})
+	},
+	PreSetup: func() {
+		cleanup()
 
-	host.Stderr = os.Stderr
-	host.Stdout = os.Stdout
-	gomega.Expect(host.Start()).Should(gomega.Succeed())
-	err = e2e_utils.WaitGvproxy(host, sock, vfkitSock)
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		version, err := e2e_utils.VfkitVersion()
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(version >= vfkitVersionNeeded).Should(gomega.BeTrue())
 
-	client, err = vfkitCmd(fcosImage)
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-	client.Stderr = os.Stderr
-	client.Stdout = os.Stdout
-	gomega.Expect(client.Start()).Should(gomega.Succeed())
-	err = e2e_utils.WaitSSH(client, sshExec)
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(e2e_utils.IsPortAvailable(sshPort)).Should(gomega.BeTrue())
+	},
+	PostTeardown:        cleanup,
+	ExtraGvproxySockets: []string{vfkitSock},
 })
 
-func vfkitVersion() (float64, error) {
-	executable := vfkitExecutable()
-	if executable == "" {
-		return 0, fmt.Errorf("vfkit executable not found")
-	}
-	out, err := exec.Command(executable, "-v").Output()
-	if err != nil {
-		return 0, err
-	}
-	version := strings.TrimPrefix(string(out), "vfkit version:")
-	majorMinor := strings.TrimPrefix(semver.MajorMinor(strings.TrimSpace(version)), "v")
-	versionF, err := strconv.ParseFloat(majorMinor, 64)
-	if err != nil {
-		return 0, err
-	}
-	return versionF, nil
+func init() {
+	helper.InitFlags()
 }
 
-func vfkitExecutable() string {
-	vfkitBinaries := []string{"vfkit"}
-	for _, binary := range vfkitBinaries {
-		path, err := exec.LookPath(binary)
-		if err == nil && path != "" {
-			return path
-		}
-	}
-
-	return ""
+func scpToVM(src, dst string) error {
+	return helper.SCP(src, dst)
 }
 
-func sshExec(cmd ...string) ([]byte, error) {
-	return sshCommand(cmd...).Output()
-}
-
-func sshCommand(cmd ...string) *exec.Cmd {
-	sshCmd := exec.Command("ssh",
-		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "IdentitiesOnly=yes",
-		"-i", privateKeyFile,
-		"-p", strconv.Itoa(sshPort),
-		fmt.Sprintf("%s@127.0.0.1", ignitionUser), "--", strings.Join(cmd, " ")) // #nosec G204
-	return sshCmd
+func scpFromVM(src, dst string) error {
+	return helper.SCPFromVM(src, dst)
 }
 
 func cleanup() {
 	_ = os.Remove(efiStore)
 	_ = os.Remove(sock)
 	_ = os.Remove(vfkitSock)
-
-	// this is handled by vfkit since vfkit v0.6.1 released in March 2025
-	// it removes the ignition.sock file
 	socketPath := filepath.Join(os.TempDir(), "ignition.sock")
 	_ = os.Remove(socketPath)
 }
 
-func scp(src, dst string) error {
-	sshCmd := exec.Command("/usr/bin/scp",
-		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "IdentitiesOnly=yes",
-		"-i", privateKeyFile,
-		"-P", strconv.Itoa(sshPort),
-		src, dst) // #nosec G204
-	sshCmd.Stderr = os.Stderr
-	sshCmd.Stdout = os.Stdout
-	return sshCmd.Run()
-}
-func scpToVM(src, dst string) error {
-	return scp(src, fmt.Sprintf("%s@127.0.0.1:%s", ignitionUser, dst))
-}
-
-func scpFromVM(src, dst string) error {
-	return scp(fmt.Sprintf("%s@127.0.0.1:%s", ignitionUser, src), dst)
-}
+var _ = ginkgo.BeforeSuite(func() {
+	helper.SetupSuite()
+})
 
 var _ = ginkgo.AfterSuite(func() {
-	if host != nil {
-		if err := host.Process.Kill(); err != nil {
-			log.Error(err)
-		}
-	}
-	if client != nil {
-		if err := client.Process.Kill(); err != nil {
-			log.Error(err)
-		}
-	}
-	cleanup()
+	helper.TeardownSuite()
 })
