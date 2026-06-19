@@ -385,7 +385,8 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 
 		config.Stack.DNS = []types.Zone{
 			{
-				Name: "containers.internal.",
+				Name:      "containers.internal.",
+				Protected: true,
 				Records: []types.Record{
 					{
 						Name: gateway,
@@ -398,7 +399,8 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 				},
 			},
 			{
-				Name: "docker.internal.",
+				Name:      "docker.internal.",
+				Protected: true,
 				Records: []types.Record{
 					{
 						Name: gateway,
