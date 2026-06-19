@@ -105,12 +105,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
@@ -138,12 +140,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
@@ -170,12 +174,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
@@ -209,12 +215,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
@@ -251,12 +259,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
@@ -293,12 +303,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
@@ -335,12 +347,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
@@ -377,12 +391,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
@@ -614,12 +630,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
@@ -651,12 +669,14 @@ stack:
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
     dns:
         - name: containers.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
             - name: host
               ip: 192.168.127.254
         - name: docker.internal.
+          protected: true
           records:
             - name: gateway
               ip: 192.168.127.1
