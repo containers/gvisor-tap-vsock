@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"os"
 	"runtime"
 )
 
@@ -23,7 +24,16 @@ func UnixSocketPath(u *url.URL, goos string) string {
 func defaultListenURL(url *url.URL) (net.Listener, error) {
 	switch url.Scheme {
 	case "unix":
-		return net.Listen(url.Scheme, UnixSocketPath(url, runtime.GOOS))
+		path := UnixSocketPath(url, runtime.GOOS)
+		listener, err := net.Listen(url.Scheme, path)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(path, 0600); err != nil {
+			_ = listener.Close()
+			return nil, err
+		}
+		return listener, nil
 	case "tcp":
 		return net.Listen("tcp", url.Host)
 	default:
