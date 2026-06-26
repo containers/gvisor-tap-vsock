@@ -593,7 +593,7 @@ func TestByteReplay_SmallClientHello(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	// Read exactly the ClientHello bytes from the server side.
@@ -634,7 +634,7 @@ func TestByteReplay_LargeClientHello(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -670,7 +670,7 @@ func TestByteReplay_FragmentedTLSRecords(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -803,7 +803,7 @@ func TestByteReplay_PeekedMatchesBuffered(t *testing.T) {
 			guest, proxyGuest := net.Pipe()
 			go func() {
 				defer guest.Close()
-				guest.Write(ch)
+				_, _ = guest.Write(ch)
 			}()
 
 			br := bufio.NewReaderSize(proxyGuest, maxClientHelloLen+5*5+4)
@@ -834,8 +834,8 @@ func TestByteReplay_EndToEndTLS12(t *testing.T) {
 
 	// Set deadlines to prevent hangs on failure.
 	deadline := time.Now().Add(5 * time.Second)
-	guest.SetDeadline(deadline)
-	server.SetDeadline(deadline)
+	_ = guest.SetDeadline(deadline)
+	_ = server.SetDeadline(deadline)
 
 	proxyErr := make(chan error, 1)
 	go func() {
@@ -845,7 +845,7 @@ func TestByteReplay_EndToEndTLS12(t *testing.T) {
 	// TLS server (echo).
 	serverDone := make(chan error, 1)
 	go func() {
-		tlsServer := tls.Server(server, &tls.Config{
+		tlsServer := tls.Server(server, &tls.Config{ // #nosec G402
 			Certificates: []tls.Certificate{cert},
 			MaxVersion:   tls.VersionTLS12,
 		})
@@ -865,9 +865,9 @@ func TestByteReplay_EndToEndTLS12(t *testing.T) {
 	}()
 
 	// TLS client.
-	tlsClient := tls.Client(guest, &tls.Config{
+	tlsClient := tls.Client(guest, &tls.Config{ // #nosec G402
 		ServerName:         "example.com",
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402
 		MaxVersion:         tls.VersionTLS12,
 	})
 
@@ -899,8 +899,8 @@ func TestByteReplay_EndToEndTLS13(t *testing.T) {
 	proxyServer, server := net.Pipe()
 
 	deadline := time.Now().Add(5 * time.Second)
-	guest.SetDeadline(deadline)
-	server.SetDeadline(deadline)
+	_ = guest.SetDeadline(deadline)
+	_ = server.SetDeadline(deadline)
 
 	proxyErr := make(chan error, 1)
 	go func() {
@@ -930,9 +930,9 @@ func TestByteReplay_EndToEndTLS13(t *testing.T) {
 	}()
 
 	// TLS client, TLS 1.3 only.
-	tlsClient := tls.Client(guest, &tls.Config{
+	tlsClient := tls.Client(guest, &tls.Config{ // #nosec G402
 		ServerName:         "example.com",
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402
 		MinVersion:         tls.VersionTLS13,
 	})
 
@@ -965,8 +965,8 @@ func TestByteReplay_EndToEndTLS13ClientTLS12Server(t *testing.T) {
 	proxyServer, server := net.Pipe()
 
 	deadline := time.Now().Add(5 * time.Second)
-	guest.SetDeadline(deadline)
-	server.SetDeadline(deadline)
+	_ = guest.SetDeadline(deadline)
+	_ = server.SetDeadline(deadline)
 
 	proxyErr := make(chan error, 1)
 	go func() {
@@ -976,7 +976,7 @@ func TestByteReplay_EndToEndTLS13ClientTLS12Server(t *testing.T) {
 	// TLS server: TLS 1.2 only.
 	serverDone := make(chan error, 1)
 	go func() {
-		tlsServer := tls.Server(server, &tls.Config{
+		tlsServer := tls.Server(server, &tls.Config{ // #nosec G402
 			Certificates: []tls.Certificate{cert},
 			MaxVersion:   tls.VersionTLS12,
 		})
@@ -996,9 +996,9 @@ func TestByteReplay_EndToEndTLS13ClientTLS12Server(t *testing.T) {
 	}()
 
 	// TLS client: offers TLS 1.3 but accepts down to TLS 1.2.
-	tlsClient := tls.Client(guest, &tls.Config{
+	tlsClient := tls.Client(guest, &tls.Config{ // #nosec G402
 		ServerName:         "example.com",
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402
 		MinVersion:         tls.VersionTLS12,
 		// MaxVersion defaults to TLS 1.3.
 	})
@@ -1046,7 +1046,7 @@ func TestByteReplay_ECHGreaseAllowed(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -1081,7 +1081,7 @@ func TestByteReplay_ECHGreaseWithTLS13Extensions(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -1112,7 +1112,7 @@ func TestByteReplay_LegacyESNIAllowed(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -1162,7 +1162,7 @@ func TestByteReplay_ECHGreaseChromeAllowed(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -1202,7 +1202,7 @@ func TestByteReplay_ECHGreaseFirefoxAllowed(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -1235,7 +1235,7 @@ func TestByteReplay_ECHGreaseFragmentedAllowed(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -1265,7 +1265,7 @@ func TestByteReplay_ECHOuterAllowed(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -1295,7 +1295,7 @@ func TestByteReplay_LegacyESNILargePayloadAllowed(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))
@@ -1325,7 +1325,7 @@ func TestByteReplay_ECHInnerTypeAllowed(t *testing.T) {
 
 	go func() {
 		defer guest.Close()
-		guest.Write(ch)
+		_, _ = guest.Write(ch)
 	}()
 
 	received := make([]byte, len(ch))

@@ -25,7 +25,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 	var server *Server
 
 	ginkgo.BeforeEach(func() {
-		server, _ = New(nil, nil, []types.Zone{}, nil)
+		server, _ = New(nil, nil, []types.Zone{}, nil, nil)
 	})
 
 	ginkgo.It("should add dns zone with ip", func() {
@@ -168,7 +168,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 					},
 				},
 			},
-		}, nil)
+		}, nil, nil)
 		gomega.Expect(server.addZone(types.Zone{
 			Name: "testing.",
 			Records: []types.Record{
@@ -242,7 +242,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 	ginkgo.It("should preserve Protected flag when merging into existing zone", func() {
 		server, _ = New(nil, nil, []types.Zone{
 			{Name: "system.internal.", Protected: true, DefaultIP: net.ParseIP("10.0.0.1")},
-		}, nil)
+		}, nil, nil)
 		err := server.addZone(types.Zone{
 			Name:    "system.internal.",
 			Records: []types.Record{{Name: "api", IP: net.ParseIP("10.0.0.2")}},
@@ -277,7 +277,7 @@ var _ = ginkgo.Describe("dns zone validation", func() {
 				Protected: true,
 				DefaultIP: net.ParseIP("192.168.127.1"),
 			},
-		}, nil)
+		}, nil, nil)
 	})
 
 	ginkgo.It("should reject empty zone name", func() {
@@ -575,7 +575,7 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 				},
 			},
 		}
-		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream, nil)
+		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream, nil, nil)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
 		// Point the raw forwarder at the mock upstream server.
 		server.handler.nameservers = []string{mockSrv.LocalAddr().String()}
@@ -801,7 +801,7 @@ func TestDNSOutboundAllowLocalZoneNotAffected(t *testing.T) {
 			Name:      "internal.",
 			DefaultIP: net.ParseIP("192.168.1.1"),
 		},
-	}, upstream, allowlist)
+	}, upstream, allowlist, nil)
 	require.NoError(t, err)
 
 	// Query for a domain in the local zone.
@@ -834,7 +834,7 @@ func TestDNSOutboundAllowCaseNormalization(t *testing.T) {
 		regexp.MustCompile(`^allowed\.example\.com$`),
 	}
 
-	server, err := NewWithUpstreamResolver(nil, nil, nil, upstream, allowlist)
+	server, err := NewWithUpstreamResolver(nil, nil, nil, upstream, allowlist, nil)
 	require.NoError(t, err)
 
 	// Simulate a mixed-case DNS query — the handler should normalize to lowercase
@@ -864,7 +864,7 @@ func startDNSServer(upstream upstreamResolver, outboundAllow []*regexp.Regexp) (
 		return "", nil, err
 	}
 
-	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow)
+	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow, nil)
 	if err != nil {
 		return "", nil, err
 	}
