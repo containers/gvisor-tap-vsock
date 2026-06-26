@@ -3,6 +3,8 @@ capture.pcap
 tmp/
 test/qcon.log
 .idea/
+test-qemu/*.log
+test-qemu/*.fd
 .vscode/
-test-qemu/qcon.log
-test-qemu/ovmf_vars.fd
+/test-performance-qemu/qcon-perf.log
+/test-performance-qemu/ovmf_vars.fd
