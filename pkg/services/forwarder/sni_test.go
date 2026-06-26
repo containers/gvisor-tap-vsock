@@ -107,7 +107,7 @@ func buildALPNExtension() tlsExtension {
 	protos := []string{"h2", "http/1.1"}
 	var list bytes.Buffer
 	for _, p := range protos {
-		list.WriteByte(byte(len(p)))
+		list.WriteByte(byte(len(p))) // #nosec G115
 		list.WriteString(p)
 	}
 	_ = binary.Write(&buf, binary.BigEndian, uint16(list.Len())) // #nosec G115
@@ -138,7 +138,7 @@ func buildKeyShareExtension() tlsExtension {
 
 func buildSupportedVersionsExtension(versions ...uint16) tlsExtension {
 	var buf bytes.Buffer
-	buf.WriteByte(byte(len(versions) * 2))
+	buf.WriteByte(byte(len(versions) * 2)) // #nosec G115
 	for _, v := range versions {
 		_ = binary.Write(&buf, binary.BigEndian, v)
 	}
@@ -222,7 +222,7 @@ func buildClientHello(opts clientHelloOpts) []byte {
 	random := make([]byte, 32)
 	body.Write(random)
 	// Session ID
-	body.WriteByte(byte(len(opts.sessionID)))
+	body.WriteByte(byte(len(opts.sessionID))) // #nosec G115
 	body.Write(opts.sessionID)
 	// Cipher Suites
 	_ = binary.Write(&body, binary.BigEndian, uint16(len(opts.cipherSuites)*2)) // #nosec G115
@@ -230,7 +230,7 @@ func buildClientHello(opts clientHelloOpts) []byte {
 		_ = binary.Write(&body, binary.BigEndian, cs)
 	}
 	// Compression Methods
-	body.WriteByte(byte(len(opts.compressionMethods)))
+	body.WriteByte(byte(len(opts.compressionMethods))) // #nosec G115
 	body.Write(opts.compressionMethods)
 	// Extensions
 	if extsBuf.Len() > 0 || len(exts) > 0 {
@@ -244,9 +244,9 @@ func buildClientHello(opts clientHelloOpts) []byte {
 	var handshake bytes.Buffer
 	handshake.WriteByte(0x01) // ClientHello
 	hsLen := len(bodyBytes)
-	handshake.WriteByte(byte(hsLen >> 16))
-	handshake.WriteByte(byte(hsLen >> 8))
-	handshake.WriteByte(byte(hsLen))
+	handshake.WriteByte(byte(hsLen >> 16)) // #nosec G115
+	handshake.WriteByte(byte(hsLen >> 8))  // #nosec G115
+	handshake.WriteByte(byte(hsLen))       // #nosec G115
 	handshake.Write(bodyBytes)
 
 	hsBytes := handshake.Bytes()
@@ -983,11 +983,11 @@ func TestPeekSNI_FuzzMutated(t *testing.T) {
 			case 0: // flip a byte
 				if len(mutated) > 0 {
 					pos := rng.Intn(len(mutated))
-					mutated[pos] = byte(rng.Intn(256))
+					mutated[pos] = byte(rng.Intn(256)) // #nosec G115
 				}
 			case 1: // insert a byte
 				pos := rng.Intn(len(mutated) + 1)
-				mutated = append(mutated[:pos], append([]byte{byte(rng.Intn(256))}, mutated[pos:]...)...)
+				mutated = append(mutated[:pos], append([]byte{byte(rng.Intn(256))}, mutated[pos:]...)...) // #nosec G115
 			case 2: // delete a byte
 				if len(mutated) > 0 {
 					pos := rng.Intn(len(mutated))
@@ -1651,7 +1651,7 @@ func TestParseALPNExtension(t *testing.T) {
 				var buf bytes.Buffer
 				proto := "h2"
 				var list bytes.Buffer
-				list.WriteByte(byte(len(proto)))
+				list.WriteByte(byte(len(proto))) // #nosec G115
 				list.WriteString(proto)
 				_ = binary.Write(&buf, binary.BigEndian, uint16(list.Len())) // #nosec G115
 				buf.Write(list.Bytes())
