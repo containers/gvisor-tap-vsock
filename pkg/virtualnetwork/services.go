@@ -10,6 +10,7 @@ import (
 
 	"github.com/containers/gvisor-tap-vsock/pkg/services/dhcp"
 	"github.com/containers/gvisor-tap-vsock/pkg/services/dns"
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	"github.com/containers/gvisor-tap-vsock/pkg/services/forwarder"
 	"github.com/containers/gvisor-tap-vsock/pkg/tap"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
@@ -37,14 +38,18 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	}
 	gatewayIP := net.ParseIP(configuration.GatewayIP)
 
-	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.BlockAllOutbound, outboundAllow, gatewayIP)
+	// Create FilterObserver for connection tracking and API
+	filterObserver := filter.NewFilterObserver(configuration.MaxFilterHistory)
+	filterObserver.SetConfigAllowlist(outboundAllow)
+
+	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.BlockAllOutbound, outboundAllow, gatewayIP, filterObserver)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.BlockAllOutbound, outboundAllow, gatewayIP)
+	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.BlockAllOutbound, outboundAllow, gatewayIP, filterObserver)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 	icmpForwarder := forwarder.ICMP(s, translation, &natLock)
 	s.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
 
-	dnsMux, err := dnsServer(configuration, s, outboundAllow)
+	dnsMux, err := dnsServer(configuration, s, outboundAllow, filterObserver)
 	if err != nil {
 		return nil, err
 	}
@@ -62,6 +67,7 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	mux.Handle("/forwarder/", http.StripPrefix("/forwarder", forwarderMux))
 	mux.Handle("/dhcp/", http.StripPrefix("/dhcp", dhcpMux))
 	mux.Handle("/dns/", http.StripPrefix("/dns", dnsMux))
+	mux.Handle("/filter/", http.StripPrefix("/filter", filterObserver.Mux()))
 	return mux, nil
 }
 
@@ -73,7 +79,7 @@ func parseNATTable(configuration *types.Configuration) map[tcpip.Address]tcpip.A
 	return translation
 }
 
-func dnsServer(configuration *types.Configuration, s *stack.Stack, outboundAllow []*regexp.Regexp) (http.Handler, error) {
+func dnsServer(configuration *types.Configuration, s *stack.Stack, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) (http.Handler, error) {
 	udpConn, err := gonet.DialUDP(s, &tcpip.FullAddress{
 		NIC:  1,
 		Addr: tcpip.AddrFrom4Slice(net.ParseIP(configuration.GatewayIP).To4()),
@@ -92,7 +98,7 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack, outboundAllow
 		return nil, err
 	}
 
-	server, err := dns.New(udpConn, tcpLn, configuration.DNS, outboundAllow)
+	server, err := dns.New(udpConn, tcpLn, configuration.DNS, outboundAllow, observer)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -37,7 +38,7 @@ func udpRoutingAction(
 	return udpDirect
 }
 
-func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, blockAllOutbound bool, outboundAllow []*regexp.Regexp, gatewayIP net.IP) *udp.Forwarder {
+func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, blockAllOutbound bool, outboundAllow []*regexp.Regexp, gatewayIP net.IP, observer *filter.FilterObserver) *udp.Forwarder {
 	allowlistActive := len(outboundAllow) > 0
 	var gatewayAddr tcpip.Address
 	if gatewayIP != nil {
@@ -47,6 +48,13 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 	return udp.NewForwarder(s, func(r *udp.ForwarderRequest) bool {
 		localAddress := r.ID().LocalAddress
 
+		// Check dynamic blocklist first
+		if observer != nil && observer.IsBlocked("udp", localAddress.String(), r.ID().LocalPort) {
+			log.Debugf("Blocking UDP due to dynamic blocklist: %s:%d", localAddress.String(), r.ID().LocalPort)
+			observer.RecordConnection("udp", localAddress.String(), r.ID().LocalPort, "", false)
+			return true
+		}
+
 		action := udpRoutingAction(localAddress, blockAllOutbound, allowlistActive, gatewayAddr)
 		if action == udpBlock {
 			if blockAllOutbound {
@@ -55,6 +63,9 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 			} else {
 				log.Debugf("Blocking outbound UDP to %s:%d (outboundAllow active, non-gateway)",
 					localAddress.String(), r.ID().LocalPort)
+			}
+			if observer != nil {
+				observer.RecordConnection("udp", localAddress.String(), r.ID().LocalPort, "", false)
 			}
 			return true
 		}
@@ -78,6 +89,11 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 				log.Errorf("r.CreateEndpoint() = %v", tcpErr)
 			}
 			return false
+		}
+
+		// Record successful connection
+		if observer != nil {
+			observer.RecordConnection("udp", localAddress.String(), r.ID().LocalPort, "", true)
 		}
 
 		p, _ := NewUDPProxy(&autoStoppingListener{underlying: gonet.NewUDPConn(&wq, ep)}, func() (net.Conn, error) {

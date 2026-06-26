@@ -25,7 +25,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 	var server *Server
 
 	ginkgo.BeforeEach(func() {
-		server, _ = New(nil, nil, []types.Zone{}, nil)
+		server, _ = New(nil, nil, []types.Zone{}, nil, nil)
 	})
 
 	ginkgo.It("should add dns zone with ip", func() {
@@ -168,7 +168,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 					},
 				},
 			},
-		}, nil)
+		}, nil, nil)
 		server.addZone(types.Zone{
 			Name: "testing.",
 			Records: []types.Record{
@@ -446,7 +446,7 @@ func TestDNSOutboundAllowLocalZoneNotAffected(t *testing.T) {
 			Name:      "internal.",
 			DefaultIP: net.ParseIP("192.168.1.1"),
 		},
-	}, upstream, allowlist)
+	}, upstream, allowlist, nil)
 	require.NoError(t, err)
 
 	// Query for a domain in the local zone.
@@ -479,7 +479,7 @@ func TestDNSOutboundAllowCaseNormalization(t *testing.T) {
 		regexp.MustCompile(`^allowed\.example\.com$`),
 	}
 
-	server, err := NewWithUpstreamResolver(nil, nil, nil, upstream, allowlist)
+	server, err := NewWithUpstreamResolver(nil, nil, nil, upstream, allowlist, nil)
 	require.NoError(t, err)
 
 	// Simulate a mixed-case DNS query — the handler should normalize to lowercase
@@ -509,7 +509,7 @@ func startDNSServer(upstream upstreamResolver, outboundAllow []*regexp.Regexp) (
 		return "", nil, err
 	}
 
-	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow)
+	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow, nil)
 	if err != nil {
 		return "", nil, err
 	}
