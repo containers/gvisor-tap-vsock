@@ -23,6 +23,7 @@ func TestSuite(t *testing.T) {
 
 const (
 	sock               = "/tmp/gvproxy-api-vfkit.sock"
+	servicesSock       = "/tmp/gvproxy-vfkit-services.sock"
 	vfkitSock          = "/tmp/vfkit.sock"
 	ignitionSock       = "/tmp/ignition.sock"
 	sshPort            = 2223
@@ -50,6 +51,7 @@ var helper = e2e_utils.NewSuiteHelper(e2e_utils.SuiteConfig{
 	FormatType:   "raw.gz",
 	ConfigureGvproxy: func(cmd *types.GvproxyCommand) {
 		cmd.AddVfkitSocket("unixgram://" + vfkitSock)
+		cmd.AddServiceEndpoint("unix://" + servicesSock)
 	},
 	ModifyGvproxyCmd: func(cmd *exec.Cmd) *exec.Cmd {
 		if !*debugEnabled {
@@ -79,7 +81,7 @@ var helper = e2e_utils.NewSuiteHelper(e2e_utils.SuiteConfig{
 		gomega.Expect(e2e_utils.IsPortAvailable(sshPort)).Should(gomega.BeTrue())
 	},
 	PostTeardown:        cleanup,
-	ExtraGvproxySockets: []string{vfkitSock},
+	ExtraGvproxySockets: []string{vfkitSock, servicesSock},
 })
 
 func init() {
@@ -97,6 +99,7 @@ func scpFromVM(src, dst string) error {
 func cleanup() {
 	_ = os.Remove(efiStore)
 	_ = os.Remove(sock)
+	_ = os.Remove(servicesSock)
 	_ = os.Remove(vfkitSock)
 	socketPath := filepath.Join(os.TempDir(), "ignition.sock")
 	_ = os.Remove(socketPath)
