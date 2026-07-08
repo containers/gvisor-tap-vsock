@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
@@ -161,9 +162,19 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		switch protocol {
 		case types.UNIX:
 			p.ListenFunc = func(_, socketPath string) (net.Listener, error) {
-				// remove existing socket file
-				if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
+				info, err := os.Stat(socketPath)
+				if err != nil && !os.IsNotExist(err) {
+					// any error other than file does not exist is fatal
 					return nil, err
+				}
+				if err == nil {
+					if info.Mode().Type() != fs.ModeSocket {
+						return nil, fmt.Errorf("path already exists and is not a socket: %s", socketPath)
+					}
+					// remove existing socket file
+					if err := os.Remove(socketPath); err != nil {
+						return nil, err
+					}
 				}
 				return net.Listen("unix", socketPath) // override tcp to use unix socket
 			}
