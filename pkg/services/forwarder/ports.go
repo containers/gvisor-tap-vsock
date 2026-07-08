@@ -162,7 +162,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		switch protocol {
 		case types.UNIX:
 			p.ListenFunc = func(_, socketPath string) (net.Listener, error) {
-				info, err := os.Stat(socketPath)
+				info, err := os.Lstat(socketPath)
 				if err != nil && !os.IsNotExist(err) {
 					// any error other than file does not exist is fatal
 					return nil, err
