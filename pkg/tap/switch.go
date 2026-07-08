@@ -32,6 +32,8 @@ type NetworkSwitch interface {
 	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer)
 }
 
+const maxStreamPacketSize = 128 * 1024
+
 type Switch struct {
 	Sent     uint64
 	Received uint64
@@ -233,8 +235,7 @@ func (e *Switch) rx(ctx context.Context, id int, conn protocolConn) error {
 }
 
 func (e *Switch) rxNonStream(ctx context.Context, id int, conn net.Conn) error {
-	bufSize := 1024 * 128
-	buf := make([]byte, bufSize)
+	buf := make([]byte, maxStreamPacketSize)
 loop:
 	for {
 		select {
@@ -250,6 +251,13 @@ loop:
 		e.rxBuf(ctx, id, buf[:n])
 	}
 	return nil
+}
+
+func validateStreamPacketSize(size int) (err error) {
+	if size < 0 || size > maxStreamPacketSize {
+		err = fmt.Errorf("invalid packet size: %d is negative or exceeds maximum %d", size, maxStreamPacketSize)
+	}
+	return err
 }
 
 func (e *Switch) rxStream(ctx context.Context, id int, conn net.Conn, sProtocol streamProtocol) error {
@@ -268,6 +276,9 @@ loop:
 			return fmt.Errorf("cannot read size from socket: %w", err)
 		}
 		size := sProtocol.Read(sizeBuf)
+		if err := validateStreamPacketSize(size); err != nil {
+			return err
+		}
 
 		buf := make([]byte, size)
 		_, err = io.ReadFull(reader, buf)
