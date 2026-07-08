@@ -65,6 +65,7 @@ func gvproxyCmd() *exec.Cmd {
 	cmd := types.NewGvproxyCommand()
 	cmd.AddEndpoint(fmt.Sprintf("unix://%s", sock))
 	cmd.AddQemuSocket("tcp://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(qemuPort)))
+	cmd.GatewayExposeAllProtocols = true
 	cmd.AddForwardSock(forwardSock)
 	cmd.AddForwardDest(podmanSock)
 	cmd.AddForwardUser(ignitionUser)
