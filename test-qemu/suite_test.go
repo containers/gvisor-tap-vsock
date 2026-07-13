@@ -65,6 +65,9 @@ func gvproxyCmd() *exec.Cmd {
 	cmd := types.NewGvproxyCommand()
 	cmd.AddEndpoint(fmt.Sprintf("unix://%s", sock))
 	cmd.AddQemuSocket("tcp://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(qemuPort)))
+	// Required for unix socket forwarding tests (e.g. unix-to-tcp, unix-to-unix).
+	// By default, only tcp and udp are allowed on the gateway API.
+	// The restricted case is covered by unit tests in cmd/gvproxy/gateway_test.go.
 	cmd.GatewayExposeAllProtocols = true
 	cmd.AddForwardSock(forwardSock)
 	cmd.AddForwardDest(podmanSock)

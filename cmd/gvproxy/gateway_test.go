@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,7 +18,7 @@ func mockHandler() http.Handler {
 
 func TestGatewayExposeHandler(t *testing.T) {
 	t.Parallel()
-	handler := gatewayExposeHandler(mockHandler())
+	handler := virtualnetwork.GatewayProtocolFilter(mockHandler())
 
 	tests := []struct {
 		name           string
@@ -71,7 +72,7 @@ func TestGatewayExposeHandler(t *testing.T) {
 
 func TestGatewayExposeHandlerBlockMessage(t *testing.T) {
 	t.Parallel()
-	handler := gatewayExposeHandler(mockHandler())
+	handler := virtualnetwork.GatewayProtocolFilter(mockHandler())
 
 	req := httptest.NewRequest(http.MethodPost, "/services/forwarder/expose",
 		strings.NewReader(`{"local":"/tmp/test.sock","remote":"tcp://192.168.127.2:22","protocol":"unix"}`))
