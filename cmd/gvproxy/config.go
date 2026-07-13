@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
@@ -292,7 +293,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		if uri.Scheme != "unix" {
 			return config, errors.New("notification listen address must be unix:// address")
 		}
-		config.NotificationSocket = uri.Path
+		config.NotificationSocket = transport.UnixSocketPath(uri, runtime.GOOS)
 	}
 	if len(args.endpoints) > 0 {
 		config.Listen = args.endpoints
