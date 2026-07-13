@@ -2,13 +2,11 @@ package forwarder
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"sort"
@@ -32,10 +30,10 @@ type PortsForwarder struct {
 	stack *stack.Stack
 
 	proxiesLock sync.Mutex
-	proxies     map[ProxyKey]proxy
+	proxies     map[ProxyKey]Proxy
 }
 
-type proxy struct {
+type Proxy struct {
 	Local      string `json:"local"`
 	Remote     string `json:"remote"`
 	Protocol   string `json:"protocol"`
@@ -64,7 +62,7 @@ func (w CloseWrapper) Close() error {
 func NewPortsForwarder(s *stack.Stack) *PortsForwarder {
 	return &PortsForwarder{
 		stack:   s,
-		proxies: make(map[ProxyKey]proxy),
+		proxies: make(map[ProxyKey]Proxy),
 	}
 }
 
@@ -199,7 +197,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 				log.Error(err)
 			}
 		}()
-		f.proxies[key(protocol, local)] = proxy{
+		f.proxies[key(protocol, local)] = Proxy{
 			Protocol: string(protocol),
 			Local:    local,
 			Remote:   remote,
@@ -231,7 +229,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 			return err
 		}
 		go p.Run()
-		f.proxies[key(protocol, local)] = proxy{
+		f.proxies[key(protocol, local)] = Proxy{
 			Protocol:   "udp",
 			Local:      local,
 			Remote:     remote,
@@ -258,7 +256,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 				log.Error(err)
 			}
 		}()
-		f.proxies[key(protocol, local)] = proxy{
+		f.proxies[key(protocol, local)] = Proxy{
 			Protocol:   "tcp",
 			Local:      local,
 			Remote:     remote,
@@ -285,76 +283,24 @@ func (f *PortsForwarder) Unexpose(protocol types.TransportProtocol, local string
 	return proxy.underlying.Close()
 }
 
-func (f *PortsForwarder) Mux() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/all", func(w http.ResponseWriter, _ *http.Request) {
-		f.proxiesLock.Lock()
-		defer f.proxiesLock.Unlock()
-		ret := make([]proxy, 0)
-		for _, proxy := range f.proxies {
-			ret = append(ret, proxy)
+func (f *PortsForwarder) List() []Proxy {
+	f.proxiesLock.Lock()
+	defer f.proxiesLock.Unlock()
+	ret := make([]Proxy, 0)
+	for _, p := range f.proxies {
+		ret = append(ret, p)
+	}
+	sort.Slice(ret, func(i, j int) bool {
+		if ret[i].Local == ret[j].Local {
+			return ret[i].Protocol < ret[j].Protocol
 		}
-		sort.Slice(ret, func(i, j int) bool {
-			if ret[i].Local == ret[j].Local {
-				return ret[i].Protocol < ret[j].Protocol
-			}
-			return ret[i].Local < ret[j].Local
-		})
-		_ = json.NewEncoder(w).Encode(ret)
+		return ret[i].Local < ret[j].Local
 	})
-	mux.HandleFunc("/expose", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "post only", http.StatusBadRequest)
-			return
-		}
-		var req types.ExposeRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if req.Protocol == "" {
-			req.Protocol = types.TCP
-		}
+	return ret
+}
 
-		// contains unparsed remote field
-		remoteAddr := req.Remote
-
-		// TCP and UDP rely on remote() to preparse the remote field
-		if req.Protocol != types.UNIX && req.Protocol != types.NPIPE {
-			var err error
-			remoteAddr, err = remote(req, r.RemoteAddr)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-		}
-
-		if err := f.Expose(req.Protocol, req.Local, remoteAddr); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-	mux.HandleFunc("/unexpose", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "post only", http.StatusBadRequest)
-			return
-		}
-		var req types.UnexposeRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if req.Protocol == "" {
-			req.Protocol = types.TCP
-		}
-		if err := f.Unexpose(req.Protocol, req.Local); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-	return mux
+func Remote(req types.ExposeRequest, ip string) (string, error) {
+	return remote(req, ip)
 }
 
 // if the request doesn't have an IP in the remote field, use the IP from the incoming http request.

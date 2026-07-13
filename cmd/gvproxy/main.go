@@ -2,12 +2,9 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -164,15 +161,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if err != nil {
 		return err
 	}
-	mux := http.NewServeMux()
-	mux.Handle("/services/forwarder/all", vn.Mux())
-	if config.GatewayExposeAllProtocols {
-		mux.Handle("/services/forwarder/expose", vn.Mux())
-	} else {
-		mux.Handle("/services/forwarder/expose", gatewayExposeHandler(vn.Mux()))
-	}
-	mux.Handle("/services/forwarder/unexpose", vn.Mux())
-	httpServe(ctx, g, ln, mux)
+	httpServe(ctx, g, ln, vn.GatewayMux(config.GatewayExposeAllProtocols))
 
 	if InDebugMode() {
 		g.Go(func() error {
@@ -392,35 +381,6 @@ func withProfiler(vn *virtualnetwork.VirtualNetwork) http.Handler {
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	}
 	return mux
-}
-
-func gatewayExposeHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Protocol string `json:"protocol"`
-		}
-
-		bodyBytes, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		r.Body.Close()
-
-		if err := json.Unmarshal(bodyBytes, &req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		if req.Protocol == "unix" || req.Protocol == "npipe" {
-			log.Warnf("blocked %s protocol on gateway API", req.Protocol)
-			http.Error(w, "unix and npipe protocols are not allowed on the gateway API", http.StatusForbidden)
-			return
-		}
-
-		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		next.ServeHTTP(w, r)
-	})
 }
 
 func searchDomains() []string {
