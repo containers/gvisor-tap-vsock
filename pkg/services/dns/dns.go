@@ -27,6 +27,11 @@ type dnsHandler struct {
 	zones     []types.Zone
 	zonesLock sync.RWMutex
 	upstream  upstreamResolver
+	// nameservers are the host's upstream DNS servers ("ip:port") used to
+	// forward raw queries for record types that Go's net.Resolver cannot
+	// look up directly (SOA, PTR, AAAA, CAA, ...).
+	nameservers []string
+	client      *dns.Client
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
@@ -232,9 +237,62 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 					Txt: splitTxt(txt),
 				})
 			}
-
+		default:
+			// Record types not handled above (SOA, PTR, AAAA, CAA, ...) are
+			// forwarded verbatim to the host's upstream nameservers, since
+			// Go's net.Resolver has no generic query for them.
+			h.addAnswersFromNameservers(m, q)
 		}
 	}
+}
+
+// addAnswersFromNameservers forwards the raw query q to the host's upstream
+// nameservers and copies the response back into m. It is used as the fallback
+// for record types that the typed net.Resolver cannot resolve.
+func (h *dnsHandler) addAnswersFromNameservers(m *dns.Msg, q dns.Question) {
+	if len(h.nameservers) == 0 {
+		// No upstream discovered (e.g. Windows, no /etc/resolv.conf): preserve
+		// the previous behavior (empty NOERROR) and leave the Rcode untouched.
+		return
+	}
+
+	req := new(dns.Msg)
+	req.SetQuestion(q.Name, q.Qtype)
+	req.RecursionDesired = true
+
+	for _, ns := range h.nameservers {
+		resp, _, err := h.client.Exchange(req, ns)
+		if err != nil || resp == nil {
+			continue
+		}
+		// Copy the answer and authority sections. A NODATA response carries the
+		// zone SOA in the authority (Ns) section. Extra is intentionally not
+		// copied: it may hold an OPT/EDNS0 pseudo-record that would conflict
+		// with the EDNS handling in handle().
+		m.Answer = append(m.Answer, resp.Answer...)
+		m.Ns = append(m.Ns, resp.Ns...)
+		m.Rcode = resp.Rcode
+		return
+	}
+
+	// The upstream servers are known but none could be reached.
+	m.Rcode = dns.RcodeServerFailure
+}
+
+// hostNameservers returns the upstream DNS servers ("ip:port") configured on
+// the host. /etc/resolv.conf exists on Linux and macOS; on other platforms
+// (e.g. Windows) it is absent and an empty list is returned.
+func hostNameservers() []string {
+	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
+	if err != nil {
+		log.Warnf("cannot read /etc/resolv.conf, DNS queries for SOA/PTR/AAAA and other unhandled types will not be forwarded: %v", err)
+		return nil
+	}
+	servers := make([]string, 0, len(conf.Servers))
+	for _, s := range conf.Servers {
+		servers = append(servers, net.JoinHostPort(s, conf.Port))
+	}
+	return servers
 }
 
 type Server struct {
@@ -251,7 +309,12 @@ func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Serve
 }
 
 func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver) (*Server, error) {
-	handler := &dnsHandler{zones: zones, upstream: upstream}
+	handler := &dnsHandler{
+		zones:       zones,
+		upstream:    upstream,
+		nameservers: hostNameservers(),
+		client:      &dns.Client{},
+	}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
 }
 
