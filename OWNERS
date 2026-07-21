@@ -3,6 +3,8 @@ approvers:
   - cfergeau
   - evidolob
   - lstocchi
+  - vyasgun
+  - praveenkumar
 
 reviewers:
   - baude
@@ -11,3 +13,4 @@ reviewers:
   - praveenkumar
   - evidolob
   - lstocchi
+  - vyasgun
