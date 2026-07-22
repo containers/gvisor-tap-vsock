@@ -105,7 +105,7 @@ func ListenUnixgram(endpoint string) (*net.UnixConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(parsed.Path, 0600); err != nil {
+	if err := os.Chmod(parsed.Path, 0600); err != nil { // #nosec G703 - socket path from configured listen URL
 		_ = conn.Close()
 		return nil, err
 	}

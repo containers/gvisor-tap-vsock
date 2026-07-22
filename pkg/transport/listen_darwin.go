@@ -29,7 +29,7 @@ func listenURL(parsed *url.URL) (net.Listener, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := os.Chmod(path, 0600); err != nil {
+		if err := os.Chmod(path, 0600); err != nil { // #nosec G703 - constructed path for socket permissions
 			_ = listener.Close()
 			return nil, err
 		}
