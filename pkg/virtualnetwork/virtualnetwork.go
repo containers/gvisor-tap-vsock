@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"net/http"
 	"os"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/notification"
+	"github.com/containers/gvisor-tap-vsock/pkg/services/dhcp"
+	"github.com/containers/gvisor-tap-vsock/pkg/services/dns"
+	"github.com/containers/gvisor-tap-vsock/pkg/services/forwarder"
 	"github.com/containers/gvisor-tap-vsock/pkg/tap"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -25,8 +27,10 @@ type VirtualNetwork struct {
 	configuration *types.Configuration
 	stack         *stack.Stack
 	networkSwitch *tap.Switch
-	servicesMux   http.Handler
 	ipPool        *tap.IPPool
+	forwarder     *forwarder.PortsForwarder
+	dnsServer     *dns.Server
+	dhcpServer    *dhcp.Server
 }
 
 func (n *VirtualNetwork) SetNotificationSender(notificationSender *notification.NotificationSender) {
@@ -78,7 +82,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		return nil, fmt.Errorf("cannot create network stack: %w", err)
 	}
 
-	mux, err := addServices(configuration, stack, ipPool)
+	fw, dnsServer, dhcpServer, err := addServices(configuration, stack, ipPool)
 	if err != nil {
 		return nil, fmt.Errorf("cannot add network services: %w", err)
 	}
@@ -87,8 +91,10 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		configuration: configuration,
 		stack:         stack,
 		networkSwitch: networkSwitch,
-		servicesMux:   mux,
 		ipPool:        ipPool,
+		forwarder:     fw,
+		dnsServer:     dnsServer,
+		dhcpServer:    dhcpServer,
 	}, nil
 }
 

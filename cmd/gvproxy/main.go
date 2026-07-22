@@ -152,7 +152,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		log.Infof("enabling services API. Listening %s", config.Services)
 		ln, err := transport.Listen(config.Services)
 		if err != nil {
-			return fmt.Errorf("cannot listen: %w", err)
+			return fmt.Errorf("cannot listen: %w", err)
 		}
 		httpServe(ctx, g, ln, vn.ServicesMux())
 	}
@@ -161,11 +161,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if err != nil {
 		return err
 	}
-	mux := http.NewServeMux()
-	mux.Handle("/services/forwarder/all", vn.Mux())
-	mux.Handle("/services/forwarder/expose", vn.Mux())
-	mux.Handle("/services/forwarder/unexpose", vn.Mux())
-	httpServe(ctx, g, ln, mux)
+	httpServe(ctx, g, ln, vn.GatewayMux(config.GatewayExposeAllProtocols))
 
 	if InDebugMode() {
 		g.Go(func() error {
