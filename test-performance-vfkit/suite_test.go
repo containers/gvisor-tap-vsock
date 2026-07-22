@@ -1,9 +1,8 @@
 //go:build darwin
 
-package e2evfkit
+package e2e_performance_vfkit
 
 import (
-	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,14 +17,14 @@ import (
 
 func TestSuite(t *testing.T) {
 	gomega.RegisterFailHandler(ginkgo.Fail)
-	ginkgo.RunSpecs(t, "gvisor-tap-vsock suite")
+	ginkgo.RunSpecs(t, "gvisor-tap-vsock performance suite (vfkit)")
 }
 
 const (
-	sock               = "/tmp/gvproxy-api-vfkit.sock"
-	vfkitSock          = "/tmp/vfkit.sock"
-	ignitionSock       = "/tmp/ignition.sock"
-	sshPort            = 2223
+	sock               = "/tmp/gvproxy-api-perf-vfkit.sock"
+	vfkitSock          = "/tmp/vfkit-perf.sock"
+	ignitionSock       = "/tmp/ignition-perf-vfkit.sock"
+	sshPort            = 2224
 	efiStore           = "efi-variable-store"
 	vfkitVersionNeeded = 0.6
 
@@ -34,31 +33,18 @@ const (
 	ignitionPasswordHash = "$y$j9T$TqJWt3/mKJbH0sYi6B/LD1$QjVRuUgntjTHjAdAkqhkr4F73m.Be4jBXdAaKw98sPC" // notsecret
 )
 
-var (
-	debugEnabled = flag.Bool("debug", false, "enable debugger")
-	cmdDir       = "../cmd"
-)
-
 var helper = e2e_utils.NewSuiteHelper(e2e_utils.SuiteConfig{
-	Sock:         sock,
-	SSHPort:      sshPort,
-	IgnitionUser: ignitionUser,
-	PasswordHash: ignitionPasswordHash,
-	KeyPrefix:    "id_test_vfkit",
-	IgnPrefix:    "test",
-	ArtifactType: "applehv",
-	FormatType:   "raw.gz",
+	Sock:                sock,
+	SSHPort:             sshPort,
+	IgnitionUser:        ignitionUser,
+	PasswordHash:        ignitionPasswordHash,
+	KeyPrefix:           "id_test_perf_vfkit",
+	IgnPrefix:           "test-perf-vfkit",
+	ArtifactType:        "applehv",
+	FormatType:          "raw.gz",
+	DeployTestCompanion: true,
 	ConfigureGvproxy: func(cmd *types.GvproxyCommand) {
 		cmd.AddVfkitSocket("unixgram://" + vfkitSock)
-	},
-	ModifyGvproxyCmd: func(cmd *exec.Cmd) *exec.Cmd {
-		if !*debugEnabled {
-			return cmd
-		}
-		gvproxyArgs := cmd.Args[1:]
-		dlvArgs := []string{"debug", "--headless", "--listen=:2345", "--api-version=2", "--accept-multiclient", filepath.Join(cmdDir, "gvproxy"), "--"}
-		dlvArgs = append(dlvArgs, gvproxyArgs...)
-		return exec.Command("dlv", dlvArgs...) // #nosec G204
 	},
 	SetupVM: func(imagePath, ignFile string) (*exec.Cmd, error) {
 		return e2e_utils.VfkitCmd(e2e_utils.VfkitVMConfig{
@@ -86,19 +72,11 @@ func init() {
 	helper.InitFlags()
 }
 
-func scpToVM(src, dst string) error {
-	return helper.SCP(src, dst)
-}
-
-func scpFromVM(src, dst string) error {
-	return helper.SCPFromVM(src, dst)
-}
-
 func cleanup() {
 	_ = os.Remove(efiStore)
 	_ = os.Remove(sock)
 	_ = os.Remove(vfkitSock)
-	socketPath := filepath.Join(os.TempDir(), "ignition.sock")
+	socketPath := filepath.Join(os.TempDir(), "ignition-perf-vfkit.sock")
 	_ = os.Remove(socketPath)
 }
 
@@ -109,3 +87,5 @@ var _ = ginkgo.BeforeSuite(func() {
 var _ = ginkgo.AfterSuite(func() {
 	helper.TeardownSuite()
 })
+
+var _ = helper.ReportAfterSuite()
