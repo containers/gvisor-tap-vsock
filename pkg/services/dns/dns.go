@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -297,6 +298,44 @@ func (s *Server) Mux() http.Handler {
 		s.addZone(req)
 		w.WriteHeader(http.StatusOK)
 	})
+
+	mux.HandleFunc("/remove", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "post only", http.StatusBadRequest)
+			return
+		}
+		var req types.Zone
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		if !s.removeZone(req.Name) {
+			http.Error(w, "zone not found", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("/remove/record", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "post only", http.StatusBadRequest)
+			return
+		}
+		var req removeRecordRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := s.removeRecord(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 	return mux
 }
 
@@ -312,4 +351,61 @@ func (s *Server) addZone(req types.Zone) {
 	}
 	// No existing zone for req.Name, add new one
 	s.handler.zones = append(s.handler.zones, req)
+}
+
+func (s *Server) removeZone(name string) bool {
+	s.handler.zonesLock.Lock()
+	defer s.handler.zonesLock.Unlock()
+	for i, zone := range s.handler.zones {
+		if zone.Name == name {
+			s.handler.zones = append(s.handler.zones[:i], s.handler.zones[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// removeRecordRequest is the JSON body for /remove/record.
+type removeRecordRequest struct {
+	Name   string       `json:"name"` // zone name
+	Record types.Record `json:"record"`
+}
+
+// recordMatches returns true if r matches the target (by Name and IP when provided).
+func recordMatches(r, target types.Record) bool {
+	if r.Name != target.Name {
+		return false
+	}
+	if len(target.IP) != 0 && !r.IP.Equal(target.IP) {
+		return false
+	}
+	return true
+}
+
+// removeRecord validates the request, removes from the zone any record matching req.Record, and returns an error for validation or not-found.
+func (s *Server) removeRecord(req removeRecordRequest) error {
+	if req.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if req.Record.Name == "" {
+		return fmt.Errorf("record name is required")
+	}
+	s.handler.zonesLock.Lock()
+	defer s.handler.zonesLock.Unlock()
+	for i, zone := range s.handler.zones {
+		if zone.Name != req.Name {
+			continue
+		}
+		z := s.handler.zones[i]
+		before := len(z.Records)
+		z.Records = slices.DeleteFunc(z.Records, func(r types.Record) bool {
+			return recordMatches(r, req.Record)
+		})
+		if len(z.Records) < before {
+			s.handler.zones[i] = z
+			return nil
+		}
+		return fmt.Errorf("record not found")
+	}
+	return fmt.Errorf("zone not found")
 }
