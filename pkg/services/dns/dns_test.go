@@ -312,6 +312,90 @@ var _ = ginkgo.Describe("TXT records", func() {
 
 })
 
+var _ = ginkgo.Describe("forwarding unhandled record types", func() {
+	var (
+		mockSrv *mockdns.Server
+		server  *Server
+	)
+
+	const (
+		aaaaDomain = "aaaa.example.org."
+		ptrName    = "2.1.168.192.in-addr.arpa."
+		ptrTarget  = "host.example.org."
+	)
+
+	ginkgo.BeforeEach(func() {
+		var err error
+		mockSrv, err = mockdns.NewServer(map[string]mockdns.Zone{
+			aaaaDomain: {
+				AAAA: []string{"fe80::1"},
+			},
+			ptrName: {
+				PTR: []string{ptrTarget},
+			},
+		}, false)
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+
+		server, err = New(nil, nil, []types.Zone{})
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+		// Point the raw forwarder at the mock upstream server.
+		server.handler.nameservers = []string{mockSrv.LocalAddr().String()}
+	})
+
+	ginkgo.AfterEach(func() {
+		if mockSrv != nil {
+			_ = mockSrv.Close()
+		}
+	})
+
+	query := func(name string, qtype uint16) *dns.Msg {
+		m := new(dns.Msg)
+		m.SetQuestion(name, qtype)
+		server.handler.addAnswers(m)
+		return m
+	}
+
+	ginkgo.It("should forward SOA queries", func() {
+		m := query("example.org.", dns.TypeSOA)
+		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeSuccess))
+		gomega.Expect(m.Answer).To(gomega.HaveLen(1))
+		_, ok := m.Answer[0].(*dns.SOA)
+		gomega.Expect(ok).To(gomega.BeTrue(), "expected an SOA answer")
+	})
+
+	ginkgo.It("should forward AAAA queries", func() {
+		m := query(aaaaDomain, dns.TypeAAAA)
+		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeSuccess))
+		gomega.Expect(m.Answer).To(gomega.HaveLen(1))
+		aaaa, ok := m.Answer[0].(*dns.AAAA)
+		gomega.Expect(ok).To(gomega.BeTrue(), "expected an AAAA answer")
+		gomega.Expect(aaaa.AAAA.String()).To(gomega.Equal("fe80::1"))
+	})
+
+	ginkgo.It("should forward PTR queries", func() {
+		m := query(ptrName, dns.TypePTR)
+		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeSuccess))
+		gomega.Expect(m.Answer).To(gomega.HaveLen(1))
+		ptr, ok := m.Answer[0].(*dns.PTR)
+		gomega.Expect(ok).To(gomega.BeTrue(), "expected a PTR answer")
+		gomega.Expect(ptr.Ptr).To(gomega.Equal(ptrTarget))
+	})
+
+	ginkgo.It("should return SERVFAIL when the upstream cannot be reached", func() {
+		server.handler.client = &dns.Client{Timeout: 200 * time.Millisecond}
+		server.handler.nameservers = []string{"127.0.0.1:1"} // nothing listening
+		m := query("example.org.", dns.TypeCAA)
+		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeServerFailure))
+	})
+
+	ginkgo.It("should keep NOERROR with no answers when no upstream is configured", func() {
+		server.handler.nameservers = nil
+		m := query("example.org.", dns.TypeCAA)
+		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeSuccess))
+		gomega.Expect(m.Answer).To(gomega.BeEmpty())
+	})
+})
+
 type ARecord struct {
 	name        string
 	expectedIPs []string
