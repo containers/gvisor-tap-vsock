@@ -80,6 +80,7 @@ type Zone struct {
 	Name      string   `yaml:"name,omitempty"`
 	Records   []Record `yaml:"records,omitempty"`
 	DefaultIP net.IP   `yaml:"defaultIP,omitempty"`
+	Protected bool     `yaml:"protected,omitempty"`
 }
 
 type Record struct {
