@@ -22,10 +22,18 @@ func listenURL(parsed *url.URL) (net.Listener, error) {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) { // #nosec G703 - constructed path for socket cleanup
 			return nil, err
 		}
-		return net.ListenUnix("unix", &net.UnixAddr{
+		listener, err := net.ListenUnix("unix", &net.UnixAddr{
 			Name: path,
 			Net:  "unix",
 		})
+		if err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(path, 0600); err != nil { // #nosec G703 - constructed path for socket permissions
+			_ = listener.Close()
+			return nil, err
+		}
+		return listener, nil
 	default:
 		return defaultListenURL(parsed)
 	}

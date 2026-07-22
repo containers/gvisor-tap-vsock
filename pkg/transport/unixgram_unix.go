@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"syscall"
 )
 
@@ -97,10 +98,18 @@ func ListenUnixgram(endpoint string) (*net.UnixConn, error) {
 	if parsed.Scheme != "unixgram" {
 		return nil, errors.New("unexpected scheme")
 	}
-	return net.ListenUnixgram("unixgram", &net.UnixAddr{
+	conn, err := net.ListenUnixgram("unixgram", &net.UnixAddr{
 		Name: parsed.Path,
 		Net:  "unixgram",
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(parsed.Path, 0600); err != nil { // #nosec G703 - socket path from configured listen URL
+		_ = conn.Close()
+		return nil, err
+	}
+	return conn, nil
 }
 
 func AcceptVfkit(listeningConn *net.UnixConn) (net.Conn, error) {
