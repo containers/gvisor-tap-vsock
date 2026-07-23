@@ -64,7 +64,7 @@ func Decompress(localPath string) (string, error) {
 	// we remove the uncompressed file if already exists. Maybe it has been used earlier and can affect the tests result
 	os.Remove(uncompressedPath)
 
-	uncompressedFileWriter, err := os.OpenFile(uncompressedPath, os.O_CREATE|os.O_RDWR, 0600)
+	uncompressedFileWriter, err := os.OpenFile(uncompressedPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return "", err
 	}

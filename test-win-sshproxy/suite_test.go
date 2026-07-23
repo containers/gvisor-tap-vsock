@@ -37,9 +37,9 @@ func TestSuite(t *testing.T) {
 func init() {
 	flag.StringVar(&tmpDir, "tmpDir", "../tmp", "temporary working directory")
 	flag.StringVar(&binDir, "bin", "../bin", "directory with compiled binaries")
-	_ = os.MkdirAll(tmpDir, 0755)
+	_ = os.MkdirAll(tmpDir, 0o755)
 	keyFile = filepath.Join(tmpDir, "id.key")
-	_ = os.WriteFile(keyFile, []byte(fakeHostKey), 0600)
+	_ = os.WriteFile(keyFile, []byte(fakeHostKey), 0o600)
 	winSshProxy = filepath.Join(binDir, "win-sshproxy.exe")
 	tidFile = filepath.Join(tmpDir, "win-sshproxy.tid")
 }

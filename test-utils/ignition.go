@@ -7,8 +7,8 @@ import (
 )
 
 var (
-	mode    = 0644
-	dirMode = 0744
+	mode    = 0o644
+	dirMode = 0o744
 	root    = "root"
 	test    = "test"
 	yes     = true
@@ -142,7 +142,7 @@ ExecStart=/usr/bin/sleep infinity
 	}
 
 	// #nosec
-	return os.WriteFile(ignitionFile, contents, 0644)
+	return os.WriteFile(ignitionFile, contents, 0o644)
 }
 
 func dir(path string) Directory {

@@ -56,15 +56,19 @@ func main() {
 	}
 
 	// Attempt to set up logging with the event log service.
-	// If it fails because the Windows Event Log Service is not running, show a warning
-	// and continue execution. There could be a reason why user disabled the Event Log.
+	// If it fails because the Windows Event Log Service is not running,
+	// because the user isn't allowed to create events, or for any other
+	// reason, show a warning and continue execution. Failing to setup
+	// logging shouldn't prevent execution.
 	log, err := setupLogging(args[0])
 	if err != nil {
-		if errors.Is(err, syscall.Errno(RPC_S_SERVER_UNAVAILABLE)) {
+		switch {
+		case errors.Is(err, syscall.Errno(RPC_S_SERVER_UNAVAILABLE)):
 			logrus.Warn("RPC server is unavailable, continuing without event log")
-		} else {
-			logrus.Errorf("Error setting up logging: %v", err)
-			os.Exit(1)
+		case errors.Is(err, syscall.ERROR_ACCESS_DENIED):
+			logrus.Warn("register to Windows event log denied, continuing without event log")
+		default:
+			logrus.Warnf("Error setting up logging: %v", err)
 		}
 	}
 
@@ -187,7 +191,7 @@ func setupProxies(ctx context.Context, g *errgroup.Group, sources []string, dest
 
 func saveThreadId() (uint32, error) {
 	path := filepath.Join(stateDir, "win-sshproxy.tid")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0o644)
 	if err != nil {
 		return 0, err
 	}
