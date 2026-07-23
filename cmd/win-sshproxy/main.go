@@ -191,7 +191,7 @@ func setupProxies(ctx context.Context, g *errgroup.Group, sources []string, dest
 
 func saveThreadId() (uint32, error) {
 	path := filepath.Join(stateDir, "win-sshproxy.tid")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0o644)
 	if err != nil {
 		return 0, err
 	}
