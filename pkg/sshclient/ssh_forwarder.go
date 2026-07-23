@@ -117,7 +117,7 @@ func listenUnix(socketURI *url.URL) (net.Listener, error) {
 		return nil, err
 	}
 
-	oldmask := fs.Umask(0177)
+	oldmask := fs.Umask(0o177)
 	defer fs.Umask(oldmask)
 	listener, err := net.Listen("unix", path)
 	if err != nil {
