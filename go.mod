@@ -4,7 +4,6 @@ go 1.25.6
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/apparentlymart/go-cidr v1.1.1
 	github.com/containers/winquit v1.1.0
 	github.com/coreos/stream-metadata-go v0.4.11
 	github.com/crc-org/vfkit v0.6.4
