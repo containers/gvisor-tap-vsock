@@ -34,7 +34,7 @@ jobs:
         mv bin/gvproxy.exe bin/gvproxy-windowsgui.exe
 
     - name: Log in to Quay.io
-      uses: redhat-actions/podman-login@v1
+      uses: redhat-actions/podman-login@v2
       with:
         username: ${{ secrets.QUAY_USER_NAME }}
         password: ${{ secrets.QUAY_PASSWORD }}
