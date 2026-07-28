@@ -44,7 +44,7 @@ func handler(configuration *types.Configuration, ipPool *tap.IPPool) server4.Han
 			return
 		}
 
-		reply.YourIPAddr = ip
+		reply.YourIPAddr = net.IP(ip.AsSlice())
 		reply.UpdateOption(dhcpv4.OptServerIdentifier(net.ParseIP(configuration.GatewayIP)))
 		reply.UpdateOption(dhcpv4.OptIPAddressLeaseTime(time.Hour))
 

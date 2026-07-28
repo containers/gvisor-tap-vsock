@@ -34,17 +34,19 @@ func (n *VirtualNetwork) SetNotificationSender(notificationSender *notification.
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {
-	_, subnet, err := net.ParseCIDR(configuration.Subnet)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse subnet cidr: %w", err)
-	}
-
 	var endpoint stack.LinkEndpoint
 
-	ipPool := tap.NewIPPool(subnet)
-	ipPool.Reserve(net.ParseIP(configuration.GatewayIP), configuration.GatewayMacAddress)
+	ipPool, err := tap.NewIPPool(configuration.Subnet)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse subnet CIDR: %w", err)
+	}
+	if err := ipPool.Reserve(configuration.GatewayIP, configuration.GatewayMacAddress); err != nil {
+		return nil, fmt.Errorf("cannot reserve gateway IP: %w", err)
+	}
 	for ip, mac := range configuration.DHCPStaticLeases {
-		ipPool.Reserve(net.ParseIP(ip), mac)
+		if err := ipPool.Reserve(ip, mac); err != nil {
+			return nil, fmt.Errorf("cannot reserve static lease IP %s: %w", ip, err)
+		}
 	}
 
 	mtu := configuration.MTU
