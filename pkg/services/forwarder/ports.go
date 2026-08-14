@@ -180,7 +180,12 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		}
 		go func() {
 			if err := p.Wait(); err != nil {
-				log.Error(err)
+				// ignore "connection closed" errors as when calling `Proxy.Close()` at exit,
+				// it’s expected that we get:
+				// `accept unix /some/path: use of closed network connection`
+				if !errors.Is(err, net.ErrClosed) {
+					log.Error(err)
+				}
 			}
 		}()
 		f.proxies[key(protocol, local)] = proxy{
