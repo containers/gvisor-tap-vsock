@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -161,10 +160,6 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		switch protocol {
 		case types.UNIX:
 			p.ListenFunc = func(_, socketPath string) (net.Listener, error) {
-				// remove existing socket file
-				if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
-					return nil, err
-				}
 				return net.Listen("unix", socketPath) // override tcp to use unix socket
 			}
 		case types.NPIPE:
