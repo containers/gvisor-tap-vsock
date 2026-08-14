@@ -279,6 +279,18 @@ func (f *PortsForwarder) Unexpose(protocol types.TransportProtocol, local string
 	return proxy.underlying.Close()
 }
 
+func (f *PortsForwarder) Close() error {
+	f.proxiesLock.Lock()
+	defer f.proxiesLock.Unlock()
+	for _, proxy := range f.proxies {
+		proxy.underlying.Close()
+	}
+	f.proxies = make(map[ProxyKey]proxy)
+	f.stack = nil
+
+	return nil
+}
+
 func (f *PortsForwarder) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/all", func(w http.ResponseWriter, _ *http.Request) {
