@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -24,9 +26,11 @@ type upstreamResolver interface {
 }
 
 type dnsHandler struct {
-	zones     []types.Zone
-	zonesLock sync.RWMutex
-	upstream  upstreamResolver
+	zones         []types.Zone
+	zonesLock     sync.RWMutex
+	upstream      upstreamResolver
+	outboundAllow []*regexp.Regexp
+	observer      *filter.FilterObserver
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
@@ -116,10 +120,27 @@ func splitTxt(s string) []string {
 
 	return c
 }
+
 func (h *dnsHandler) addAnswers(m *dns.Msg) {
 	for _, q := range m.Question {
 		if done := h.addLocalAnswers(m, q); done {
 			return
+		}
+
+		// Check outbound allowlist before upstream resolution.
+		domain := strings.ToLower(strings.TrimSuffix(q.Name, "."))
+		if len(h.outboundAllow) > 0 || (h.observer != nil && h.observer.HasDynamicAllowlist()) {
+			staticAllowed := len(h.outboundAllow) == 0 || filter.MatchesOutboundAllowlist(domain, h.outboundAllow)
+			dynamicAllowed := h.observer != nil && h.observer.MatchesDynamicAllowlist(domain)
+
+			if !staticAllowed && !dynamicAllowed {
+				log.Debugf("Blocking DNS query for %q (not in allowlist)", domain)
+				if h.observer != nil {
+					h.observer.RecordDNS(domain, false)
+				}
+				m.Rcode = dns.RcodeNameError
+				return
+			}
 		}
 
 		resolver := h.upstream
@@ -130,10 +151,12 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 				m.Rcode = dns.RcodeNameError
 				return
 			}
+			var resolvedIPs []string
 			for _, ip := range ips {
 				if len(ip.IP.To4()) != net.IPv4len {
 					continue
 				}
+				resolvedIPs = append(resolvedIPs, ip.IP.To4().String())
 				m.Answer = append(m.Answer, &dns.A{
 					Hdr: dns.RR_Header{
 						Name:   q.Name,
@@ -143,6 +166,9 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 					},
 					A: ip.IP.To4(),
 				})
+			}
+			if h.observer != nil && len(resolvedIPs) > 0 {
+				h.observer.RecordDNSResolution(domain, resolvedIPs)
 			}
 		case dns.TypeCNAME:
 			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
@@ -233,6 +259,12 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 				})
 			}
 
+		default:
+			continue
+		}
+
+		if h.observer != nil {
+			h.observer.RecordDNS(domain, true)
 		}
 	}
 }
@@ -243,15 +275,15 @@ type Server struct {
 	handler *dnsHandler
 }
 
-func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Server, error) {
+func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) (*Server, error) {
 	upstream := &net.Resolver{
 		PreferGo: false,
 	}
-	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream)
+	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream, outboundAllow, observer)
 }
 
-func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver) (*Server, error) {
-	handler := &dnsHandler{zones: zones, upstream: upstream}
+func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) (*Server, error) {
+	handler := &dnsHandler{zones: zones, upstream: upstream, outboundAllow: outboundAllow, observer: observer}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
 }
 

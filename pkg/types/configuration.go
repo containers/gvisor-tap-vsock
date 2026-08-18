@@ -59,6 +59,23 @@ type Configuration struct {
 
 	// EC2 Metadata Service Access
 	Ec2MetadataAccess bool `yaml:"ec2MetadataAccess,omitempty"`
+
+	// Block all guest-initiated outbound TCP/UDP connections (host→guest forwarding still works)
+	BlockAllOutbound bool `yaml:"blockAllOutbound,omitempty"`
+
+	// OutboundAllow is a list of regex patterns for allowed outbound domains.
+	// When non-empty, all outbound is blocked except DNS queries and TLS connections
+	// (port 443) whose SNI matches at least one pattern. Internal gateway traffic
+	// is always permitted. Each string is compiled as a regexp at startup.
+	// TLS connections are also checked that the SNI hostname resolves (via the
+	// host's default DNS resolver) to the destination IP the guest connected to;
+	// that resolver may differ from DNS settings inside the guest.
+	OutboundAllow []string `yaml:"outboundAllow,omitempty"`
+
+	// MaxFilterHistory caps the number of connection and DNS records kept
+	// in the filter observer. When the limit is reached the oldest entry
+	// is evicted. Defaults to 10000 when zero.
+	MaxFilterHistory int `yaml:"maxFilterHistory,omitempty"`
 }
 
 type Protocol string

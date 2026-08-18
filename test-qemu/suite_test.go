@@ -27,6 +27,7 @@ func TestSuite(t *testing.T) {
 
 const (
 	sock           = "/tmp/gvproxy-api.sock"
+	servicesSock   = "/tmp/gvproxy-services.sock"
 	qemuPort       = 5555
 	sshPort        = 2222
 	ignitionUser   = "test"
@@ -64,6 +65,7 @@ func init() {
 func gvproxyCmd() *exec.Cmd {
 	cmd := types.NewGvproxyCommand()
 	cmd.AddEndpoint(fmt.Sprintf("unix://%s", sock))
+	cmd.AddServiceEndpoint(fmt.Sprintf("unix://%s", servicesSock))
 	cmd.AddQemuSocket("tcp://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(qemuPort)))
 	cmd.AddForwardSock(forwardSock)
 	cmd.AddForwardDest(podmanSock)
@@ -93,12 +95,13 @@ var _ = ginkgo.BeforeSuite(func() {
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 	_ = os.Remove(sock)
+	_ = os.Remove(servicesSock)
 
 	host = gvproxyCmd()
 	host.Stderr = os.Stderr
 	host.Stdout = os.Stdout
 	gomega.Expect(host.Start()).Should(gomega.Succeed())
-	err = e2e_utils.WaitGvproxy(host, sock)
+	err = e2e_utils.WaitGvproxy(host, sock, servicesSock)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 	qemuCmd := newQemuCmd()

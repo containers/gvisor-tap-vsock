@@ -139,7 +139,7 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 			return &SSHForward{}, err
 		}
 	case "npipe":
-		listener, err = ListenNpipe(socketURI)
+		listener, err = ListenNpipe(socketURI) //nolint:staticcheck // SA4023: on non-Windows ListenNpipe always errors, but on Windows it can succeed
 		if err != nil {
 			return &SSHForward{}, err
 		}
