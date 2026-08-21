@@ -218,4 +218,75 @@ func BasicDNSTests(props BasicTestProps) {
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.1"))
 	})
+
+	ginkgo.It("should remove dynamically added dns zone", func() {
+		client := gvproxyclient.New(&http.Client{
+			Transport: &http.Transport{
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+					return net.Dial("unix", props.Sock)
+				},
+			},
+		}, "http://base")
+		zone := &types.Zone{
+			Name: "removeme.internal.",
+			Records: []types.Record{
+				{Name: "foo", IP: net.ParseIP("192.168.127.254")},
+			},
+		}
+		err := client.AddDNS(zone)
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+		out, err := props.SSHExec("nslookup foo.removeme.internal")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.254"))
+
+		err = client.RemoveDNS(zone)
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+		zones, err := client.ListDNS()
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		for _, z := range zones {
+			gomega.Expect(z.Name).NotTo(gomega.Equal("removeme.internal."))
+		}
+	})
+
+	ginkgo.It("should remove record from dns zone", func() {
+		client := gvproxyclient.New(&http.Client{
+			Transport: &http.Transport{
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+					return net.Dial("unix", props.Sock)
+				},
+			},
+		}, "http://base")
+		zone := &types.Zone{
+			Name: "removerecord.internal.",
+			Records: []types.Record{
+				{Name: "keep", IP: net.ParseIP("192.168.127.1")},
+				{Name: "drop", IP: net.ParseIP("192.168.127.254")},
+			},
+		}
+		err := client.AddDNS(zone)
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+		out, err := props.SSHExec("nslookup keep.removerecord.internal")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.1"))
+
+		out, err = props.SSHExec("nslookup drop.removerecord.internal")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.254"))
+
+		err = client.RemoveDNSRecord("removerecord.internal.", &types.Record{Name: "drop", IP: net.ParseIP("192.168.127.254")})
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+		out, err = props.SSHExec("nslookup keep.removerecord.internal")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(string(out)).To(gomega.ContainSubstring("Address: 192.168.127.1"))
+
+		out, _ = props.SSHExec("nslookup drop.removerecord.internal")
+		gomega.Expect(string(out)).To(gomega.SatisfyAny(
+			gomega.ContainSubstring("can't find"),
+			gomega.ContainSubstring("NXDOMAIN"),
+		))
+	})
 }
