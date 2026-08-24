@@ -8,6 +8,7 @@ package inline
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/gob"
 	"fmt"
 	"go/ast"
@@ -18,6 +19,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -530,9 +532,7 @@ func analyzeTypeParams(_ logger, fset *token.FileSet, info *types.Info, decl *as
 	// We don't care about most of the properties that matter for parameter references:
 	// a type is immutable, cannot have its address taken, and does not undergo conversions.
 	// TODO(jba): can we nevertheless combine this with the traversal in analyzeParams?
-	var stack []ast.Node
-	stack = append(stack, decl.Type) // for scope of function itself
-	ast.PreorderStack(decl.Body, stack, func(n ast.Node, stack []ast.Node) bool {
+	visit := func(n ast.Node, stack []ast.Node) bool {
 		if id, ok := n.(*ast.Ident); ok {
 			if v, ok := info.Uses[id].(*types.TypeName); ok {
 				if pinfo, ok := paramInfos[v]; ok {
@@ -543,7 +543,16 @@ func analyzeTypeParams(_ logger, fset *token.FileSet, info *types.Info, decl *as
 			}
 		}
 		return true
-	})
+	}
+	var stack []ast.Node
+	stack = append(stack, decl.Type) // for scope of function itself
+	if decl.Type.Params != nil {
+		ast.PreorderStack(decl.Type.Params, stack, visit)
+	}
+	if decl.Type.Results != nil {
+		ast.PreorderStack(decl.Type.Results, stack, visit)
+	}
+	ast.PreorderStack(decl.Body, stack, visit)
 	return params
 }
 
@@ -876,6 +885,34 @@ func (s shadowMap) add(info *types.Info, paramIndexes map[types.Object]int, excl
 		}
 	}
 	return s
+}
+
+var (
+	_ gob.GobEncoder = (*shadowMap)(nil)
+	_ gob.GobDecoder = (*shadowMap)(nil)
+)
+
+// GobEncode implements gob.GobEncoder, encoding the map's entries in a
+// deterministic order so that serialized facts are stable.
+func (s *shadowMap) GobEncode() ([]byte, error) {
+	entries := moremaps.Entries(*s)
+	slices.SortFunc(entries, func(x, y moremaps.Entry[string, int]) int {
+		return cmp.Compare(x.Key, y.Key)
+	})
+	var out bytes.Buffer
+	if err := gob.NewEncoder(&out).Encode(entries); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+func (s *shadowMap) GobDecode(data []byte) error {
+	var entries []moremaps.Entry[string, int]
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&entries); err != nil {
+		return err
+	}
+	*s = moremaps.FromEntries(entries)
+	return nil
 }
 
 // fieldObjs returns a map of each types.Object defined by the given signature
