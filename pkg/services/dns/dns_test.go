@@ -24,7 +24,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 	var server *Server
 
 	ginkgo.BeforeEach(func() {
-		server, _ = New(nil, nil, []types.Zone{})
+		server, _ = New(nil, nil, []types.Zone{}, nil)
 	})
 
 	ginkgo.It("should add dns zone with ip", func() {
@@ -167,7 +167,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 					},
 				},
 			},
-		})
+		}, nil)
 		server.addZone(types.Zone{
 			Name: "testing.",
 			Records: []types.Record{
@@ -375,7 +375,7 @@ func startDNSServer(upstream upstreamResolver) (string, func(), error) {
 		return "", nil, err
 	}
 
-	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream)
+	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, nil)
 	if err != nil {
 		return "", nil, err
 	}

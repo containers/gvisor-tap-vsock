@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/dnscache"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -27,6 +28,7 @@ type dnsHandler struct {
 	zones     []types.Zone
 	zonesLock sync.RWMutex
 	upstream  upstreamResolver
+	cache     *dnscache.DNSCache // nil = no caching
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
@@ -125,10 +127,20 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		resolver := h.upstream
 		switch q.Qtype {
 		case dns.TypeA:
-			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
-			if err != nil {
-				m.Rcode = dns.RcodeNameError
-				return
+			var ips []net.IPAddr
+			if h.cache != nil {
+				ips, _ = h.cache.Get(q.Name)
+			}
+			if ips == nil {
+				var err error
+				ips, err = resolver.LookupIPAddr(context.TODO(), q.Name)
+				if err != nil {
+					m.Rcode = dns.RcodeNameError
+					return
+				}
+				if h.cache != nil {
+					h.cache.Put(q.Name, ips)
+				}
 			}
 			for _, ip := range ips {
 				if len(ip.IP.To4()) != net.IPv4len {
@@ -243,15 +255,15 @@ type Server struct {
 	handler *dnsHandler
 }
 
-func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Server, error) {
+func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, cache *dnscache.DNSCache) (*Server, error) {
 	upstream := &net.Resolver{
 		PreferGo: false,
 	}
-	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream)
+	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream, cache)
 }
 
-func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver) (*Server, error) {
-	handler := &dnsHandler{zones: zones, upstream: upstream}
+func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver, cache *dnscache.DNSCache) (*Server, error) {
+	handler := &dnsHandler{zones: zones, upstream: upstream, cache: cache}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
 }
 
