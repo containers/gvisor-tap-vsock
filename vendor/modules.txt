@@ -85,8 +85,8 @@ github.com/mdlayher/socket
 # github.com/mdlayher/vsock v1.3.0
 ## explicit; go 1.25.0
 github.com/mdlayher/vsock
-# github.com/miekg/dns v1.1.72
-## explicit; go 1.24.0
+# github.com/miekg/dns v1.1.73
+## explicit; go 1.25.0
 github.com/miekg/dns
 # github.com/onsi/ginkgo/v2 v2.32.1
 ## explicit; go 1.25.0
