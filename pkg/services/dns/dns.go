@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -22,6 +23,8 @@ type upstreamResolver interface {
 	LookupSRV(ctx context.Context, service, proto, name string) (string, []*net.SRV, error)
 	LookupTXT(ctx context.Context, name string) ([]string, error)
 }
+
+var validDNSChars = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 type dnsHandler struct {
 	zones     []types.Zone
@@ -58,13 +61,15 @@ func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
 
 	for _, zone := range h.zones {
 		zoneSuffix := fmt.Sprintf(".%s", zone.Name)
-		if strings.HasSuffix(q.Name, zoneSuffix) {
+		lowerName := strings.ToLower(q.Name)
+		lowerSuffix := strings.ToLower(zoneSuffix)
+		if strings.HasSuffix(lowerName, lowerSuffix) {
 			if q.Qtype != dns.TypeA {
 				return false
 			}
 			for _, record := range zone.Records {
-				withoutZone := strings.TrimSuffix(q.Name, zoneSuffix)
-				if (record.Name != "" && record.Name == withoutZone) ||
+				withoutZone := strings.TrimSuffix(lowerName, lowerSuffix)
+				if (record.Name != "" && strings.EqualFold(record.Name, withoutZone)) ||
 					(record.Regexp != nil && record.Regexp.MatchString(withoutZone)) {
 					m.Answer = append(m.Answer, &dns.A{
 						Hdr: dns.RR_Header{
@@ -294,22 +299,81 @@ func (s *Server) Mux() http.Handler {
 			return
 		}
 
-		s.addZone(req)
+		if err := s.validateZone(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if err := s.addZone(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux
 }
 
-func (s *Server) addZone(req types.Zone) {
+func (s *Server) validateZone(req types.Zone) error {
+	if req.Name == "" {
+		return fmt.Errorf("zone name is required")
+	}
+
+	if req.Name == "." {
+		return fmt.Errorf("cannot add root zone")
+	}
+
+	if !dns.IsFqdn(req.Name) {
+		return fmt.Errorf("zone name must be fully qualified (end with '.'): %s", req.Name)
+	}
+
+	if _, ok := dns.IsDomainName(req.Name); !ok {
+		return fmt.Errorf("invalid DNS zone name: %s", req.Name)
+	}
+
+	if !isValidDNSName(req.Name) {
+		return fmt.Errorf("zone name contains invalid characters: %s", req.Name)
+	}
+
+	if len(req.Records) == 0 && (req.DefaultIP == nil || req.DefaultIP.IsUnspecified()) {
+		return fmt.Errorf("zone must have at least one record or a default IP")
+	}
+
+	for _, record := range req.Records {
+		if record.Name == "" {
+			return fmt.Errorf("record name is required")
+		}
+		if !isValidDNSName(record.Name) {
+			return fmt.Errorf("record name contains invalid characters: %s", record.Name)
+		}
+		if record.IP == nil && record.Regexp == nil {
+			return fmt.Errorf("record %s must have an IP or regexp", record.Name)
+		}
+	}
+
+	return nil
+}
+
+func isValidDNSName(name string) bool {
+	return validDNSChars.MatchString(name)
+}
+
+func (s *Server) addZone(req types.Zone) error {
 	s.handler.zonesLock.Lock()
 	defer s.handler.zonesLock.Unlock()
 	for i, zone := range s.handler.zones {
-		if zone.Name == req.Name {
+		if strings.EqualFold(zone.Name, req.Name) {
+			if zone.Protected {
+				return fmt.Errorf("cannot modify protected zone: %s", req.Name)
+			}
 			req.Records = append(req.Records, zone.Records...)
+			req.Protected = zone.Protected
+			req.Name = zone.Name
 			s.handler.zones[i] = req
-			return
+			return nil
 		}
 	}
 	// No existing zone for req.Name, add new one
+	req.Protected = false
 	s.handler.zones = append(s.handler.zones, req)
+	return nil
 }

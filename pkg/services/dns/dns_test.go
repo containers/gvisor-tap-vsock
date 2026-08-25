@@ -3,6 +3,7 @@ package dns
 import (
 	"context"
 	"net"
+	"regexp"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 			Name:      "internal.",
 			DefaultIP: net.ParseIP("192.168.0.1"),
 		}
-		server.addZone(req)
+		gomega.Expect(server.addZone(req)).To(gomega.Succeed())
 
 		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{req}))
 	})
@@ -45,7 +46,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 				IP:   net.ParseIP("192.168.0.2"),
 			}},
 		}
-		server.addZone(req)
+		gomega.Expect(server.addZone(req)).To(gomega.Succeed())
 
 		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{req}))
 	})
@@ -62,8 +63,8 @@ var _ = ginkgo.Describe("dns add test", func() {
 				IP:   net.ParseIP("192.168.0.2"),
 			}},
 		}
-		server.addZone(ipReq)
-		server.addZone(recordReq)
+		gomega.Expect(server.addZone(ipReq)).To(gomega.Succeed())
+		gomega.Expect(server.addZone(recordReq)).To(gomega.Succeed())
 
 		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{ipReq, recordReq}))
 	})
@@ -73,7 +74,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 			Name:      "internal.",
 			DefaultIP: net.ParseIP("192.168.0.1"),
 		}
-		server.addZone(ipReq)
+		gomega.Expect(server.addZone(ipReq)).To(gomega.Succeed())
 		recordReq := types.Zone{
 			Name: "internal.",
 			Records: []types.Record{{
@@ -81,7 +82,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 				IP:   net.ParseIP("192.168.0.2"),
 			}},
 		}
-		server.addZone(recordReq)
+		gomega.Expect(server.addZone(recordReq)).To(gomega.Succeed())
 
 		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{{
 			Name: "internal.",
@@ -100,7 +101,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 				IP:   net.ParseIP("192.168.0.2"),
 			}},
 		}
-		server.addZone(ipReq)
+		gomega.Expect(server.addZone(ipReq)).To(gomega.Succeed())
 		recordReq := types.Zone{
 			Name: "internal.",
 			Records: []types.Record{{
@@ -108,7 +109,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 				IP:   net.ParseIP("192.168.0.3"),
 			}},
 		}
-		server.addZone(recordReq)
+		gomega.Expect(server.addZone(recordReq)).To(gomega.Succeed())
 
 		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{{
 			Name: "internal.",
@@ -130,7 +131,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 				IP:   net.ParseIP("192.168.0.2"),
 			}},
 		}
-		server.addZone(ipReq)
+		gomega.Expect(server.addZone(ipReq)).To(gomega.Succeed())
 		recordReq := types.Zone{
 			Name: "internal.",
 			Records: []types.Record{{
@@ -138,7 +139,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 				IP:   net.ParseIP("192.168.0.3"),
 			}},
 		}
-		server.addZone(recordReq)
+		gomega.Expect(server.addZone(recordReq)).To(gomega.Succeed())
 
 		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{{
 			Name: "internal.",
@@ -168,7 +169,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 				},
 			},
 		})
-		server.addZone(types.Zone{
+		gomega.Expect(server.addZone(types.Zone{
 			Name: "testing.",
 			Records: []types.Record{
 				{
@@ -176,7 +177,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 					IP:   net.ParseIP("192.168.127.1"),
 				},
 			},
-		})
+		})).To(gomega.Succeed())
 		gomega.Expect(server.handler.zones).To(gomega.Equal([]types.Zone{
 			{
 				Name:      "crc.testing.",
@@ -222,6 +223,233 @@ var _ = ginkgo.Describe("dns add test", func() {
 		gomega.Expect(m.Answer[0].String()).To(gomega.SatisfyAny(gomega.ContainSubstring("34.235.198.240"), gomega.ContainSubstring("52.200.142.250")))
 	})
 
+	ginkgo.It("should match existing zones case-insensitively", func() {
+		gomega.Expect(server.addZone(types.Zone{
+			Name:      "internal.",
+			DefaultIP: net.ParseIP("192.168.0.1"),
+		})).To(gomega.Succeed())
+		gomega.Expect(server.addZone(types.Zone{
+			Name: "Internal.",
+			Records: []types.Record{{
+				Name: "api",
+				IP:   net.ParseIP("192.168.0.2"),
+			}},
+		})).To(gomega.Succeed())
+		gomega.Expect(server.handler.zones).To(gomega.HaveLen(1))
+		gomega.Expect(server.handler.zones[0].Name).To(gomega.Equal("internal."))
+	})
+
+	ginkgo.It("should preserve Protected flag when merging into existing zone", func() {
+		server, _ = New(nil, nil, []types.Zone{
+			{Name: "system.internal.", Protected: true, DefaultIP: net.ParseIP("10.0.0.1")},
+		})
+		err := server.addZone(types.Zone{
+			Name:    "system.internal.",
+			Records: []types.Record{{Name: "api", IP: net.ParseIP("10.0.0.2")}},
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("protected zone"))
+	})
+
+	ginkgo.It("should set Protected to false for newly added zones", func() {
+		gomega.Expect(server.addZone(types.Zone{
+			Name:      "sneaky.zone.",
+			Protected: true,
+			DefaultIP: net.ParseIP("10.0.0.1"),
+		})).To(gomega.Succeed())
+		gomega.Expect(server.handler.zones[0].Protected).To(gomega.BeFalse())
+	})
+
+})
+
+var _ = ginkgo.Describe("dns zone validation", func() {
+	var server *Server
+
+	ginkgo.BeforeEach(func() {
+		server, _ = New(nil, nil, []types.Zone{
+			{
+				Name:      "containers.internal.",
+				Protected: true,
+				DefaultIP: net.ParseIP("192.168.127.1"),
+			},
+			{
+				Name:      "docker.internal.",
+				Protected: true,
+				DefaultIP: net.ParseIP("192.168.127.1"),
+			},
+		})
+	})
+
+	ginkgo.It("should reject empty zone name", func() {
+		err := server.validateZone(types.Zone{Name: ""})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("zone name is required"))
+	})
+
+	ginkgo.It("should reject zone name without trailing dot", func() {
+		err := server.validateZone(types.Zone{Name: "example.com"})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("fully qualified"))
+	})
+
+	ginkgo.It("should reject zone name with invalid characters", func() {
+		err := server.validateZone(types.Zone{Name: "my zone!.local."})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("invalid characters"))
+	})
+
+	ginkgo.It("should reject zone name with path traversal characters", func() {
+		err := server.validateZone(types.Zone{Name: "../etc/passwd."})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("invalid DNS zone name"))
+	})
+
+	ginkgo.It("should reject root zone", func() {
+		err := server.validateZone(types.Zone{
+			Name:      ".",
+			DefaultIP: net.ParseIP("1.2.3.4"),
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("root zone"))
+	})
+
+	ginkgo.It("should reject overwriting protected zone containers.internal.", func() {
+		err := server.addZone(types.Zone{
+			Name:      "containers.internal.",
+			DefaultIP: net.ParseIP("1.2.3.4"),
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("protected zone"))
+	})
+
+	ginkgo.It("should reject overwriting protected zone docker.internal.", func() {
+		err := server.addZone(types.Zone{
+			Name:      "docker.internal.",
+			DefaultIP: net.ParseIP("1.2.3.4"),
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("protected zone"))
+	})
+
+	ginkgo.It("should reject protected zone case-insensitively", func() {
+		err := server.addZone(types.Zone{
+			Name:      "Docker.Internal.",
+			DefaultIP: net.ParseIP("1.2.3.4"),
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("protected zone"))
+	})
+
+	ginkgo.It("should reject zone with no records and no default IP", func() {
+		err := server.validateZone(types.Zone{Name: "blackhole.local."})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("at least one record or a default IP"))
+	})
+
+	ginkgo.It("should reject zone with unspecified default IP and no records", func() {
+		err := server.validateZone(types.Zone{
+			Name:      "test.local.",
+			DefaultIP: net.ParseIP("0.0.0.0"),
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("at least one record or a default IP"))
+	})
+
+	ginkgo.It("should reject record name with invalid characters", func() {
+		err := server.validateZone(types.Zone{
+			Name: "myapp.local.",
+			Records: []types.Record{
+				{Name: "../../etc/passwd", IP: net.ParseIP("10.0.0.1")},
+			},
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("invalid characters"))
+	})
+
+	ginkgo.It("should accept record name with underscores", func() {
+		err := server.validateZone(types.Zone{
+			Name: "myapp.local.",
+			Records: []types.Record{
+				{Name: "_sip._tcp", IP: net.ParseIP("10.0.0.1")},
+			},
+		})
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+	})
+
+	ginkgo.It("should reject record with empty name", func() {
+		err := server.validateZone(types.Zone{
+			Name: "myapp.local.",
+			Records: []types.Record{
+				{Name: "", IP: net.ParseIP("10.0.0.1")},
+			},
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("record name is required"))
+	})
+
+	ginkgo.It("should reject record without IP or regexp", func() {
+		err := server.validateZone(types.Zone{
+			Name: "myapp.local.",
+			Records: []types.Record{
+				{Name: "api"},
+			},
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("must have an IP or regexp"))
+	})
+
+	ginkgo.It("should accept valid custom zone", func() {
+		err := server.validateZone(types.Zone{
+			Name:      "myapp.local.",
+			DefaultIP: net.ParseIP("10.0.0.1"),
+		})
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+	})
+
+	ginkgo.It("should accept valid zone with records", func() {
+		err := server.validateZone(types.Zone{
+			Name: "myapp.local.",
+			Records: []types.Record{
+				{Name: "api", IP: net.ParseIP("10.0.0.1")},
+				{Name: "web", IP: net.ParseIP("10.0.0.2")},
+			},
+		})
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+	})
+
+	ginkgo.It("should accept zone with no records and only default IP", func() {
+		err := server.validateZone(types.Zone{
+			Name:      "wildcard.local.",
+			DefaultIP: net.ParseIP("10.0.0.1"),
+		})
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+	})
+
+	ginkgo.It("should accept record with regexp and no IP", func() {
+		err := server.validateZone(types.Zone{
+			Name: "myapp.local.",
+			Records: []types.Record{
+				{Name: "wildcard", Regexp: regexp.MustCompile(".*")},
+			},
+		})
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+	})
+
+	ginkgo.It("should accept zone name with hyphens", func() {
+		err := server.validateZone(types.Zone{
+			Name:      "my-app.local.",
+			DefaultIP: net.ParseIP("10.0.0.1"),
+		})
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+	})
+
+	ginkgo.It("should not protect zones that were not in the initial configuration", func() {
+		err := server.validateZone(types.Zone{
+			Name:      "custom.zone.",
+			DefaultIP: net.ParseIP("10.0.0.1"),
+		})
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+	})
 })
 
 var _ = ginkgo.Describe("TXT records", func() {

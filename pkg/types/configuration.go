@@ -86,6 +86,10 @@ type Zone struct {
 	Name      string   `yaml:"name,omitempty"`
 	Records   []Record `yaml:"records,omitempty"`
 	DefaultIP net.IP   `yaml:"defaultIP,omitempty"`
+	// Protected zones cannot be modified or overwritten via the API.
+	// Set this in the YAML configuration or in code to prevent a zone
+	// from being changed at runtime.
+	Protected bool `yaml:"protected,omitempty"`
 }
 
 type Record struct {
