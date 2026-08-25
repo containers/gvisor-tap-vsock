@@ -59,6 +59,12 @@ type Configuration struct {
 
 	// EC2 Metadata Service Access
 	Ec2MetadataAccess bool `yaml:"ec2MetadataAccess,omitempty"`
+
+	// Maximum number of in-flight TCP connection forwarding attempts (default: 128)
+	TCPMaxInFlight int `yaml:"tcpMaxInFlight,omitempty"`
+
+	// Timeout in seconds for outbound TCP connection attempts (default: 30)
+	TCPConnectTimeout int `yaml:"tcpConnectTimeout,omitempty"`
 }
 
 type Protocol string
