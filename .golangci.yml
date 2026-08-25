@@ -21,6 +21,9 @@ linters:
       rules:
       - name: var-naming
         disabled: true
+    staticcheck:
+      checks:
+      - '-SA4023' # golangci-lint 2.13.0 triggers https://github.com/dominikh/go-tools/issues/1738
 formatters:
   enable:
     - gofmt
