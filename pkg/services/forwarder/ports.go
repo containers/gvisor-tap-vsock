@@ -25,6 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+var redactedParams = []string{"key", "passphrase"}
+
 type ProxyKey string
 
 type PortsForwarder struct {
@@ -284,6 +286,24 @@ func (f *PortsForwarder) Unexpose(protocol types.TransportProtocol, local string
 	return proxy.underlying.Close()
 }
 
+func redactSSHTunnelURI(remote string) string {
+	parsed, err := url.Parse(remote)
+	if err != nil || parsed.Scheme != "ssh-tunnel" {
+		return remote
+	}
+	if parsed.Path != "" {
+		parsed.Path = "***"
+	}
+	query := parsed.Query()
+	for _, param := range redactedParams {
+		if query.Has(param) {
+			query.Set(param, "***")
+		}
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
 func (f *PortsForwarder) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/all", func(w http.ResponseWriter, _ *http.Request) {
@@ -291,6 +311,7 @@ func (f *PortsForwarder) Mux() http.Handler {
 		defer f.proxiesLock.Unlock()
 		ret := make([]proxy, 0)
 		for _, proxy := range f.proxies {
+			proxy.Remote = redactSSHTunnelURI(proxy.Remote)
 			ret = append(ret, proxy)
 		}
 		sort.Slice(ret, func(i, j int) bool {
