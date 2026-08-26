@@ -164,7 +164,9 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	mux := http.NewServeMux()
 	mux.Handle("/services/forwarder/all", vn.Mux())
 	mux.Handle("/services/forwarder/expose", vn.Mux())
-	mux.Handle("/services/forwarder/unexpose", vn.Mux())
+	if config.GatewayAllowUnexpose {
+		mux.Handle("/services/forwarder/unexpose", vn.Mux())
+	}
 	httpServe(ctx, g, ln, mux)
 
 	if InDebugMode() {
