@@ -293,21 +293,35 @@ func (s *Server) Mux() http.Handler {
 
 	mux.HandleFunc("/add", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			apilog.LogEvent(r, "/services/dns/add", "error", log.Fields{
+				"error": "post only",
+			})
 			http.Error(w, "post only", http.StatusBadRequest)
 			return
 		}
 		var req types.Zone
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apilog.LogEvent(r, "/services/dns/add", "error", log.Fields{
+				"error": err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		if err := s.validateZone(req); err != nil {
+			apilog.LogEvent(r, "/services/dns/add", "error", log.Fields{
+				"zone":  req.Name,
+				"error": err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		if err := s.addZone(req); err != nil {
+			apilog.LogEvent(r, "/services/dns/add", "error", log.Fields{
+				"zone":  req.Name,
+				"error": err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

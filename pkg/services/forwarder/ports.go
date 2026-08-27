@@ -305,11 +305,17 @@ func (f *PortsForwarder) Mux() http.Handler {
 	})
 	mux.HandleFunc("/expose", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			apilog.LogEvent(r, "/services/forwarder/expose", "error", log.Fields{
+				"error": "post only",
+			})
 			http.Error(w, "post only", http.StatusBadRequest)
 			return
 		}
 		var req types.ExposeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apilog.LogEvent(r, "/services/forwarder/expose", "error", log.Fields{
+				"error": err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -325,12 +331,24 @@ func (f *PortsForwarder) Mux() http.Handler {
 			var err error
 			remoteAddr, err = remote(req, r.RemoteAddr)
 			if err != nil {
+				apilog.LogEvent(r, "/services/forwarder/expose", "error", log.Fields{
+					"protocol": req.Protocol,
+					"local":    req.Local,
+					"remote":   req.Remote,
+					"error":    err.Error(),
+				})
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 		}
 
 		if err := f.Expose(req.Protocol, req.Local, remoteAddr); err != nil {
+			apilog.LogEvent(r, "/services/forwarder/expose", "error", log.Fields{
+				"protocol": req.Protocol,
+				"local":    req.Local,
+				"remote":   remoteAddr,
+				"error":    err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -343,11 +361,17 @@ func (f *PortsForwarder) Mux() http.Handler {
 	})
 	mux.HandleFunc("/unexpose", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			apilog.LogEvent(r, "/services/forwarder/unexpose", "error", log.Fields{
+				"error": "post only",
+			})
 			http.Error(w, "post only", http.StatusBadRequest)
 			return
 		}
 		var req types.UnexposeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apilog.LogEvent(r, "/services/forwarder/unexpose", "error", log.Fields{
+				"error": err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -355,6 +379,11 @@ func (f *PortsForwarder) Mux() http.Handler {
 			req.Protocol = types.TCP
 		}
 		if err := f.Unexpose(req.Protocol, req.Local); err != nil {
+			apilog.LogEvent(r, "/services/forwarder/unexpose", "error", log.Fields{
+				"protocol": req.Protocol,
+				"local":    req.Local,
+				"error":    err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

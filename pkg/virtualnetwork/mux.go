@@ -37,11 +37,18 @@ func (n *VirtualNetwork) ServicesMux() *http.ServeMux {
 	mux.HandleFunc("/tunnel", func(w http.ResponseWriter, r *http.Request) {
 		ip := r.URL.Query().Get("ip")
 		if ip == "" {
+			apilog.LogEvent(r, "/tunnel", "error", log.Fields{
+				"error": "ip is mandatory",
+			})
 			http.Error(w, "ip is mandatory", http.StatusInternalServerError)
 			return
 		}
 		port, err := strconv.ParseUint(r.URL.Query().Get("port"), 10, 16)
 		if err != nil {
+			apilog.LogEvent(r, "/tunnel", "error", log.Fields{
+				"ip":    ip,
+				"error": err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -49,23 +56,43 @@ func (n *VirtualNetwork) ServicesMux() *http.ServeMux {
 
 		hj, ok := w.(http.Hijacker)
 		if !ok {
+			apilog.LogEvent(r, "/tunnel", "error", log.Fields{
+				"ip":    ip,
+				"port":  port16,
+				"error": "webserver doesn't support hijacking",
+			})
 			http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
 			return
 		}
 
 		conn, bufrw, err := hj.Hijack()
 		if err != nil {
+			apilog.LogEvent(r, "/tunnel", "error", log.Fields{
+				"ip":    ip,
+				"port":  port16,
+				"error": err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		defer conn.Close()
 
 		if err := bufrw.Flush(); err != nil {
+			apilog.LogEvent(r, "/tunnel", "error", log.Fields{
+				"ip":    ip,
+				"port":  port16,
+				"error": err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		if _, err := conn.Write([]byte(`OK`)); err != nil {
+			apilog.LogEvent(r, "/tunnel", "error", log.Fields{
+				"ip":    ip,
+				"port":  port16,
+				"error": err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -96,17 +123,29 @@ func (n *VirtualNetwork) Mux() *http.ServeMux {
 	mux.HandleFunc(types.ConnectPath, func(w http.ResponseWriter, r *http.Request) {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
+			apilog.LogEvent(r, types.ConnectPath, "error", log.Fields{
+				"protocol": n.configuration.Protocol,
+				"error":    "webserver doesn't support hijacking",
+			})
 			http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
 			return
 		}
 		conn, bufrw, err := hj.Hijack()
 		if err != nil {
+			apilog.LogEvent(r, types.ConnectPath, "error", log.Fields{
+				"protocol": n.configuration.Protocol,
+				"error":    err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		defer conn.Close()
 
 		if err := bufrw.Flush(); err != nil {
+			apilog.LogEvent(r, types.ConnectPath, "error", log.Fields{
+				"protocol": n.configuration.Protocol,
+				"error":    err.Error(),
+			})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -114,7 +153,12 @@ func (n *VirtualNetwork) Mux() *http.ServeMux {
 		apilog.LogEvent(r, types.ConnectPath, "success", log.Fields{
 			"protocol": n.configuration.Protocol,
 		})
-		_ = n.networkSwitch.Accept(context.Background(), conn, n.configuration.Protocol)
+		if err := n.networkSwitch.Accept(context.Background(), conn, n.configuration.Protocol); err != nil {
+			apilog.LogEvent(r, types.ConnectPath, "error", log.Fields{
+				"protocol": n.configuration.Protocol,
+				"error":    err.Error(),
+			})
+		}
 	})
 	return mux
 }
