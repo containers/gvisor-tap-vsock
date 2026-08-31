@@ -67,7 +67,7 @@ var Analysis = &analysis.Analyzer{
 // Nilness returns nilness information for return value ret of fn.
 func (r *Result) Nilness(fn *types.Func, ret int) ValueNilness {
 	typ := fn.Type().(*types.Signature).Results().At(ret).Type()
-	if !typeutil.IsPointerLike(typ) {
+	if !typeutil.MaybePointerLike(typ) {
 		return ValueNilness{Outer: NeverNil}
 	}
 	if len(r.m[fn]) == 0 {
@@ -145,7 +145,7 @@ type state struct {
 }
 
 func (s *state) get(v ir.Value) ValueNilness {
-	if !typeutil.IsPointerLike(v.Type()) {
+	if !typeutil.MaybePointerLike(v.Type()) {
 		// All non-pointer-like types are always {_ NeverNil}.
 		return ValueNilness{Outer: NeverNil}
 	}
@@ -173,7 +173,7 @@ func (s *state) get(v ir.Value) ValueNilness {
 }
 
 func (s *state) set(key ir.Value, value ValueNilness) {
-	if !typeutil.IsPointerLike(key.Type()) {
+	if !typeutil.MaybePointerLike(key.Type()) {
 		// No point in recording state for non-pointer-like types. They're
 		// always {_ NeverNil}.
 		return
@@ -199,7 +199,7 @@ func (s *state) set(key ir.Value, value ValueNilness) {
 }
 
 func (s *state) setInner(key ir.Value, value Nilness) {
-	if !typeutil.IsPointerLike(key.Type()) {
+	if !typeutil.MaybePointerLike(key.Type()) {
 		return
 	}
 	if value == (lattice{}.Ident().Inner) {
@@ -225,7 +225,7 @@ func (s *state) setInner(key ir.Value, value Nilness) {
 }
 
 func (s *state) setOuter(key ir.Value, value Nilness) {
-	if !typeutil.IsPointerLike(key.Type()) {
+	if !typeutil.MaybePointerLike(key.Type()) {
 		return
 	}
 	if value == (lattice{}).Ident().Outer {
@@ -263,7 +263,7 @@ func defaultNilnessForSignature(pass *analysis.Pass, typ *types.Signature) []Val
 }
 
 func defaultNilness(pass *analysis.Pass, typ types.Type) ValueNilness {
-	if typeutil.IsPointerLike(typ) {
+	if typeutil.MaybePointerLike(typ) {
 		// IsPointerLike handles type parameters with type sets, too.
 		return ValueNilness{MaybeNil, MaybeNil}
 	} else {
@@ -302,7 +302,7 @@ start:
 
 	anyPointers := false
 	for ret := range fn.Signature.Results().Variables() {
-		if typeutil.IsPointerLike(ret.Type()) {
+		if typeutil.MaybePointerLike(ret.Type()) {
 			anyPointers = true
 			break
 		}
@@ -317,7 +317,7 @@ start:
 	processBlock := func(from, to *ir.BasicBlock, s state) state {
 		handleReturnValue := func(v ir.Value, call *ir.Call, idx int) {
 			typ := call.Common().Signature().Results().At(idx).Type()
-			if !typeutil.IsPointerLike(typ) {
+			if !typeutil.MaybePointerLike(typ) {
 				s.setOuter(v, NeverNil)
 				return
 			}
@@ -683,7 +683,7 @@ start:
 	// defaults.
 	entrys := state{cloned: true, n: n}
 	for _, param := range fn.Params {
-		if typeutil.IsPointerLike(param.Type()) {
+		if typeutil.MaybePointerLike(param.Type()) {
 			entrys.set(param, ValueNilness{Inner: MaybeNil, Outer: MaybeNil})
 		} else {
 			// We never track nilness for value types, so they don't have to be
@@ -707,7 +707,7 @@ start:
 		for _, instr := range b.Instrs {
 			ops = instr.Operands(ops[:0])
 			for _, pop := range ops {
-				if op, ok := (*pop).(*ir.Const); ok && typeutil.IsPointerLike(op.Type()) {
+				if op, ok := (*pop).(*ir.Const); ok && typeutil.MaybePointerLike(op.Type()) {
 					// The only constant pointer-like is nil.
 					entrys.set(op, ValueNilness{Inner: AlwaysNil, Outer: AlwaysNil})
 				}
@@ -741,7 +741,7 @@ start:
 	interesting := false
 	for i := range retNilness {
 		typ := fn.Signature.Results().At(i).Type()
-		if !typeutil.IsPointerLike(typ) {
+		if !typeutil.MaybePointerLike(typ) {
 			retNilness[i] = ValueNilness{NeverNil, NeverNil}
 			continue
 		}

@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/types"
 	"os"
-	"strings"
 
 	"github.com/uudashr/iface/internal/directive"
 	"golang.org/x/tools/go/analysis"
@@ -55,19 +54,7 @@ func (r *runner) run(pass *analysis.Pass) (any, error) {
 		var recvName string
 
 		if recv := funcDecl.Recv; recv != nil {
-			recvType := recv.List[0].Type
-
-			if r.debug {
-				infoType := pass.TypesInfo.TypeOf(recvType)
-				fmt.Fprintf(os.Stderr, " recvType: %v infoType: %v reflectType: %T\n", recvType, infoType, recvType)
-			}
-
-			inner := recvType
-			if star, ok := inner.(*ast.StarExpr); ok {
-				inner = star.X
-			}
-
-			recvName = typeName(inner)
+			recvName = r.recvName(pass, recv.List[0].Type)
 		}
 
 		if !funcDecl.Name.IsExported() {
@@ -121,62 +108,36 @@ func findIdent(expr ast.Expr) ast.Expr {
 		case *ast.Ident, *ast.SelectorExpr:
 			return e
 		default:
+			// should not happen
 			return nil
 		}
 	}
 }
 
-// typeName reconstructs the type string as written in source from an AST expression.
-func typeName(expr ast.Expr) string {
-	switch e := expr.(type) {
-	case *ast.ArrayType:
-		if e.Len == nil {
-			return "[]" + typeName(e.Elt)
+func formatType(pass *analysis.Pass, expr ast.Expr, infoType types.Type) string {
+	qualifier := func(p *types.Package) string {
+		if p == pass.Pkg {
+			return ""
 		}
 
-		return "[" + typeName(e.Len) + "]" + typeName(e.Elt)
-	case *ast.BasicLit:
-		return e.Value
-	case *ast.Ident:
-		return e.Name
-	case *ast.StarExpr:
-		return "*" + typeName(e.X)
-	case *ast.Ellipsis:
-		return "..." + typeName(e.Elt)
-	case *ast.ChanType:
-		switch e.Dir {
-		case ast.SEND:
-			return "chan<- " + typeName(e.Value)
-		case ast.RECV:
-			return "<-chan " + typeName(e.Value)
-		default:
-			return "chan " + typeName(e.Value)
-		}
-	case *ast.MapType:
-		return "map[" + typeName(e.Key) + "]" + typeName(e.Value)
-	case *ast.SelectorExpr:
-		return typeName(e.X) + "." + e.Sel.Name
-	case *ast.IndexExpr:
-		return typeName(e.X) + "[" + typeName(e.Index) + "]"
-	case *ast.IndexListExpr:
-		var b strings.Builder
-		b.WriteString(typeName(e.X))
-		b.WriteByte('[')
-
-		for i, idx := range e.Indices {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-
-			b.WriteString(typeName(idx))
-		}
-
-		b.WriteByte(']')
-
-		return b.String()
-	default:
-		return fmt.Sprintf("%T", expr)
+		return p.Name()
 	}
+
+	if ellipsis, ok := expr.(*ast.Ellipsis); ok {
+		elemType := pass.TypesInfo.TypeOf(ellipsis.Elt)
+
+		return "..." + types.TypeString(elemType, qualifier)
+	}
+
+	return types.TypeString(infoType, qualifier)
+}
+
+func funcKindName(funcDecl *ast.FuncDecl, recvName string) (kind, name string) {
+	if recvName != "" {
+		return "method", recvName + "." + funcDecl.Name.Name
+	}
+
+	return "function", funcDecl.Name.Name
 }
 
 func (r *runner) checkType(pass *analysis.Pass, expr ast.Expr, funcDecl *ast.FuncDecl, recvName, role string) {
@@ -230,18 +191,28 @@ func (r *runner) checkType(pass *analysis.Pass, expr ast.Expr, funcDecl *ast.Fun
 
 	r.debugln("   unexported")
 
-	funcMethod := "function"
-	funcMethodName := funcDecl.Name.Name
-
-	if recvName != "" {
-		funcMethod = "method"
-		funcMethodName = recvName + "." + funcDecl.Name.Name
-	}
+	kind, name := funcKindName(funcDecl, recvName)
+	typeStr := formatType(pass, expr, infoType)
 
 	pass.Report(analysis.Diagnostic{
 		Pos:     typ.Pos(),
-		Message: fmt.Sprintf("unexported interface '%s' used as %s in exported %s '%s'", typeName(expr), role, funcMethod, funcMethodName),
+		Message: fmt.Sprintf("unexported interface '%s' used as %s in exported %s '%s'", typeStr, role, kind, name),
 	})
+}
+
+func (r *runner) recvName(pass *analysis.Pass, recvType ast.Expr) string {
+	inner := recvType
+
+	if star, ok := inner.(*ast.StarExpr); ok {
+		inner = star.X
+	}
+
+	infoType := pass.TypesInfo.TypeOf(inner)
+	if infoType == nil {
+		return ""
+	}
+
+	return formatType(pass, inner, infoType)
 }
 
 func (r *runner) debugln(a ...any) {

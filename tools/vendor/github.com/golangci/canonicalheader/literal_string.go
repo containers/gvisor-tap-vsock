@@ -59,10 +59,10 @@ func (l literalString) diagnostic(canonicalHeader string) analysis.Diagnostic {
 	return analysis.Diagnostic{
 		Pos:     l.pos,
 		End:     l.end,
-		Message: fmt.Sprintf("non-canonical header %q, instead use: %q", l.originalValue, canonicalHeader),
+		Message: fmt.Sprintf("use %q instead of %q", canonicalHeader, l.originalValue),
 		SuggestedFixes: []analysis.SuggestedFix{
 			{
-				Message: fmt.Sprintf("should replace %q with %q", l.originalValue, canonicalHeader),
+				Message: fmt.Sprintf("should be replaced %q with %q", l.originalValue, canonicalHeader),
 				TextEdits: []analysis.TextEdit{
 					{
 						Pos:     l.pos,

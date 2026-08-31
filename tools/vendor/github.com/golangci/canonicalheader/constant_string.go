@@ -37,10 +37,9 @@ func (c constantString) diagnostic(canonicalHeader string) analysis.Diagnostic {
 		Pos: c.pos,
 		End: c.end,
 		Message: fmt.Sprintf(
-			"const %q used as a key at http.Header, but %q is not canonical, want %q",
-			c.nameOfConst,
-			c.originalValue,
+			"use %q instead of %q",
 			canonicalHeader,
+			c.originalValue,
 		),
 	}
 }
