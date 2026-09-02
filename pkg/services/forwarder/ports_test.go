@@ -83,6 +83,47 @@ func freeHostAddr(network string, ip net.IP) string {
 	}
 }
 
+var _ = ginkgo.Describe("remote URI redaction", func() {
+	ginkgo.It("should redact key parameter in ssh-tunnel URI", func() {
+		uri := "ssh-tunnel://core@192.168.127.2:22/run/podman/podman.sock?key=/Users/dev/.ssh/id_rsa"
+		result := redactSSHTunnelURI(uri)
+		gomega.Expect(result).To(gomega.ContainSubstring("key=%2A%2A%2A"))
+		gomega.Expect(result).ToNot(gomega.ContainSubstring("id_rsa"))
+	})
+
+	ginkgo.It("should redact passphrase parameter in ssh-tunnel URI", func() {
+		uri := "ssh-tunnel://core@192.168.127.2:22/run/podman/podman.sock?key=/path/to/key&passphrase=supersecret"
+		result := redactSSHTunnelURI(uri)
+		gomega.Expect(result).To(gomega.ContainSubstring("key=%2A%2A%2A"))
+		gomega.Expect(result).To(gomega.ContainSubstring("passphrase=%2A%2A%2A"))
+		gomega.Expect(result).ToNot(gomega.ContainSubstring("supersecret"))
+		gomega.Expect(result).ToNot(gomega.ContainSubstring("/path/to/key"))
+	})
+
+	ginkgo.It("should redact socket path in ssh-tunnel URI", func() {
+		uri := "ssh-tunnel://core@192.168.127.2:22/run/podman/podman.sock?key=/path/to/key"
+		result := redactSSHTunnelURI(uri)
+		gomega.Expect(result).ToNot(gomega.ContainSubstring("podman.sock"))
+	})
+
+	ginkgo.It("should preserve scheme and host in ssh-tunnel URI", func() {
+		uri := "ssh-tunnel://core@192.168.127.2:22/run/podman/podman.sock?key=/path/to/key"
+		result := redactSSHTunnelURI(uri)
+		gomega.Expect(result).To(gomega.ContainSubstring("ssh-tunnel://"))
+		gomega.Expect(result).To(gomega.ContainSubstring("core@192.168.127.2:22"))
+	})
+
+	ginkgo.It("should not modify tcp URIs", func() {
+		uri := "tcp://192.168.127.2:8080"
+		gomega.Expect(redactSSHTunnelURI(uri)).To(gomega.Equal(uri))
+	})
+
+	ginkgo.It("should not modify plain host:port strings", func() {
+		uri := "192.168.127.2:8080"
+		gomega.Expect(redactSSHTunnelURI(uri)).To(gomega.Equal(uri))
+	})
+})
+
 var _ = ginkgo.Describe("source IP propagation", func() {
 	ginkgo.It("should propagate routable IPv4 source addresses", func() {
 		bindAddr := sourceBindAddr(net.ParseIP("10.0.2.50"), 1234)
