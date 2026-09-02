@@ -65,6 +65,9 @@ func gvproxyCmd() *exec.Cmd {
 	cmd := types.NewGvproxyCommand()
 	cmd.AddEndpoint(fmt.Sprintf("unix://%s", sock))
 	cmd.AddQemuSocket("tcp://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(qemuPort)))
+	// Required for tests that call /unexpose from inside the VM via the gateway.
+	// By default, /unexpose is blocked on the gateway API.
+	cmd.GatewayAllowUnexpose = true
 	cmd.AddForwardSock(forwardSock)
 	cmd.AddForwardDest(podmanSock)
 	cmd.AddForwardUser(ignitionUser)

@@ -33,6 +33,9 @@ type GvproxyCommand struct {
 
 	// SSHPort to access the guest VM
 	SSHPort int
+
+	// GatewayAllowUnexpose allows /unexpose on the gateway API
+	GatewayAllowUnexpose bool
 }
 
 func NewGvproxyCommand() GvproxyCommand {
@@ -210,6 +213,11 @@ func (c *GvproxyCommand) ToCmdline() []string {
 	// log-file
 	if c.LogFile != "" {
 		args = append(args, "-log-file", c.LogFile)
+	}
+
+	// gateway-allow-unexpose
+	if c.GatewayAllowUnexpose {
+		args = append(args, "-gateway-allow-unexpose")
 	}
 
 	return args
