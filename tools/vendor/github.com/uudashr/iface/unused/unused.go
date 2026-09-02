@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"os"
 	"slices"
 	"strings"
@@ -35,8 +36,9 @@ func newAnalyzer() *analysis.Analyzer {
 }
 
 type ifaceEntry struct {
-	ts   *ast.TypeSpec
-	decl *ast.GenDecl
+	ifaceName string
+	ts        *ast.TypeSpec
+	decl      *ast.GenDecl
 }
 
 type runner struct {
@@ -62,7 +64,7 @@ func (r *runner) run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	// Collect all interface type declarations
-	ifaces := make(map[string]ifaceEntry)
+	ifaces := make(map[*types.TypeName]ifaceEntry)
 
 	nodeFilter := []ast.Node{
 		(*ast.GenDecl)(nil),
@@ -105,14 +107,25 @@ func (r *runner) run(pass *analysis.Pass) (any, error) {
 				continue
 			}
 
-			ifaces[ts.Name.Name] = ifaceEntry{ts: ts, decl: decl}
+			obj := pass.TypesInfo.Defs[ts.Name]
+
+			typeName, ok := obj.(*types.TypeName)
+			if !ok {
+				continue
+			}
+
+			ifaces[typeName] = ifaceEntry{
+				ifaceName: ts.Name.Name,
+				ts:        ts,
+				decl:      decl,
+			}
 		}
 	})
 
 	if r.debug {
 		var ifaceNames []string
-		for name := range ifaces {
-			ifaceNames = append(ifaceNames, name)
+		for tn := range ifaces {
+			ifaceNames = append(ifaceNames, tn.Name())
 		}
 
 		fmt.Fprintln(os.Stderr, "Declared interfaces:", ifaceNames)
@@ -129,23 +142,28 @@ func (r *runner) run(pass *analysis.Pass) (any, error) {
 			return
 		}
 
-		entry, ok := ifaces[ident.Name]
+		obj := pass.TypesInfo.Uses[ident]
+
+		typeName, ok := obj.(*types.TypeName)
 		if !ok {
 			return
 		}
 
-		if entry.ts.Pos() == ident.Pos() {
+		entry, ok := ifaces[typeName]
+		if !ok {
 			return
 		}
 
-		delete(ifaces, ident.Name)
+		r.debugln(" used:", entry.ifaceName)
+
+		delete(ifaces, typeName)
 	})
 
 	if r.debug {
 		fmt.Fprintf(os.Stderr, "Package %s %s\n", pass.Pkg.Path(), pass.Pkg.Name())
 	}
 
-	for name, entry := range ifaces {
+	for typeName, entry := range ifaces {
 		ts := entry.ts
 		decl := entry.decl
 
@@ -166,7 +184,7 @@ func (r *runner) run(pass *analysis.Pass) (any, error) {
 			end = ts.End()
 		}
 
-		msg := fmt.Sprintf("interface '%s' is declared but not used within the package", name)
+		msg := fmt.Sprintf("interface '%s' is declared but not used within the package", typeName.Name())
 		pass.Report(analysis.Diagnostic{
 			Pos:     ts.Pos(),
 			Message: msg,

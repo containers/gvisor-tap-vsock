@@ -22,7 +22,7 @@ func newAnalyzer() *analysis.Analyzer {
 
 	analyzer := &analysis.Analyzer{
 		Name:     "unusedmethod",
-		Doc:      "Detects interface methods that are never used anywhere in the same package where they are defined.",
+		Doc:      "Detects interface methods that are never used anywhere in the same package where they are defined. A method is considered used only when invoked or referenced through a value of the interface type; merely implementing the interface does not count as a use.",
 		URL:      "https://pkg.go.dev/github.com/uudashr/iface/unusedmethod",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run:      r.run,

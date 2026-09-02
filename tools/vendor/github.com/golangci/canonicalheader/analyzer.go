@@ -1,6 +1,7 @@
 package canonicalheader
 
 import (
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/types"
@@ -18,12 +19,29 @@ const (
 	name    = "Header"
 )
 
-//nolint:gochecknoglobals // struct is not big, can be skip.
-var Analyzer = &analysis.Analyzer{
-	Name:     "canonicalheader",
-	Doc:      "canonicalheader checks whether net/http.Header uses canonical header",
-	Run:      run,
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
+//nolint:gochecknoglobals // for backward compatibility.
+var Analyzer = New()
+
+func New() *analysis.Analyzer {
+	c := &canonicalHeader{}
+
+	a := &analysis.Analyzer{
+		Name:     "canonicalheader",
+		Doc:      "canonicalheader checks whether net/http.Header uses canonical header",
+		Requires: []*analysis.Analyzer{inspect.Analyzer},
+		Run:      c.run,
+	}
+
+	a.Flags.Init("canonicalheader", flag.ExitOnError)
+	a.Flags.Var(&c.exclusions, "exclusions", "comma-separated list of exclusion rules")
+	a.Flags.BoolVar(&c.useDefaultExclusion, "useDefaultExclusion", true, "use default exclusion rules")
+
+	return a
+}
+
+type canonicalHeader struct {
+	useDefaultExclusion bool
+	exclusions          stringSet
 }
 
 type argumenter interface {
@@ -31,7 +49,26 @@ type argumenter interface {
 	value() string
 }
 
-func run(pass *analysis.Pass) (any, error) {
+func (c *canonicalHeader) buildExclusions() map[string]string {
+	var defEx map[string]string
+	if c.useDefaultExclusion {
+		defEx = initialism()
+	}
+
+	result := make(map[string]string, len(c.exclusions)+len(defEx))
+
+	for canonical, noCanonical := range defEx {
+		result[canonical] = noCanonical
+	}
+
+	for _, ex := range c.exclusions {
+		result[http.CanonicalHeaderKey(ex)] = ex
+	}
+
+	return result
+}
+
+func (c *canonicalHeader) run(pass *analysis.Pass) (any, error) {
 	var headerObject types.Object
 	for _, object := range pass.TypesInfo.Uses {
 		if object.Pkg() != nil &&
@@ -52,7 +89,7 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, fmt.Errorf("want %T, got %T", spctor, pass.ResultOf[inspect.Analyzer])
 	}
 
-	wellKnownHeaders := initialism()
+	exclusions := c.buildExclusions()
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
@@ -91,8 +128,15 @@ func run(pass *analysis.Pass) (any, error) {
 			if recv == nil {
 				return
 			}
+
 			gotType = recv.Type()
-			gotMethodName = astcast.ToSelectorExpr(callExp.Fun).Sel.Name
+
+			sel := astcast.ToSelectorExpr(callExp.Fun).Sel
+			if sel == nil {
+				return
+			}
+
+			gotMethodName = sel.Name
 
 		// h := http.Header{}
 		// f := h.Get
@@ -134,6 +178,10 @@ func run(pass *analysis.Pass) (any, error) {
 
 			sel, ok := assign.Rhs[indexAssign].(*ast.SelectorExpr)
 			if !ok {
+				return
+			}
+
+			if sel.Sel == nil {
 				return
 			}
 
@@ -228,13 +276,9 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 
 		argValue := arg.value()
-		headerKeyCanonical := http.CanonicalHeaderKey(argValue)
-		if argValue == headerKeyCanonical {
-			return
-		}
 
-		headerKeyCanonical, isWellKnown := canonicalHeaderKey(argValue, wellKnownHeaders)
-		if argValue == headerKeyCanonical || isWellKnown {
+		headerKeyCanonical := canonicalHeaderKey(argValue, exclusions)
+		if argValue == headerKeyCanonical {
 			return
 		}
 
@@ -244,15 +288,15 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, outerErr
 }
 
-func canonicalHeaderKey(s string, m map[string]string) (string, bool) {
+func canonicalHeaderKey(s string, m map[string]string) string {
 	canonical := http.CanonicalHeaderKey(s)
 
 	wellKnown, ok := m[canonical]
 	if !ok {
-		return canonical, ok
+		return canonical
 	}
 
-	return wellKnown, ok
+	return wellKnown
 }
 
 func isValidMethod(name string) bool {
