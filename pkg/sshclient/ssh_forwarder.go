@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -112,11 +111,6 @@ func connectForward(ctx context.Context, bastion *Bastion) (CloseWriteConn, erro
 
 func listenUnix(socketURI *url.URL) (net.Listener, error) {
 	path := transport.UnixSocketPath(socketURI, runtime.GOOS)
-
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) { // #nosec G703 - validated URL path for socket cleanup
-		return nil, err
-	}
-
 	oldmask := fs.Umask(0o177)
 	defer fs.Umask(oldmask)
 	listener, err := net.Listen("unix", path)

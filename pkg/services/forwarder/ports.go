@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -161,10 +160,6 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		switch protocol {
 		case types.UNIX:
 			p.ListenFunc = func(_, socketPath string) (net.Listener, error) {
-				// remove existing socket file
-				if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
-					return nil, err
-				}
 				return net.Listen("unix", socketPath) // override tcp to use unix socket
 			}
 		case types.NPIPE:
@@ -185,7 +180,12 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		}
 		go func() {
 			if err := p.Wait(); err != nil {
-				log.Error(err)
+				// ignore "connection closed" errors as when calling `Proxy.Close()` at exit,
+				// it’s expected that we get:
+				// `accept unix /some/path: use of closed network connection`
+				if !errors.Is(err, net.ErrClosed) {
+					log.Error(err)
+				}
 			}
 		}()
 		f.proxies[key(protocol, local)] = proxy{
@@ -282,6 +282,18 @@ func (f *PortsForwarder) Unexpose(protocol types.TransportProtocol, local string
 	}
 	delete(f.proxies, key(protocol, local))
 	return proxy.underlying.Close()
+}
+
+func (f *PortsForwarder) Close() error {
+	f.proxiesLock.Lock()
+	defer f.proxiesLock.Unlock()
+	for _, proxy := range f.proxies {
+		proxy.underlying.Close()
+	}
+	f.proxies = make(map[ProxyKey]proxy)
+	f.stack = nil
+
+	return nil
 }
 
 func (f *PortsForwarder) Mux() http.Handler {
