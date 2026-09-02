@@ -21,21 +21,21 @@ import (
 
 var _ = ginkgo.Describe("connectivity with vfkit", func() {
 	e2e.BasicConnectivityTests(e2e.BasicTestProps{
-		SSHExec: sshExec,
+		SSHExec: helper.SSHExec,
 	})
 })
 
 var _ = ginkgo.Describe("dns with vfkit", func() {
 	e2e.BasicDNSTests(e2e.BasicTestProps{
-		SSHExec: sshExec,
-		Sock:    sock,
+		SSHExec: helper.SSHExec,
+		Sock:    helper.Cfg.Sock,
 	})
 })
 
 var _ = ginkgo.Describe("dhcp with vfkit", func() {
 	e2e.BasicDHCPTests(e2e.BasicTestProps{
-		SSHExec: sshExec,
-		Sock:    sock,
+		SSHExec: helper.SSHExec,
+		Sock:    helper.Cfg.Sock,
 	})
 })
 
@@ -67,7 +67,7 @@ var _ = ginkgo.Describe("upload and download with vfkit", func() {
 			err = scpToVM(srcPath, dstDir)
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
-			out, err := sshExec(fmt.Sprintf("sha256sum %s | awk '{print $1}'", dstPath))
+			out, err := helper.SSHExec(fmt.Sprintf("sha256sum %s | awk '{print $1}'", dstPath))
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
 			localSum := hex.EncodeToString(hasher.Sum(nil))
@@ -105,27 +105,27 @@ var _ = ginkgo.Describe("upload and download with vfkit", func() {
 })
 var _ = ginkgo.Describe("ping with gvproxy and vfkit", func() {
 	ginkgo.It("should succeed to ping a known domain", func() {
-		out, err := sshExec("ping -w2 crc.dev")
+		out, err := helper.SSHExec("ping -w2 crc.dev")
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	})
 	ginkgo.It("should fail to ping an unknown domain", func() {
-		out, err := sshExec("ping -w2 unknown.crc.dev")
+		out, err := helper.SSHExec("ping -w2 unknown.crc.dev")
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).To(gomega.HaveOccurred())
 	})
 	ginkgo.It("should succeed to ping a known IP", func() {
-		out, err := sshExec("ping -w2 1.1.1.1")
+		out, err := helper.SSHExec("ping -w2 1.1.1.1")
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	})
 	ginkgo.It("should fail to ping an unknown IP", func() {
-		out, err := sshExec("ping -w2 7.7.7.7")
+		out, err := helper.SSHExec("ping -w2 7.7.7.7")
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).To(gomega.HaveOccurred())
 	})
 	ginkgo.It("should succeed to ping an localhost", func() {
-		out, err := sshExec("ping -w2 127.0.0.1")
+		out, err := helper.SSHExec("ping -w2 127.0.0.1")
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	})

@@ -13,8 +13,9 @@ import (
 )
 
 type BasicTestProps struct {
-	SSHExec func(cmd ...string) ([]byte, error)
-	Sock    string
+	SSHExec          func(cmd ...string) ([]byte, error)
+	Sock             string
+	GvproxyAPIClient func() *gvproxyclient.Client
 }
 
 func BasicConnectivityTests(props BasicTestProps) {
