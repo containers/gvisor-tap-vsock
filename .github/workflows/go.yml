@@ -9,7 +9,7 @@ on:
 jobs:
 
   build:
-    runs-on: ubuntu-22.04 # explicitly use older ubuntu, see commit 428c40018f
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -38,7 +38,7 @@ jobs:
         path: bin/*
 
   tests:
-    runs-on: ubuntu-latest # The runner must support nested virt
+    runs-on: ubuntu-22.04 # The runner must support nested virt
     needs: build # Don't bother testing if cross arch build fails
     timeout-minutes: 30
     steps:
