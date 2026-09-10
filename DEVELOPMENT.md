@@ -19,19 +19,25 @@ gvisor-tap-vsock stack. They spin up a full VM (Fedora CoreOS), deploy the
 
 ##### Prerequisites
 
-- `iperf3` installed on the host (`dnf install iperf3`)
-- A working hypervisor: QEMU on Linux (or macOS with `qemu-system-*`)
+- `iperf3` installed on the host (`brew install iperf3` / `dnf install iperf3`)
+- A working hypervisor: vfkit on macOS, QEMU on Linux (or macOS with `qemu-system-*`)
 - The project binaries built: `make gvproxy test-companion`
 
 ##### Running
 
 ```shell
+# macOS (vfkit backend, ~30 min)
+make test-perf-mac
+
 # QEMU backend (~30 min)
 make test-perf-qemu
 ```
 
 You can also run individual test suites with Ginkgo's focus flag:
 ```shell
+# Run only throughput tests
+go test -timeout 30m -v ./test-performance-vfkit -ginkgo.focus "iperf3 throughput"
+
 # Run only latency tests
 go test -timeout 30m -v ./test-performance-qemu -ginkgo.focus "latency"
 ```

@@ -97,3 +97,7 @@ test-mac-debug:
 .PHONY: test-perf-qemu
 test-perf-qemu: gvproxy test-companion
 	go test -timeout 30m -v ./test-performance-qemu
+
+.PHONY: test-perf-mac
+test-perf-mac: gvproxy test-companion
+	go test -timeout 30m -v ./test-performance-vfkit
