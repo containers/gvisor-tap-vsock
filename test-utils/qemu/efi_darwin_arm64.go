@@ -1,4 +1,6 @@
-package e2eqemu
+//go:build darwin && arm64
+
+package qemu
 
 import (
 	"fmt"
@@ -33,7 +35,7 @@ func efiArgs() ([]string, error) {
  * location for Qemu and use it to look for edk2-code-fd
  */
 func getEdk2CodeFdPathFromQemuBinaryPath() string {
-	return filepath.Clean(filepath.Join(filepath.Dir(qemuExecutable()), "..", "share", "qemu"))
+	return filepath.Clean(filepath.Join(filepath.Dir(executable()), "..", "share", "qemu"))
 }
 
 /*
