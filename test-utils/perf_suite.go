@@ -1,16 +1,23 @@
 package e2eutils
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	gvproxyclient "github.com/containers/gvisor-tap-vsock/pkg/client"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
+	e2e "github.com/containers/gvisor-tap-vsock/test"
 
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
 )
@@ -24,6 +31,8 @@ type SuiteConfig struct {
 	IgnPrefix    string
 	ArtifactType string
 	FormatType   string
+
+	DeployTestCompanion bool
 
 	ConfigureGvproxy    func(cmd *types.GvproxyCommand)
 	ModifyGvproxyCmd    func(cmd *exec.Cmd) *exec.Cmd
@@ -109,6 +118,15 @@ func (h *SuiteHelper) SetupSuite() {
 	gomega.Expect(h.Client.Start()).Should(gomega.Succeed())
 	err = WaitSSH(h.Client, h.SSHExec)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+	if h.Cfg.DeployTestCompanion {
+		err = h.SCPToVM(filepath.Join(h.BinDir, "test-companion"), "/tmp/test-companion")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+		cmd := h.SSHCommand("sudo /tmp/test-companion")
+		gomega.Expect(cmd.Start()).ShouldNot(gomega.HaveOccurred())
+		time.Sleep(5 * time.Second)
+	}
 }
 
 func (h *SuiteHelper) TeardownSuite() {
@@ -161,4 +179,21 @@ func (h *SuiteHelper) SCPToVM(src, dst string) error {
 
 func (h *SuiteHelper) SCPFromVM(src, dst string) error {
 	return h.scp(fmt.Sprintf("%s@127.0.0.1:%s", h.Cfg.IgnitionUser, src), dst)
+}
+
+func (h *SuiteHelper) NewGvproxyAPIClient() *gvproxyclient.Client {
+	return gvproxyclient.New(&http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", h.Cfg.Sock)
+			},
+		},
+	}, "http://base")
+}
+
+func (h *SuiteHelper) ReportAfterSuite() bool {
+	ginkgo.ReportAfterSuite("performance summary", func(report ginkgo.Report) {
+		e2e.PrintPerformanceSummary(report)
+	})
+	return true
 }
