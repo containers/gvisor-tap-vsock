@@ -20,6 +20,7 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/net/stdio"
 	"github.com/containers/gvisor-tap-vsock/pkg/notification"
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
+	"github.com/containers/gvisor-tap-vsock/pkg/tokenauth"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
@@ -126,6 +127,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if err != nil {
 		return err
 	}
+
 	g.Go(func() error {
 		<-ctx.Done()
 		if err := vn.Close(); err != nil {
@@ -133,6 +135,19 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		}
 		return err
 	})
+
+	// Configure API token from file or environment variable
+	apiToken, err := tokenauth.ReadToken(config.APITokenFile)
+	if err != nil {
+		return err
+	}
+	if apiToken != "" {
+		vn.SetAPIToken(apiToken)
+		log.Debug("API authentication enabled")
+	} else {
+		log.Warning("No API token configured, API authentication disabled (backwards compatibility mode)")
+	}
+
 	log.Info("waiting for clients...")
 
 	// Initializing notificationSender here because NewNotificationSender always returns a valid object (a no-op sender when socket is empty),
@@ -168,11 +183,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if err != nil {
 		return err
 	}
-	mux := http.NewServeMux()
-	mux.Handle("/services/forwarder/all", vn.Mux())
-	mux.Handle("/services/forwarder/expose", vn.Mux())
-	mux.Handle("/services/forwarder/unexpose", vn.Mux())
-	httpServe(ctx, g, ln, mux)
+	httpServe(ctx, g, ln, vn.GatewayMux())
 
 	if InDebugMode() {
 		g.Go(func() error {
