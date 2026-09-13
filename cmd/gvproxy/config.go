@@ -48,6 +48,7 @@ type GvproxyArgs struct {
 	logFile            string
 	servicesEndpoint   string
 	ec2MetadataAccess  bool
+	apiTokenFile       string
 }
 
 type GvproxyConfig struct {
@@ -67,6 +68,7 @@ type GvproxyConfig struct {
 	Services           string                 `yaml:"services,omitempty"`
 	Ec2MetadataAccess  bool                   `yaml:"ec2-metadata-access,omitempty"`
 	NotificationSocket string                 `yaml:"notification,omitempty"`
+	APITokenFile       string                 `yaml:"api-token-file,omitempty"`
 }
 
 type GvproxyConfigForward struct {
@@ -139,6 +141,7 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.StringVar(&args.servicesEndpoint, "services", "", "Exposes the same HTTP API as the --listen flag, without the /connect endpoint")
 	flagSet.BoolVar(&args.ec2MetadataAccess, "ec2-metadata-access", false, "Permits access to EC2 Metadata Service and Amazon Time Sync Service")
 	flagSet.StringVar(&args.notificationSocket, "notification", "", "Socket to be used to send network-ready notifications")
+	flagSet.StringVar(&args.apiTokenFile, "api-token-file", "", "Path to file where API token will be read from (needs 0600 permissions)")
 	if err := flagSet.Parse(argv); err != nil {
 		return nil, err
 	}
@@ -306,6 +309,9 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	}
 	if args.mtu != 0 {
 		config.Stack.MTU = args.mtu
+	}
+	if args.apiTokenFile != "" {
+		config.APITokenFile = args.apiTokenFile
 	}
 
 	// Make sure the qemu socket provided is valid syntax

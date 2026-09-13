@@ -126,6 +126,32 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if err != nil {
 		return err
 	}
+
+	// Configure API token from file or environment variable
+	var apiToken string
+	if config.APITokenFile != "" {
+		// Read from token file if specified
+		apiToken, err = virtualnetwork.ReadTokenFromFile(config.APITokenFile)
+		if err != nil {
+			return fmt.Errorf("failed to read API token from file %s: %w", config.APITokenFile, err)
+		}
+		vn.SetAPIToken(apiToken)
+		log.Infof("API token loaded from %s. API authentication enabled.", config.APITokenFile)
+	} else {
+		// Check environment variable if no file specified
+		apiToken, err = virtualnetwork.ReadTokenFromEnv()
+		if err != nil {
+			return fmt.Errorf("invalid API token in GVISOR_API_TOKEN environment variable: %w", err)
+		}
+		if apiToken != "" {
+			vn.SetAPIToken(apiToken)
+			log.Info("API token loaded from GVISOR_API_TOKEN environment variable. API authentication enabled.")
+		} else {
+			// No token configured - backwards compatibility mode
+			log.Warning("No API token configured, API authentication disabled (backwards compatibility mode).")
+		}
+	}
+
 	log.Info("waiting for clients...")
 
 	// Initializing notificationSender here because NewNotificationSender always returns a valid object (a no-op sender when socket is empty),
@@ -162,9 +188,10 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		return err
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/services/forwarder/all", vn.Mux())
-	mux.Handle("/services/forwarder/expose", vn.Mux())
-	mux.Handle("/services/forwarder/unexpose", vn.Mux())
+	authenticatedHandler := virtualnetwork.BearerAuthMiddleware(apiToken)(vn.Mux())
+	mux.Handle("/services/forwarder/all", authenticatedHandler)
+	mux.Handle("/services/forwarder/expose", authenticatedHandler)
+	mux.Handle("/services/forwarder/unexpose", authenticatedHandler)
 	httpServe(ctx, g, ln, mux)
 
 	if InDebugMode() {
