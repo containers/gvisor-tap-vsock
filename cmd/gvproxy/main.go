@@ -178,7 +178,7 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		log.Infof("enabling services API. Listening %s", config.Services)
 		ln, err := transport.Listen(config.Services)
 		if err != nil {
-			return fmt.Errorf("cannot listen: %w", err)
+			return fmt.Errorf("cannot listen: %w", err)
 		}
 		httpServe(ctx, g, ln, vn.ServicesMux())
 	}
