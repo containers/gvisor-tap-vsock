@@ -88,7 +88,7 @@ github.com/mdlayher/vsock
 # github.com/miekg/dns v1.1.73
 ## explicit; go 1.25.0
 github.com/miekg/dns
-# github.com/onsi/ginkgo/v2 v2.32.1
+# github.com/onsi/ginkgo/v2 v2.32.2
 ## explicit; go 1.25.0
 github.com/onsi/ginkgo/v2
 github.com/onsi/ginkgo/v2/config
