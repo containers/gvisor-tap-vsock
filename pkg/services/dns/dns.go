@@ -69,38 +69,40 @@ func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
 		lowerName := strings.ToLower(q.Name)
 		lowerSuffix := strings.ToLower(zoneSuffix)
 		if strings.HasSuffix(lowerName, lowerSuffix) {
-			if q.Qtype != dns.TypeA {
-				return false
-			}
+			withoutZone := strings.TrimSuffix(lowerName, lowerSuffix)
+			var matchedIP net.IP
 			for _, record := range zone.Records {
-				withoutZone := strings.TrimSuffix(lowerName, lowerSuffix)
 				if (record.Name != "" && strings.EqualFold(record.Name, withoutZone)) ||
 					(record.Regexp != nil && record.Regexp.MatchString(withoutZone)) {
-					m.Answer = append(m.Answer, &dns.A{
-						Hdr: dns.RR_Header{
-							Name:   q.Name,
-							Rrtype: dns.TypeA,
-							Class:  dns.ClassINET,
-							Ttl:    0,
-						},
-						A: record.IP,
-					})
-					return true
+					matchedIP = record.IP
+					break
 				}
 			}
-			if !zone.DefaultIP.Equal(net.IP("")) {
-				m.Answer = append(m.Answer, &dns.A{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeA,
-						Class:  dns.ClassINET,
-						Ttl:    0,
-					},
-					A: zone.DefaultIP,
-				})
+			if matchedIP == nil && !zone.DefaultIP.Equal(net.IP("")) {
+				matchedIP = zone.DefaultIP
+			}
+
+			if matchedIP == nil {
+				// No record and no DefaultIP catch-all: the name truly
+				// does not exist in this zone.
+				m.Rcode = dns.RcodeNameError
 				return true
 			}
-			m.Rcode = dns.RcodeNameError
+			if q.Qtype != dns.TypeA {
+				// Name exists in this zone, but the zone only ever
+				// serves A records. Answer NOERROR/NODATA locally
+				// instead of forwarding to the real upstream resolver.
+				return true
+			}
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    0,
+				},
+				A: matchedIP,
+			})
 			return true
 		}
 	}

@@ -550,6 +550,7 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 		aaaaDomain = "aaaa.example.org."
 		ptrName    = "2.1.168.192.in-addr.arpa."
 		ptrTarget  = "host.example.org."
+		leakedTxt  = "leaked-txt-record"
 	)
 
 	ginkgo.BeforeEach(func() {
@@ -564,7 +565,17 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 		}, false)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
 
-		server, err = New(nil, nil, []types.Zone{})
+		// upstream backs the LookupTXT (and other typed-resolver) code paths;
+		// nameservers below backs the raw-forward code path used for
+		// SOA/PTR/AAAA/CAA/...
+		upstream := &mockdns.Resolver{
+			Zones: map[string]mockdns.Zone{
+				aaaaDomain: {
+					TXT: []string{leakedTxt},
+				},
+			},
+		}
+		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
 		// Point the raw forwarder at the mock upstream server.
 		server.handler.nameservers = []string{mockSrv.LocalAddr().String()}
@@ -607,6 +618,39 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 		ptr, ok := m.Answer[0].(*dns.PTR)
 		gomega.Expect(ok).To(gomega.BeTrue(), "expected a PTR answer")
 		gomega.Expect(ptr.Ptr).To(gomega.Equal(ptrTarget))
+	})
+
+	ginkgo.It("should not forward queries for names owned by a local zone", func() {
+		// aaaaDomain falls under this zone's suffix. addLocalAnswers only
+		// special-cases dns.TypeA, so any other query type for a zone-owned
+		// name currently falls through to either the default case (SOA, and
+		// AAAA below) or an existing typed case (TXT), and gets forwarded to
+		// the real upstream instead of being answered (or left empty)
+		// locally -- leaking the internal name and returning whatever
+		// unrelated record the upstream happens to have.
+		zoneIP := net.ParseIP("192.168.127.5")
+		err := server.addZone(types.Zone{
+			Name:      "example.org.",
+			DefaultIP: zoneIP,
+		})
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+
+		// A queries are already answered locally from the zone and must not
+		// be forwarded.
+		a := query(aaaaDomain, dns.TypeA)
+		gomega.Expect(a.Answer).To(gomega.HaveLen(1))
+		aRecord, ok := a.Answer[0].(*dns.A)
+		gomega.Expect(ok).To(gomega.BeTrue(), "expected an A answer")
+		gomega.Expect(aRecord.A.Equal(zoneIP)).To(gomega.BeTrue())
+
+		aaaa := query(aaaaDomain, dns.TypeAAAA)
+		gomega.Expect(aaaa.Answer).To(gomega.BeEmpty(), "AAAA query for a name owned by a local zone must not be forwarded to the real upstream nameservers")
+
+		soa := query(aaaaDomain, dns.TypeSOA)
+		gomega.Expect(soa.Answer).To(gomega.BeEmpty(), "SOA query for a name owned by a local zone must not be forwarded to the real upstream nameservers")
+
+		txt := query(aaaaDomain, dns.TypeTXT)
+		gomega.Expect(txt.Answer).To(gomega.BeEmpty(), "TXT query for a name owned by a local zone must not be forwarded to the real upstream resolver")
 	})
 
 	ginkgo.It("should return SERVFAIL when the upstream cannot be reached", func() {
