@@ -162,9 +162,10 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 		return err
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/services/forwarder/all", vn.Mux())
-	mux.Handle("/services/forwarder/expose", vn.Mux())
-	mux.Handle("/services/forwarder/unexpose", vn.Mux())
+	vnMux := vn.Mux()
+	mux.Handle("/services/forwarder/all", vnMux)
+	mux.Handle("/services/forwarder/expose", vnMux)
+	mux.Handle("/services/forwarder/unexpose", vnMux)
 	httpServe(ctx, g, ln, mux)
 
 	if InDebugMode() {
@@ -377,13 +378,16 @@ func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http
 }
 
 func withProfiler(vn *virtualnetwork.VirtualNetwork) http.Handler {
-	mux := vn.Mux()
-	if InDebugMode() {
-		mux.HandleFunc("/debug/pprof/", pprof.Index)
-		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	vnHandler := vn.Mux()
+	if !InDebugMode() {
+		return vnHandler
 	}
+	mux := http.NewServeMux()
+	mux.Handle("/", vnHandler)
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	return mux
 }
 

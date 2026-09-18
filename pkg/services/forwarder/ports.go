@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/inetaf/tcpproxy"
@@ -286,7 +287,7 @@ func (f *PortsForwarder) Unexpose(protocol types.TransportProtocol, local string
 
 func (f *PortsForwarder) Mux() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/all", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/all", func(w http.ResponseWriter, r *http.Request) {
 		f.proxiesLock.Lock()
 		defer f.proxiesLock.Unlock()
 		ret := make([]proxy, 0)
@@ -299,7 +300,9 @@ func (f *PortsForwarder) Mux() http.Handler {
 			}
 			return ret[i].Local < ret[j].Local
 		})
-		_ = json.NewEncoder(w).Encode(ret)
+		if err := json.NewEncoder(w).Encode(ret); err != nil {
+			apilog.SetError(r, err)
+		}
 	})
 	mux.HandleFunc("/expose", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -308,12 +311,17 @@ func (f *PortsForwarder) Mux() http.Handler {
 		}
 		var req types.ExposeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apilog.SetError(r, err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if req.Protocol == "" {
 			req.Protocol = types.TCP
 		}
+
+		apilog.AddField(r, "protocol", req.Protocol)
+		apilog.AddField(r, "local", req.Local)
+		apilog.AddField(r, "remote", req.Remote)
 
 		// contains unparsed remote field
 		remoteAddr := req.Remote
@@ -323,12 +331,15 @@ func (f *PortsForwarder) Mux() http.Handler {
 			var err error
 			remoteAddr, err = remote(req, r.RemoteAddr)
 			if err != nil {
+				apilog.SetError(r, err)
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+			apilog.AddField(r, "remote", remoteAddr)
 		}
 
 		if err := f.Expose(req.Protocol, req.Local, remoteAddr); err != nil {
+			apilog.SetError(r, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -341,13 +352,19 @@ func (f *PortsForwarder) Mux() http.Handler {
 		}
 		var req types.UnexposeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apilog.SetError(r, err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if req.Protocol == "" {
 			req.Protocol = types.TCP
 		}
+
+		apilog.AddField(r, "protocol", req.Protocol)
+		apilog.AddField(r, "local", req.Local)
+
 		if err := f.Unexpose(req.Protocol, req.Local); err != nil {
+			apilog.SetError(r, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
