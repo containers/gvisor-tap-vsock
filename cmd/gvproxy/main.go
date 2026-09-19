@@ -126,6 +126,13 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if err != nil {
 		return err
 	}
+	g.Go(func() error {
+		<-ctx.Done()
+		if err := vn.Close(); err != nil {
+			log.Errorf("error shutting down virtual network: %q", err)
+		}
+		return err
+	})
 	log.Info("waiting for clients...")
 
 	// Initializing notificationSender here because NewNotificationSender always returns a valid object (a no-op sender when socket is empty),
