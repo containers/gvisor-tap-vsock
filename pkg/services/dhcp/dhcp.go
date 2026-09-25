@@ -131,7 +131,9 @@ func (s *Server) Serve() error {
 func (s *Server) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/leases", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(s.IPPool.Leases())
+		if err := json.NewEncoder(w).Encode(s.IPPool.Leases()); err != nil {
+			log.Error(err)
+		}
 	})
 	return mux
 }

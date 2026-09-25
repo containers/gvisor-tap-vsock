@@ -313,7 +313,9 @@ func (f *PortsForwarder) Mux() http.Handler {
 			}
 			return ret[i].Local < ret[j].Local
 		})
-		_ = json.NewEncoder(w).Encode(ret)
+		if err := json.NewEncoder(w).Encode(ret); err != nil {
+			log.Error(err)
+		}
 	})
 	mux.HandleFunc("/expose", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

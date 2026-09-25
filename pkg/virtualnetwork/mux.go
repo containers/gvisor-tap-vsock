@@ -20,13 +20,19 @@ func (n *VirtualNetwork) ServicesMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/services/", http.StripPrefix("/services", n.servicesMux))
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(statsAsJSON(n.networkSwitch.Sent, n.networkSwitch.Received, n.stack.Stats()))
+		if err := json.NewEncoder(w).Encode(statsAsJSON(n.networkSwitch.Sent, n.networkSwitch.Received, n.stack.Stats())); err != nil {
+			log.Error(err)
+		}
 	})
 	mux.HandleFunc("/cam", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(n.networkSwitch.CAM())
+		if err := json.NewEncoder(w).Encode(n.networkSwitch.CAM()); err != nil {
+			log.Error(err)
+		}
 	})
 	mux.HandleFunc("/leases", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(n.ipPool.Leases())
+		if err := json.NewEncoder(w).Encode(n.ipPool.Leases()); err != nil {
+			log.Error(err)
+		}
 	})
 	mux.HandleFunc("/tunnel", func(w http.ResponseWriter, r *http.Request) {
 		ip := r.URL.Query().Get("ip")
