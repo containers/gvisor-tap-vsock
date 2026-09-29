@@ -19,9 +19,6 @@ func listenURL(parsed *url.URL) (net.Listener, error) {
 			return nil, err
 		}
 		path := path.Join(parsed.Path, fmt.Sprintf("00000002.%08x", port))
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) { // #nosec G703 - constructed path for socket cleanup
-			return nil, err
-		}
 		listener, err := net.ListenUnix("unix", &net.UnixAddr{
 			Name: path,
 			Net:  "unix",
