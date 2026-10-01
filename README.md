@@ -127,7 +127,75 @@ $ curl  --unix-socket /tmp/network.sock http:/unix/stats
 ...
 ```
 
-N.B: The `--services` option exposes the same HTTP API as the `--listen` option, but without the `/connect` endpoint. This is useful for scenarios where the `gvforwarder`/`vm` tool is not run on the guest but you still want to expose services and stats endpoints.
+N.B:
+- The `--services` option exposes the same HTTP API as the `--listen` option, but without the `/connect` endpoint.
+This is useful for scenarios where the `gvforwarder`/`vm` tool is not run on the guest, but you still want to expose
+services and stats endpoints.
+
+#### API Authentication
+
+The gateway API endpoint (accessible from the VM at http://192.168.127.1:80) can be secured with Bearer token
+authentication. When enabled, all requests from within the VM require an `Authorization` header
+with the token.
+
+**Note:** Authentication only applies to the gateway endpoint accessible from the VM. Host-side endpoints
+(`--listen` or `--services`) remain unauthenticated. If they are backed by unix socket, they will be protected by
+the socket file permissions. If you use these with a `tcp` endpoint, they will be unauthenticated even if they would benefit from Bearer token authentication.
+[Issue #736](https://github.com/containers/gvisor-tap-vsock/issues/736 tracks this).
+
+**Token Format:**
+The token is a base64url-encoded random string, typically 44 characters long (minimum of 32 characters), for example:
+```
+xK8vN2Qp_7RmLwE4sJ9nY3Tc6Vh5Gz1Ua8Fb0Pd2Xe4=
+```
+though the token can be any string longer than 32 characters. The token file should contain only the token string
+(whitespace is automatically trimmed).
+
+**Token Generation:**
+You can use the `tokenauth.GenerateToken()` function from the `pkg/tokenauth` package to generate a cryptographically secure token:
+```go
+import "github.com/containers/gvisor-tap-vsock/pkg/tokenauth"
+
+token, err := tokenauth.GenerateToken()
+if err != nil {
+    // handle error
+}
+// token is now a secure 44-character base64url-encoded string
+```
+
+**Enabling Authentication:**
+
+Option 1 - Using a token file:
+```bash
+# Create token file
+echo "xK8vN2Qp_7RmLwE4sJ9nY3Tc6Vh5Gz1Ua8Fb0Pd2Xe4=" > /tmp/gvproxy-token
+chmod 0600 /tmp/gvproxy-token  # macOS and Linux only
+
+# Start gvproxy with authentication
+gvproxy --api-token-file /tmp/gvproxy-token
+```
+
+Option 2 - Using environment variable:
+```bash
+# Set token via environment variable
+export GV_API_TOKEN="xK8vN2Qp_7RmLwE4sJ9nY3Tc6Vh5Gz1Ua8Fb0Pd2Xe4="
+
+# Start gvproxy
+gvproxy
+```
+
+**Making Authenticated Requests from the VM:**
+```bash
+# Set token (must match the token gvproxy was started with)
+TOKEN="xK8vN2Qp_7RmLwE4sJ9nY3Tc6Vh5Gz1Ua8Fb0Pd2Xe4="
+
+# Include Bearer token in Authorization header for gateway requests
+curl -H "Authorization: Bearer $TOKEN" http://192.168.127.1/services/forwarder/all
+```
+
+**Backwards Compatibility:**
+If neither `--api-token-file` nor `GV_API_TOKEN` is set, authentication is disabled and the API accepts all
+requests without tokens.
 
 ### Gateway
 
@@ -146,7 +214,11 @@ nameserver 192.168.127.1
 ### Port forwarding
 
 Dynamic port forwarding is supported over the host HTTP API when `gvproxy` was
-started with `--listen` or `--services`, but also in the VM over http://192.168.127.1:80.
+started with `--listen` or `--services`, and also in the VM over http://192.168.127.1:80.
+
+**Authentication:** 
+- **Host-side** (`--listen` or `--services`): No authentication required (protected by unix socket permissions).
+- **Gateway** (http://192.168.127.1:80 from VM): Authentication required when enabled via `--api-token-file` or `GV_API_TOKEN`
 
 Expose a port:
 ```

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/tokenauth"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/inetaf/tcpproxy"
 	log "github.com/sirupsen/logrus"
@@ -103,4 +104,24 @@ func (n *VirtualNetwork) Mux() *http.ServeMux {
 		_ = n.networkSwitch.Accept(context.Background(), conn, n.configuration.Protocol)
 	})
 	return mux
+}
+
+// GatewayMux returns a mux for the gateway endpoint (accessible from the VM)
+// It only exposes the forwarder endpoints, optionally wrapped with
+// token authentication if SetAPIToken() was called with a non-empty token
+func (n *VirtualNetwork) GatewayMux() *http.ServeMux {
+	handler := http.Handler(n.Mux())
+
+	// If a token is configured, wrap it with authentication middleware
+	if n.apiToken != "" {
+		handler = tokenauth.BearerAuthMiddleware(n.apiToken)(handler)
+	}
+
+	// Only expose the forwarder endpoints
+	gatewayMux := http.NewServeMux()
+	gatewayMux.Handle("/services/forwarder/all", handler)
+	gatewayMux.Handle("/services/forwarder/expose", handler)
+	gatewayMux.Handle("/services/forwarder/unexpose", handler)
+
+	return gatewayMux
 }

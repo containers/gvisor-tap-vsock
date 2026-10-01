@@ -7,9 +7,9 @@ https://github.com/containers/gvisor-tap-vsock/blob/main/.github/workflows/relea
 - fetch the latest upstream code, and optionally check it out locally: `git remote update`
 - create a v0.1.0 tag for a 0.1.0 release: `git tag -s v0.1.0 origin/main`
 - push the tag: `git push origin v0.1.0`
-- wait until the "Release build" GitHub Actions workflow completes
+- wait until the "Release build" GitHub Actions workflow completes
 - go to https://github.com/containers/gvisor-tap-vsock/releases. There should now be a v0.1.0 release with a Draft tag
-- edit the release notes. I put new features first, then bug fixes, and I add a "## Dependencies Updates" section listing dependabot updates
+- edit the release notes. I put new features first, then bug fixes, and I add a "## Dependencies Updates" section listing dependabot updates
 - check "Make this release the latest" and click on "Publish"
 - release is done !
 

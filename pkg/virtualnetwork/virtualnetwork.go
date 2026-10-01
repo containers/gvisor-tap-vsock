@@ -30,10 +30,15 @@ type VirtualNetwork struct {
 	servicesMux    http.Handler
 	ipPool         *tap.IPPool
 	portsForwarder *forwarder.PortsForwarder
+	apiToken       string // Bearer token for API authentication
 }
 
 func (n *VirtualNetwork) SetNotificationSender(notificationSender *notification.NotificationSender) {
 	n.networkSwitch.SetNotificationSender(notificationSender)
+}
+
+func (n *VirtualNetwork) SetAPIToken(token string) {
+	n.apiToken = token
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {
