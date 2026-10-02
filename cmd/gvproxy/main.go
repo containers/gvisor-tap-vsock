@@ -395,13 +395,19 @@ func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http
 }
 
 func withProfiler(vn *virtualnetwork.VirtualNetwork) http.Handler {
-	mux := vn.Mux()
-	if InDebugMode() {
-		mux.HandleFunc("/debug/pprof/", pprof.Index)
-		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	vnHandler := vn.Mux()
+	if !InDebugMode() {
+		return vnHandler
 	}
+	// Register the pprof debug endpoints on a separate outer mux rather than
+	// on vnHandler itself: vnHandler is audit-logged (see pkg/apilog), and we
+	// don't want debug/profiling requests to show up in that audit trail.
+	mux := http.NewServeMux()
+	mux.Handle("/", vnHandler)
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	return mux
 }
 
