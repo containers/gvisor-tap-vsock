@@ -2,7 +2,7 @@ package virtualnetwork
 
 import (
 	"net"
-	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,7 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool, portsForwarder *forwarder.PortsForwarder) (http.Handler, error) {
+func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool) (*forwarder.PortsForwarder, *dns.Server, *dhcp.Server, error) {
 	var natLock sync.Mutex
 	translation := parseNATTable(configuration)
 
@@ -33,21 +33,22 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	icmpForwarder := forwarder.ICMP(s, translation, &natLock)
 	s.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
 
-	dnsMux, err := dnsServer(configuration, s)
+	dnsServer, err := createDNSServer(configuration, s)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
-	dhcpMux, err := dhcpServer(configuration, s, ipPool)
+	dhcpServer, err := createDHCPServer(configuration, s, ipPool)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
-	mux := http.NewServeMux()
-	mux.Handle("/forwarder/", http.StripPrefix("/forwarder", portsForwarder.Mux()))
-	mux.Handle("/dhcp/", http.StripPrefix("/dhcp", dhcpMux))
-	mux.Handle("/dns/", http.StripPrefix("/dns", dnsMux))
-	return mux, nil
+	portsForwarder, err := createPortsForwarder(configuration, s)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return portsForwarder, dnsServer, dhcpServer, nil
 }
 
 func parseNATTable(configuration *types.Configuration) map[tcpip.Address]tcpip.Address {
@@ -58,7 +59,7 @@ func parseNATTable(configuration *types.Configuration) map[tcpip.Address]tcpip.A
 	return translation
 }
 
-func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {
+func createDNSServer(configuration *types.Configuration, s *stack.Stack) (*dns.Server, error) {
 	udpConn, err := gonet.DialUDP(s, &tcpip.FullAddress{
 		NIC:  1,
 		Addr: tcpip.AddrFrom4Slice(net.ParseIP(configuration.GatewayIP).To4()),
@@ -92,10 +93,10 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler
 			log.Error(err)
 		}
 	}()
-	return server.Mux(), nil
+	return server, nil
 }
 
-func dhcpServer(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool) (http.Handler, error) {
+func createDHCPServer(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool) (*dhcp.Server, error) {
 	server, err := dhcp.New(configuration, s, ipPool)
 	if err != nil {
 		return nil, err
@@ -103,5 +104,21 @@ func dhcpServer(configuration *types.Configuration, s *stack.Stack, ipPool *tap.
 	go func() {
 		log.Error(server.Serve())
 	}()
-	return server.Mux(), nil
+	return server, nil
+}
+
+func createPortsForwarder(configuration *types.Configuration, s *stack.Stack) (*forwarder.PortsForwarder, error) {
+	portsForwarder := forwarder.NewPortsForwarder(s)
+	for local, remote := range configuration.Forwards {
+		if strings.HasPrefix(local, "udp:") {
+			if err := portsForwarder.Expose(types.UDP, strings.TrimPrefix(local, "udp:"), remote); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := portsForwarder.Expose(types.TCP, local, remote); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return portsForwarder, nil
 }
