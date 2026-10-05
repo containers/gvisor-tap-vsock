@@ -110,8 +110,8 @@ func createDHCPServer(configuration *types.Configuration, s *stack.Stack, ipPool
 func createPortsForwarder(configuration *types.Configuration, s *stack.Stack) (*forwarder.PortsForwarder, error) {
 	portsForwarder := forwarder.NewPortsForwarder(s)
 	for local, remote := range configuration.Forwards {
-		if strings.HasPrefix(local, "udp:") {
-			if err := portsForwarder.Expose(types.UDP, strings.TrimPrefix(local, "udp:"), remote); err != nil {
+		if after, ok := strings.CutPrefix(local, "udp:"); ok {
+			if err := portsForwarder.Expose(types.UDP, after, remote); err != nil {
 				return nil, err
 			}
 		} else {
