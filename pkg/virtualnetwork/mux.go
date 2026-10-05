@@ -8,9 +8,9 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 )
 
-// newServicesMux builds the raw ServeMux with service handlers.
+// rawServicesMux builds the raw ServeMux with service handlers.
 // Use ServicesMux or Mux for the middleware-wrapped versions.
-func (n *VirtualNetwork) newServicesMux() *http.ServeMux {
+func (n *VirtualNetwork) rawServicesMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// Port Forwarding
@@ -38,34 +38,34 @@ func (n *VirtualNetwork) newServicesMux() *http.ServeMux {
 
 // ServicesMux returns the services mux wrapped with audit logging middleware.
 func (n *VirtualNetwork) ServicesMux() http.Handler {
-	return apilog.Middleware(n.newServicesMux())
+	return apilog.Middleware(n.rawServicesMux())
 }
 
 // Mux returns the full mux (services + connect) wrapped with audit logging middleware.
 func (n *VirtualNetwork) Mux() http.Handler {
-	mux := n.newServicesMux()
+	mux := n.rawServicesMux()
 	mux.HandleFunc(types.ConnectPath, n.handleConnect)
 	return apilog.Middleware(mux)
 }
 
-// GatewayMux returns a mux for the gateway endpoint (accessible from the VM)
-// It only exposes the forwarder endpoints, optionally wrapped with
-// token authentication if SetAPIToken() was called with a non-empty token
-func (n *VirtualNetwork) GatewayMux() *http.ServeMux {
-	handler := http.Handler(n.newServicesMux())
+// GatewayMux returns a mux for the gateway endpoint (accessible from the VM),
+// wrapped with audit logging middleware. It only exposes the forwarder endpoints,
+// optionally wrapped with token authentication if SetAPIToken() was called with
+// a non-empty token.
+func (n *VirtualNetwork) GatewayMux() http.Handler {
+	gatewayMux := http.NewServeMux()
+
+	// Only expose the forwarder endpoints
+	gatewayMux.HandleFunc("/services/forwarder/all", n.handleForwarderList)
+	gatewayMux.HandleFunc("/services/forwarder/expose", n.handleForwarderExpose)
+	gatewayMux.HandleFunc("/services/forwarder/unexpose", n.handleForwarderUnexpose)
+
+	handler := http.Handler(gatewayMux)
 
 	// If a token is configured, wrap it with authentication middleware
 	if n.apiToken != "" {
 		handler = tokenauth.BearerAuthMiddleware(n.apiToken)(handler)
 	}
 
-	handler = apilog.Middleware(handler)
-
-	// Only expose the forwarder endpoints
-	gatewayMux := http.NewServeMux()
-	gatewayMux.Handle("/services/forwarder/all", handler)
-	gatewayMux.Handle("/services/forwarder/expose", handler)
-	gatewayMux.Handle("/services/forwarder/unexpose", handler)
-
-	return gatewayMux
+	return apilog.Middleware(handler)
 }
