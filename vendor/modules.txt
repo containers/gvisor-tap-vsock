@@ -32,7 +32,7 @@ github.com/ebitengine/purego/internal/cgo
 github.com/ebitengine/purego/internal/fakecgo
 github.com/ebitengine/purego/internal/strings
 github.com/ebitengine/purego/internal/xreflect
-# github.com/foxcpp/go-mockdns v1.2.0
+# github.com/foxcpp/go-mockdns v1.3.0
 ## explicit; go 1.13
 github.com/foxcpp/go-mockdns
 # github.com/go-logr/logr v1.4.3
