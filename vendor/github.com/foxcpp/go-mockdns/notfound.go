@@ -1,4 +1,5 @@
-//+build go1.13
+//go:build go1.13
+// +build go1.13
 
 package mockdns
 
@@ -11,8 +12,4 @@ func notFound(host string) error {
 		Server:     "127.0.0.1:53",
 		IsNotFound: true,
 	}
-}
-
-func isNotFound(dnsErr *net.DNSError) bool {
-	return dnsErr.IsNotFound
 }
