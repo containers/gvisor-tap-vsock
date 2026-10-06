@@ -51,7 +51,7 @@ func main() {
 	}
 
 	if len(args) < 5 || (len(args)-2)%3 != 0 {
-		alert("Usage: " + filepath.Base(os.Args[0]) + "(-debug) [name] [statedir] ([source] [dest] [identity])...  \n\nThis facilty proxies windows pipes and unix sockets over ssh using the specified identity.")
+		alert("Usage: " + filepath.Base(os.Args[0]) + "(-debug) [name] [statedir] ([source] [dest] [identity])...  \n\nThis facility proxies windows pipes and unix sockets over ssh using the specified identity.")
 		os.Exit(ERR_BAD_ARGS)
 	}
 
