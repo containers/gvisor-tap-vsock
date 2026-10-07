@@ -50,9 +50,9 @@ func main() {
 
 	// Create a PID file if requested
 	if config.PIDFile != "" {
-		f, err := os.Create(config.PIDFile)
-		if err != nil {
-			log.Errorf("failed to create pidfile: %s", err.Error())
+		pidStr := strconv.Itoa(os.Getpid())
+		if err := os.WriteFile(config.PIDFile, []byte(pidStr), 0o600); err != nil {
+			log.Errorf("failed to write pidfile: %s", err.Error())
 			return
 		}
 		// Remove the pid-file when exiting
@@ -61,11 +61,6 @@ func main() {
 				log.Errorf("failed to remove pidfile: %s", err.Error())
 			}
 		}()
-		pid := os.Getpid()
-		if _, err := f.WriteString(strconv.Itoa(pid)); err != nil {
-			log.Errorf("failed to write pidfile: %s", err.Error())
-			return
-		}
 	}
 
 	groupErrs, ctx := errgroup.WithContext(ctx)
