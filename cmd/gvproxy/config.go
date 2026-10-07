@@ -31,6 +31,7 @@ type GvproxyArgs struct {
 	sshPort            int
 	subnet             string
 	gatewayIP          string
+	bootFileName       string
 	deviceIP           string
 	hostIP             string
 	vpnkitSocket       string
@@ -127,6 +128,7 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.StringVar(&args.gatewayIP, "gatewayIP", "", "Gateway IP address, default is first usable address of subnet")
 	flagSet.StringVar(&args.deviceIP, "deviceIP", "", "Device IP address, default is second usable address of subnet")
 	flagSet.StringVar(&args.hostIP, "hostIP", "", "Host IP address, default is last usable address of subnet")
+	flagSet.StringVar(&args.bootFileName, "bootFileName", "", "Boot File Name that will be passed via DHCP")
 	flagSet.StringVar(&args.vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
 	flagSet.StringVar(&args.qemuSocket, "listen-qemu", "", "Socket to be used by Qemu")
 	flagSet.StringVar(&args.bessSocket, "listen-bess", "", "unixpacket socket to be used by Bess-compatible applications")
@@ -389,6 +391,8 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		}
 
 		config.Stack.CaptureFile = args.pcapFile
+
+		config.Stack.BootFileName = args.bootFileName
 
 		config.Stack.DNS = []types.Zone{
 			{

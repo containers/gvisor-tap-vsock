@@ -53,6 +53,10 @@ func handler(configuration *types.Configuration, ipPool *tap.IPPool) server4.Han
 		reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionRouter, Value: dhcpv4.IP(net.ParseIP(configuration.GatewayIP))})
 		reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionDomainNameServer, Value: dhcpv4.IPs([]net.IP{net.ParseIP(configuration.GatewayIP)})})
 
+		if configuration.BootFileName != "" {
+			reply.UpdateOption(dhcpv4.OptBootFileName(configuration.BootFileName))
+		}
+
 		mtu := configuration.MTU
 		if mtu < 0 || mtu > math.MaxUint16 {
 			log.Errorf("dhcp: invalid MTU %d", mtu)
