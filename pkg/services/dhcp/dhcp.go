@@ -1,14 +1,11 @@
 package dhcp
 
 import (
-	"encoding/json"
 	"errors"
 	"math"
 	"net"
-	"net/http"
 	"time"
 
-	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/tap"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/insomniacslk/dhcp/dhcpv4"
@@ -129,12 +126,6 @@ func (s *Server) Serve() error {
 	return s.Underlying.Serve()
 }
 
-func (s *Server) Mux() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/leases", func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewEncoder(w).Encode(s.IPPool.Leases()); err != nil {
-			apilog.SetError(r, err)
-		}
-	})
-	return mux
+func (s *Server) Leases() map[string]string {
+	return s.IPPool.Leases()
 }
