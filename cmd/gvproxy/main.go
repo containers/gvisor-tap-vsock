@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -178,7 +181,11 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	if err != nil {
 		return err
 	}
-	httpServe(ctx, g, ln, vn.GatewayMux())
+	gatewayHandler := http.Handler(vn.GatewayMux())
+	if !config.GatewayExposeAllProtocols {
+		gatewayHandler = gatewayExposeHandler(gatewayHandler)
+	}
+	httpServe(ctx, g, ln, gatewayHandler)
 
 	if InDebugMode() {
 		g.Go(func() error {
@@ -404,6 +411,41 @@ func withProfiler(vn *virtualnetwork.VirtualNetwork) http.Handler {
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	return mux
+}
+
+// gatewayExposeHandler wraps the /expose endpoint handler to restrict protocols
+// to only tcp and udp by default. This middleware must be applied before any other
+// middleware that attempts to read the request body, as it consumes and reconstitutes
+// the body to validate the protocol field.
+func gatewayExposeHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Protocol string `json:"protocol"`
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		r.Body.Close()
+
+		if err := json.Unmarshal(bodyBytes, &req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Empty protocol is allowed because the /expose handler defaults it to tcp
+		if req.Protocol != "tcp" && req.Protocol != "udp" && req.Protocol != "" {
+			log.Warnf("blocked %s protocol on gateway API", req.Protocol)
+			http.Error(w, "only tcp and udp protocols are allowed on the gateway API", http.StatusForbidden)
+			return
+		}
+
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		next.ServeHTTP(w, r)
+	})
 }
 
 func searchDomains() []string {
