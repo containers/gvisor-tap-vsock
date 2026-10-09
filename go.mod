@@ -3,7 +3,7 @@ module github.com/containers/gvisor-tap-vsock
 go 1.26.0
 
 require (
-	github.com/Microsoft/go-winio v0.6.2
+	github.com/Microsoft/go-winio v0.6.3
 	github.com/containers/winquit v1.1.0
 	github.com/coreos/stream-metadata-go v0.4.11
 	github.com/crc-org/vfkit v0.6.4
@@ -57,5 +57,5 @@ require (
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
+	golang.org/x/tools v0.50.0 // indirect
 )
