@@ -1,6 +1,7 @@
 package stdio
 
 import (
+	"errors"
 	"net"
 	"os"
 	"os/exec"
@@ -33,7 +34,15 @@ func Dial(endpoint string, arg ...string) (net.Conn, error) {
 		writer: stdin,
 		local:  local,
 		remote: remote,
-		close:  cmd.Process.Kill,
+		close: func() error {
+			if err := cmd.Process.Kill(); err != nil {
+				if !errors.Is(err, os.ErrProcessDone) {
+					return err
+				}
+			}
+			_ = cmd.Wait()
+			return nil
+		},
 	}
 	return conn, nil
 }
