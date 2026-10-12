@@ -74,6 +74,48 @@ func TestConfigInit(t *testing.T) {
 	}
 }
 
+func TestConfigureIPv6(t *testing.T) {
+	t.Parallel()
+
+	t.Run("disabled by default leaves IPv6 fields empty", func(t *testing.T) {
+		t.Parallel()
+		cnf := GvproxyConfig{}
+		args := GvproxyArgs{subnet: "192.168.127.0/24", sshPort: 2222}
+		_, err := GvproxyConfigure(&cnf, &args, "testing")
+		require.NoError(t, err)
+		assert.False(t, cnf.Stack.EnableIPv6, "EnableIPv6 must default to false")
+		assert.Empty(t, cnf.Stack.GatewayIPv6, "GatewayIPv6 must stay empty when IPv6 is disabled")
+		assert.Empty(t, cnf.Stack.SubnetIPv6, "SubnetIPv6 must stay empty when IPv6 is disabled")
+	})
+
+	t.Run("enabled fills defaults", func(t *testing.T) {
+		t.Parallel()
+		cnf := GvproxyConfig{}
+		args := GvproxyArgs{subnet: "192.168.127.0/24", sshPort: 2222, enableIPv6: true}
+		_, err := GvproxyConfigure(&cnf, &args, "testing")
+		require.NoError(t, err)
+		assert.True(t, cnf.Stack.EnableIPv6)
+		assert.Equal(t, "fd00::1", cnf.Stack.GatewayIPv6)
+		assert.Equal(t, "fd00::/64", cnf.Stack.SubnetIPv6)
+	})
+
+	t.Run("invalid IPv6 subnet is rejected", func(t *testing.T) {
+		t.Parallel()
+		cnf := GvproxyConfig{}
+		args := GvproxyArgs{subnet: "192.168.127.0/24", sshPort: 2222, enableIPv6: true, subnetIPv6: "not-a-cidr"}
+		_, err := GvproxyConfigure(&cnf, &args, "testing")
+		require.ErrorContains(t, err, "failed to parse IPv6 subnet")
+	})
+
+	t.Run("invalid IPv6 gateway is rejected", func(t *testing.T) {
+		t.Parallel()
+		cnf := GvproxyConfig{}
+		args := GvproxyArgs{subnet: "192.168.127.0/24", sshPort: 2222, enableIPv6: true, gatewayIPv6: "not-an-ip"}
+		_, err := GvproxyConfigure(&cnf, &args, "testing")
+		require.ErrorContains(t, err, "failed to parse IPv6 gateway")
+	})
+}
+
 func getCaseDataPossibleDefaultListen() []string {
 	return []string{
 		"unix:///var/run/gvproxy/default.sock",
@@ -739,6 +781,98 @@ stack:
         - 192.168.127.254
     tcpMaxInFlight: 500
     tcpConnectTimeout: 10
+`,
+		},
+		{
+			CaseName:    "IPv6: enabled with defaults",
+			Args:        []string{"-enable-ipv6"},
+			InputConfig: "",
+			ResultConfig: `log-level: info
+stack:
+    mtu: 1500
+    subnet: 192.168.127.0/24
+    gatewayIP: 192.168.127.1
+    enableIPv6: true
+    gatewayIPv6: "fd00::1"
+    subnetIPv6: "fd00::/64"
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
+    gatewayMacAddress: 5a:94:ef:e4:0c:dd
+    dns:
+        - name: containers.internal.
+          protected: true
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+            - name: gateway
+              ip: "fd00::1"
+        - name: docker.internal.
+          protected: true
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+            - name: gateway
+              ip: "fd00::1"
+    forwards:
+        127.0.0.1:2222: 192.168.127.2:22
+    nat:
+        192.168.127.254: 127.0.0.1
+    gatewayVirtualIPs:
+        - 192.168.127.254
+    dhcpStaticLeases:
+        192.168.127.2: 5a:94:ef:e4:0c:ee
+    vpnKitUUIDMacAddresses:
+        c3d68012-0208-11ea-9fd7-f2189899ab08: 5a:94:ef:e4:0c:ee
+`,
+		},
+		{
+			CaseName:    "IPv6: enabled with custom addresses",
+			Args:        []string{"-enable-ipv6", "-gatewayIPv6", "fc00::1", "-subnetIPv6", "fc00::/64"},
+			InputConfig: "",
+			ResultConfig: `log-level: info
+stack:
+    mtu: 1500
+    subnet: 192.168.127.0/24
+    gatewayIP: 192.168.127.1
+    enableIPv6: true
+    gatewayIPv6: "fc00::1"
+    subnetIPv6: "fc00::/64"
+    deviceIP: 192.168.127.2
+    hostIP: 192.168.127.254
+    gatewayMacAddress: 5a:94:ef:e4:0c:dd
+    dns:
+        - name: containers.internal.
+          protected: true
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+            - name: gateway
+              ip: "fc00::1"
+        - name: docker.internal.
+          protected: true
+          records:
+            - name: gateway
+              ip: 192.168.127.1
+            - name: host
+              ip: 192.168.127.254
+            - name: gateway
+              ip: "fc00::1"
+    forwards:
+        127.0.0.1:2222: 192.168.127.2:22
+    nat:
+        192.168.127.254: 127.0.0.1
+    gatewayVirtualIPs:
+        - 192.168.127.254
+    dhcpStaticLeases:
+        192.168.127.2: 5a:94:ef:e4:0c:ee
+    vpnKitUUIDMacAddresses:
+        c3d68012-0208-11ea-9fd7-f2189899ab08: 5a:94:ef:e4:0c:ee
 `,
 		},
 	}
