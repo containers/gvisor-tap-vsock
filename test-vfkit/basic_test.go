@@ -39,6 +39,30 @@ var _ = ginkgo.Describe("dhcp with vfkit", func() {
 	})
 })
 
+// IPv6 support is opt-in: these specs only run when the environment enables
+// IPv6 (see ipv6Enabled). Most development environments have no IPv6
+// connectivity, so they are excluded from the default "make test-mac" run and
+// executed via "make test-mac-ipv6" instead.
+func init() {
+	if !ipv6Enabled() {
+		return
+	}
+
+	ginkgo.Describe("ipv6 connectivity with vfkit", func() {
+		e2e.BasicIPv6ConnectivityTests(e2e.BasicTestProps{
+			SSHExec: sshExec,
+			Sock:    sock,
+		})
+	})
+
+	ginkgo.Describe("ipv6 dns with vfkit", func() {
+		e2e.BasicIPv6DNSTests(e2e.BasicTestProps{
+			SSHExec: sshExec,
+			Sock:    sock,
+		})
+	})
+}
+
 var _ = ginkgo.Describe("upload and download with vfkit", func() {
 	tmpDir, err := os.MkdirTemp("", "vfkit")
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -105,12 +129,13 @@ var _ = ginkgo.Describe("upload and download with vfkit", func() {
 })
 var _ = ginkgo.Describe("ping with gvproxy and vfkit", func() {
 	ginkgo.It("should succeed to ping a known domain", func() {
-		out, err := sshExec("ping -w2 crc.dev")
+		// Force IPv4: IPv6 is opt-in, and the host may have no IPv6 support.
+		out, err := sshExec("ping -4 -w2 crc.dev")
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	})
 	ginkgo.It("should fail to ping an unknown domain", func() {
-		out, err := sshExec("ping -w2 unknown.crc.dev")
+		out, err := sshExec("ping -4 -w2 unknown.crc.dev")
 		log.Infof("ping: %s", out)
 		gomega.Expect(err).To(gomega.HaveOccurred())
 	})
