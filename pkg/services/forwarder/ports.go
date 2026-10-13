@@ -217,7 +217,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		p, err := NewUDPProxy(listener, func(from net.Addr) (net.Conn, error) {
 			var bindAddr *tcpip.FullAddress
 			if a, ok := from.(*net.UDPAddr); ok {
-				bindAddr = sourceBindAddr(a.IP, a.Port)
+				bindAddr = SourceBindAddr(a.IP, a.Port)
 			}
 			return gonet.DialUDP(f.stack, bindAddr, &address, ipv4.ProtocolNumber)
 		})
@@ -243,7 +243,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 			DialContext: func(ctx context.Context, _, _ string) (conn net.Conn, e error) {
 				var bindAddr tcpip.FullAddress
 				if a, ok := ctx.Value(tcpproxy.SourceAddrContextKey).(*net.TCPAddr); ok {
-					if b := sourceBindAddr(a.IP, a.Port); b != nil {
+					if b := SourceBindAddr(a.IP, a.Port); b != nil {
 						bindAddr = *b
 					}
 				}
@@ -397,7 +397,7 @@ func remote(req types.ExposeRequest, ip string) (string, error) {
 	return req.Remote, nil
 }
 
-// sourceBindAddr returns the gvisor-stack bind address used to propagate a
+// SourceBindAddr returns the gvisor-stack bind address used to propagate a
 // client's source IP to the guest, or nil when the source IP must not be
 // propagated (so the caller falls back to the default gateway source).
 //
@@ -406,7 +406,7 @@ func remote(req types.ExposeRequest, ip string) (string, error) {
 // martian packets when their destination is a loopback address on the
 // (non-loopback) tap NIC. This notably covers host-local forwards such as
 // 127.0.0.1:2222 -> 192.168.127.2:22.
-func sourceBindAddr(ip net.IP, port int) *tcpip.FullAddress {
+func SourceBindAddr(ip net.IP, port int) *tcpip.FullAddress {
 	v4 := ip.To4()
 	if v4 == nil || ip.IsLoopback() || ip.IsUnspecified() {
 		return nil
