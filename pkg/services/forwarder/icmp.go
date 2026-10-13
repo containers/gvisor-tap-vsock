@@ -14,8 +14,32 @@ type Forwarder struct {
 	stack   *stack.Stack
 }
 
+// maxConcurrentPings bounds the number of ICMP echo requests being forwarded at
+// once. Each forward holds a goroutine and a dedicated ICMP socket for up to the
+// reply timeout, so without a limit a flood ping from the VM could exhaust file
+// descriptors and goroutines on the host.
+const maxConcurrentPings = 100
+
 func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex) *Forwarder {
+	// Buffered channel used as a counting semaphore to cap in-flight pings.
+	pingSem := make(chan struct{}, maxConcurrentPings)
 	return NewForwarder(s, func(r *ICMPForwarderRequest) {
+		pkt := r.Packet()
+		if pkt == nil {
+			log.Warningf("Dropping ICMP packet from VM (no packet data)")
+			return
+		}
+
+		// HandlePacket transferred one reference on pkt to this request.
+		// Release it on every path except when ownership is handed off to
+		// the handlePingRequest goroutine (which DecRefs it when done).
+		forwarded := false
+		defer func() {
+			if !forwarded {
+				pkt.DecRef()
+			}
+		}()
+
 		localAddress := r.ID().LocalAddress
 
 		// Skip forwarding for addresses that should be handled locally
@@ -29,12 +53,6 @@ func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mut
 			localAddress = replaced
 		}
 		natLock.Unlock()
-
-		pkt := r.Packet()
-		if pkt == nil {
-			log.Warningf("Dropping ICMP packet from VM (no packet data)")
-			return
-		}
 
 		// Check if this is an ICMP Echo Request (PING)
 		transportHeader := pkt.TransportHeader().Slice()
@@ -50,8 +68,20 @@ func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mut
 			return
 		}
 
-		// This is a PING request - forward it using unprivileged ICMP sockets
-		go handlePingRequest(s, r, localAddress, icmpHeader, pkt)
+		// This is a PING request - forward it using unprivileged ICMP sockets.
+		// Bound concurrency so a flood ping cannot spawn unlimited goroutines
+		// and sockets; drop the request when the limit is reached.
+		select {
+		case pingSem <- struct{}{}:
+		default:
+			log.Warningf("Dropping ICMP echo request from VM (too many in-flight pings)")
+			return
+		}
+		go func() {
+			defer func() { <-pingSem }()
+			handlePingRequest(s, r, localAddress, icmpHeader, pkt)
+		}()
+		forwarded = true
 	})
 }
 

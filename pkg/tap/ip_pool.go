@@ -50,8 +50,19 @@ func (p *IPPool) GetOrAssign(mac string) (netip.Addr, error) {
 	// Start from the first usable IP (network address + 1)
 	candidate := p.base.Masked().Addr().Next()
 
+	// For IPv4, the all-ones host address is the subnet broadcast address and
+	// must not be handed out as a host IP. IPv6 has no broadcast concept, so
+	// this only applies to v4 pools.
+	broadcast := netip.Addr{}
+	if p.base.Addr().Is4() {
+		broadcast = lastAddr(p.base)
+	}
+
 	// Iterate through all IPs in the subnet
 	for candidate.IsValid() && p.base.Contains(candidate) {
+		if candidate == broadcast {
+			break
+		}
 		if _, ok := p.leases[candidate]; !ok {
 			p.leases[candidate] = mac
 			return candidate, nil
@@ -60,6 +71,19 @@ func (p *IPPool) GetOrAssign(mac string) (netip.Addr, error) {
 	}
 
 	return netip.Addr{}, errors.New("cannot find available IP")
+}
+
+// lastAddr returns the highest address in prefix (all host bits set). For an
+// IPv4 prefix this is the subnet broadcast address.
+func lastAddr(prefix netip.Prefix) netip.Addr {
+	addr := prefix.Masked().Addr()
+	bytes := addr.AsSlice()
+	bits := prefix.Bits()
+	for i := bits; i < len(bytes)*8; i++ {
+		bytes[i/8] |= 1 << (7 - uint(i%8))
+	}
+	last, _ := netip.AddrFromSlice(bytes)
+	return last
 }
 
 func (p *IPPool) Reserve(ip string, mac string) error {
