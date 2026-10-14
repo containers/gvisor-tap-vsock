@@ -36,6 +36,7 @@ type dnsHandler struct {
 	// look up directly (SOA, PTR, AAAA, CAA, ...).
 	nameservers []string
 	client      *dns.Client
+	observer    func(name string, ips []net.IP)
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
@@ -143,10 +144,12 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 				m.Rcode = dns.RcodeNameError
 				return
 			}
+			var answered []net.IP
 			for _, ip := range ips {
 				if len(ip.IP.To4()) != net.IPv4len {
 					continue
 				}
+				answered = append(answered, ip.IP.To4())
 				m.Answer = append(m.Answer, &dns.A{
 					Hdr: dns.RR_Header{
 						Name:   q.Name,
@@ -156,6 +159,9 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 					},
 					A: ip.IP.To4(),
 				})
+			}
+			if h.observer != nil && len(answered) > 0 {
+				h.observer(strings.TrimSuffix(q.Name, "."), answered)
 			}
 		case dns.TypeCNAME:
 			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
@@ -324,6 +330,12 @@ func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones [
 		client:      &dns.Client{},
 	}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
+}
+
+// SetAnswerObserver installs fn to be called with the IPv4 addresses of every
+// upstream A answer before it is sent. Call it before Serve.
+func (s *Server) SetAnswerObserver(fn func(name string, ips []net.IP)) {
+	s.handler.observer = fn
 }
 
 func (s *Server) Serve() error {

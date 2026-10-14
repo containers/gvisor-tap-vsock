@@ -751,3 +751,54 @@ func startDNSServer(upstream upstreamResolver) (string, func(), error) {
 		tcpLn.Close()
 	}, nil
 }
+
+var _ = ginkgo.Describe("dns answer observer", func() {
+	type observation struct {
+		name string
+		ips  []string
+	}
+	var (
+		server *Server
+		seen   []observation
+	)
+
+	ginkgo.BeforeEach(func() {
+		upstream := &mockdns.Resolver{
+			Zones: map[string]mockdns.Zone{
+				"allowed.example.": {A: []string{"192.0.2.10", "192.0.2.11"}},
+			},
+		}
+		var err error
+		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream)
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+		seen = nil
+		server.SetAnswerObserver(func(name string, ips []net.IP) {
+			o := observation{name: name}
+			for _, ip := range ips {
+				o.ips = append(o.ips, ip.String())
+			}
+			seen = append(seen, o)
+		})
+	})
+
+	query := func(name string, qtype uint16) *dns.Msg {
+		m := new(dns.Msg)
+		m.SetQuestion(name, qtype)
+		server.handler.addAnswers(m)
+		return m
+	}
+
+	ginkgo.It("reports every IPv4 address of an upstream A answer", func() {
+		m := query("allowed.example.", dns.TypeA)
+		gomega.Expect(m.Answer).To(gomega.HaveLen(2))
+		gomega.Expect(seen).To(gomega.Equal([]observation{
+			{name: "allowed.example", ips: []string{"192.0.2.10", "192.0.2.11"}},
+		}))
+	})
+
+	ginkgo.It("reports nothing for a name that does not resolve", func() {
+		m := query("missing.example.", dns.TypeA)
+		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeNameError))
+		gomega.Expect(seen).To(gomega.BeEmpty())
+	})
+})
