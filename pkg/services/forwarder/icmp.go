@@ -14,7 +14,7 @@ type Forwarder struct {
 	stack   *stack.Stack
 }
 
-func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex) *Forwarder {
+func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, filter func(network, address string) error) *Forwarder {
 	return NewForwarder(s, func(r *ICMPForwarderRequest) {
 		localAddress := r.ID().LocalAddress
 
@@ -29,6 +29,13 @@ func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mut
 			localAddress = replaced
 		}
 		natLock.Unlock()
+
+		if filter != nil {
+			if err := filter("icmp", localAddress.String()); err != nil {
+				log.Debugf("dial filter refused icmp %s: %v", localAddress, err)
+				return
+			}
+		}
 
 		pkt := r.Packet()
 		if pkt == nil {

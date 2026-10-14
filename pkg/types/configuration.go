@@ -65,6 +65,13 @@ type Configuration struct {
 
 	// Timeout in seconds for outbound TCP connection attempts (default: 30)
 	TCPConnectTimeout int `yaml:"tcpConnectTimeout,omitempty"`
+
+	// DialFilter, when set, is consulted before every connection the
+	// forwarders open for the guest. network is "tcp", "udp" or "icmp";
+	// address is the destination after NAT translation, host:port for tcp
+	// and udp and a bare IP for icmp. A non-nil error refuses it: TCP answers
+	// the guest with a reset, UDP and ICMP are dropped.
+	DialFilter func(network, address string) error `yaml:"-"`
 }
 
 type Protocol string
