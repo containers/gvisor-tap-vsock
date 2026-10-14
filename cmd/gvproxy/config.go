@@ -24,31 +24,32 @@ const (
 )
 
 type GvproxyArgs struct {
-	config             string
-	endpoints          arrayFlags
-	debug              bool
-	mtu                int
-	sshPort            int
-	subnet             string
-	gatewayIP          string
-	deviceIP           string
-	hostIP             string
-	vpnkitSocket       string
-	qemuSocket         string
-	bessSocket         string
-	stdioSocket        string
-	vfkitSocket        string
-	notificationSocket string
-	forwardSocket      arrayFlags
-	forwardDest        arrayFlags
-	forwardUser        arrayFlags
-	forwardIdentify    arrayFlags
-	pidFile            string
-	pcapFile           string
-	logFile            string
-	servicesEndpoint   string
-	ec2MetadataAccess  bool
-	apiTokenFile       string
+	config                    string
+	endpoints                 arrayFlags
+	debug                     bool
+	mtu                       int
+	sshPort                   int
+	subnet                    string
+	gatewayIP                 string
+	deviceIP                  string
+	hostIP                    string
+	vpnkitSocket              string
+	qemuSocket                string
+	bessSocket                string
+	stdioSocket               string
+	vfkitSocket               string
+	notificationSocket        string
+	forwardSocket             arrayFlags
+	forwardDest               arrayFlags
+	forwardUser               arrayFlags
+	forwardIdentify           arrayFlags
+	pidFile                   string
+	pcapFile                  string
+	logFile                   string
+	servicesEndpoint          string
+	ec2MetadataAccess         bool
+	apiTokenFile              string
+	gatewayExposeAllProtocols bool
 }
 
 type GvproxyConfig struct {
@@ -62,13 +63,14 @@ type GvproxyConfig struct {
 		Stdio  string `yaml:"stdio,omitempty"`
 		Vfkit  string `yaml:"vfkit,omitempty"`
 	} `yaml:"interfaces,omitempty"`
-	Forwards           []GvproxyConfigForward `yaml:"forwards,omitempty"`
-	PIDFile            string                 `yaml:"pid-file,omitempty"`
-	LogFile            string                 `yaml:"log-file,omitempty"`
-	Services           string                 `yaml:"services,omitempty"`
-	Ec2MetadataAccess  bool                   `yaml:"ec2-metadata-access,omitempty"`
-	NotificationSocket string                 `yaml:"notification,omitempty"`
-	APITokenFile       string                 `yaml:"api-token-file,omitempty"`
+	Forwards                  []GvproxyConfigForward `yaml:"forwards,omitempty"`
+	PIDFile                   string                 `yaml:"pid-file,omitempty"`
+	LogFile                   string                 `yaml:"log-file,omitempty"`
+	Services                  string                 `yaml:"services,omitempty"`
+	Ec2MetadataAccess         bool                   `yaml:"ec2-metadata-access,omitempty"`
+	NotificationSocket        string                 `yaml:"notification,omitempty"`
+	APITokenFile              string                 `yaml:"api-token-file,omitempty"`
+	GatewayExposeAllProtocols bool                   `yaml:"gateway-expose-all-protocols,omitempty"`
 }
 
 type GvproxyConfigForward struct {
@@ -142,6 +144,8 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.BoolVar(&args.ec2MetadataAccess, "ec2-metadata-access", false, "Permits access to EC2 Metadata Service and Amazon Time Sync Service")
 	flagSet.StringVar(&args.notificationSocket, "notification", "", "Socket to be used to send network-ready notifications")
 	flagSet.StringVar(&args.apiTokenFile, "api-token-file", "", "Path to file where API token will be read from (needs 0600 permissions on macOS and Linux)")
+	flagSet.BoolVar(&args.gatewayExposeAllProtocols, "gateway-expose-all-protocols", false, "Allow all protocols (including unix/npipe) on the gateway /expose API. By default only tcp and udp are allowed")
+
 	if err := flagSet.Parse(argv); err != nil {
 		return nil, err
 	}
@@ -306,6 +310,9 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	}
 	if args.ec2MetadataAccess {
 		config.Ec2MetadataAccess = true
+	}
+	if args.gatewayExposeAllProtocols {
+		config.GatewayExposeAllProtocols = true
 	}
 	if args.mtu != 0 {
 		config.Stack.MTU = args.mtu
