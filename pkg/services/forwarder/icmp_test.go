@@ -111,7 +111,7 @@ var _ = ginkgo.Describe("ICMP forwarding", func() {
 		s.SetSpoofing(1, true)
 		s.SetPromiscuousMode(1, true)
 		s.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: 1}})
-		s.SetTransportProtocolHandler(icmp.ProtocolNumber4, ICMP(s, nat, &sync.Mutex{}).HandlePacket)
+		s.SetTransportProtocolHandler(icmp.ProtocolNumber4, ICMP(s, nat, &sync.Mutex{}, nil).HandlePacket)
 		return ep
 	}
 
