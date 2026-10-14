@@ -72,6 +72,11 @@ type Configuration struct {
 	// and udp and a bare IP for icmp. A non-nil error refuses it: TCP answers
 	// the guest with a reset, UDP and ICMP are dropped.
 	DialFilter func(network, address string) error `yaml:"-"`
+
+	// DNSObserver, when set, is called with the IPv4 addresses of every A
+	// answer the embedded DNS server returns from its upstream resolver,
+	// before the answer is sent. name has no trailing dot.
+	DNSObserver func(name string, ips []net.IP) `yaml:"-"`
 }
 
 type Protocol string
