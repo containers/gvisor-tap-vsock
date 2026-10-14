@@ -74,6 +74,11 @@ type Configuration struct {
 	// forwarders open for the guest. A non-nil error refuses it: TCP answers
 	// the guest with a reset, UDP and ICMP are dropped.
 	DialFilter func(DialRequest) error `yaml:"-"`
+
+	// DNSObserver, when set, is called with the addresses of every A or AAAA
+	// answer the embedded DNS server returns from its upstream resolver,
+	// before the answer is sent. name has no trailing dot.
+	DNSObserver func(name string, ips []net.IP) `yaml:"-"`
 }
 
 // DialRequest describes a connection the forwarders are about to open for the
