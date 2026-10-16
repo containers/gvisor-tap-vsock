@@ -18,11 +18,6 @@ func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mut
 	return NewForwarder(s, func(r *ICMPForwarderRequest) {
 		localAddress := r.ID().LocalAddress
 
-		// Skip forwarding for addresses that should be handled locally
-		if header.IsV4LoopbackAddress(localAddress) || localAddress == header.IPv4Broadcast {
-			return
-		}
-
 		// Apply NAT translation if needed
 		natLock.Lock()
 		if replaced, ok := nat[localAddress]; ok {
@@ -55,11 +50,19 @@ func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mut
 	})
 }
 
-// HandlePacket handles all packets.
+// HandlePacket passes the handler every packet sent to an address that the
+// stack does not own.
 //
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
 func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+	// gvisor answers an echo request itself unless it arrived on a temporary
+	// address, which promiscuous mode creates for each address that the stack
+	// does not own. Forwarding a request that gvisor answers would give the VM
+	// a second reply.
+	if !pkt.NetworkPacketInfo.LocalAddressTemporary {
+		return true
+	}
 	f.handler(NewICMPForwarderRequest(f.stack, id, pkt.IncRef()))
 	return true
 }
