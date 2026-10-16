@@ -72,6 +72,7 @@ func echoRequest(src, dst tcpip.Address, ident, seq uint16) *stack.PacketBuffer 
 var _ = ginkgo.Describe("ICMP forwarding", func() {
 	vmIP := tcpip.AddrFrom4([4]byte{192, 168, 127, 2})
 	gatewayIP := tcpip.AddrFrom4([4]byte{192, 168, 127, 1})
+	hostIP := tcpip.AddrFrom4([4]byte{192, 168, 127, 254})
 
 	ginkgo.BeforeEach(func() {
 		// The forwarder pings the host through an ICMP socket, which Linux allows
@@ -113,6 +114,28 @@ var _ = ginkgo.Describe("ICMP forwarding", func() {
 		s.SetTransportProtocolHandler(icmp.ProtocolNumber4, ICMP(s, nat, &sync.Mutex{}).HandlePacket)
 		return ep
 	}
+
+	// The VM pings an address that NAT maps to the host's loopback. The host
+	// answers the translated address, but the VM must see the reply come from
+	// the address that it pinged, because Linux drops a packet arriving on eth0
+	// with a loopback source.
+	ginkgo.It("should reply from the address the VM pinged, not the NAT target", func() {
+		ep := newForwardingStack(map[tcpip.Address]tcpip.Address{hostIP: header.IPv4Loopback})
+
+		ep.DeliverNetworkPacket(ipv4.ProtocolNumber, echoRequest(vmIP, hostIP, 25943, 1))
+
+		var reply *stack.PacketBuffer
+		gomega.Eventually(ep.written, 5*time.Second).Should(gomega.Receive(&reply), "no echo reply written to the VM")
+		defer reply.DecRef()
+
+		ip := header.IPv4(reply.ToView().AsSlice())
+		gomega.Expect(ip.SourceAddress()).To(gomega.Equal(hostIP))
+		gomega.Expect(ip.DestinationAddress()).To(gomega.Equal(vmIP))
+		icmpHdr := header.ICMPv4(ip.Payload())
+		gomega.Expect(icmpHdr.Type()).To(gomega.Equal(header.ICMPv4EchoReply))
+		gomega.Expect(icmpHdr.Ident()).To(gomega.Equal(uint16(25943)))
+		gomega.Expect(icmpHdr.Sequence()).To(gomega.Equal(uint16(1)))
+	})
 
 	// Lima maps the gateway's own address to the host's loopback. The stack
 	// answers pings to its own addresses, so the forwarder must leave them

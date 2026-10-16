@@ -62,7 +62,9 @@ func handlePingRequest(s *stack.Stack, r *ICMPForwarderRequest, destAddr tcpip.A
 	// Forward the reply back to the VM's network stack. Use the VM's original
 	// ident/seq so the VM's ping process can match the reply to its request
 	// (on Linux the host reply has kernel-assigned ID; we must rewrite to VM's).
-	forwardEchoReply(s, r, details.srcAddr, destAddr, details.ident, details.seq, echoReply.Data)
+	// Send the reply from the address that the VM pinged. NAT may have translated
+	// destAddr to one the VM cannot accept as a source, such as 127.0.0.1.
+	forwardEchoReply(s, r, details.srcAddr, r.ID().LocalAddress, details.ident, details.seq, echoReply.Data)
 }
 
 // extractEchoRequestDetails extracts the identifier, sequence, payload, and source address
