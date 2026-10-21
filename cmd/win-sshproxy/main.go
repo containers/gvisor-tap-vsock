@@ -136,7 +136,7 @@ func setupLogging(name string) (*eventlog.Log, error) {
 }
 
 func setupProxies(ctx context.Context, g *errgroup.Group, sources []string, dests []string, identities []string) error {
-	for i := 0; i < len(sources); i++ {
+	for i := range sources {
 		var (
 			src  *url.URL
 			dest *url.URL
@@ -160,6 +160,7 @@ func setupProxies(ctx context.Context, g *errgroup.Group, sources []string, dest
 		}
 		j := i
 		g.Go(func() error {
+			defer os.Remove(sources[j])
 			forward, err := sshclient.CreateSSHForward(ctx, src, dest, identities[j], nil)
 			if err != nil {
 				return err
