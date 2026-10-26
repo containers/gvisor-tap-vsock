@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
@@ -20,28 +22,23 @@ type ForwardConfig struct {
 // SetupForwards sets up and serves each configured SSH forward.
 func SetupForwards(ctx context.Context, g *errgroup.Group, forwards []ForwardConfig, dialer SSHDialer) error {
 	for i := range forwards {
-		var (
-			src *url.URL
-			err error
-		)
-		if strings.Contains(forwards[i].Source, "://") {
-			src, err = url.Parse(forwards[i].Source)
-			if err != nil {
-				return err
-			}
-		} else {
-			src = &url.URL{
-				Scheme: "unix",
-				Path:   forwards[i].Source,
-			}
+		src, err := parseForwardSource(forwards[i].Source)
+		if err != nil {
+			return err
 		}
 
 		forwardConfig := forwards[i]
+		socketPath := ""
+		if src.Scheme == "unix" {
+			socketPath = transport.UnixSocketPath(src, runtime.GOOS)
+		}
 		g.Go(func() error {
-			defer os.Remove(forwardConfig.Source)
 			forward, err := CreateSSHForward(ctx, src, forwardConfig.Destination, forwardConfig.Identity, dialer)
 			if err != nil {
 				return err
+			}
+			if socketPath != "" {
+				defer os.Remove(socketPath)
 			}
 			go func() {
 				<-ctx.Done()
@@ -65,4 +62,14 @@ func SetupForwards(ctx context.Context, g *errgroup.Group, forwards []ForwardCon
 	}
 
 	return nil
+}
+
+func parseForwardSource(source string) (*url.URL, error) {
+	if strings.Contains(source, "://") {
+		return url.Parse(source)
+	}
+	return &url.URL{
+		Scheme: "unix",
+		Path:   source,
+	}, nil
 }
