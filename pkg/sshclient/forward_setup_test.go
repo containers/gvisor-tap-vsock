@@ -2,6 +2,8 @@ package sshclient
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -35,6 +37,23 @@ func unixSocketURL(path string) string {
 		path = "/" + path
 	}
 	return (&url.URL{Scheme: "unix", Path: path}).String()
+}
+
+// createStaleSocket leaves a unix socket file behind at path, as a
+// crashed process would.
+func createStaleSocket(t *testing.T, path string) {
+	t.Helper()
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener.(*net.UnixListener).SetUnlinkOnClose(false)
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("failed to leave a stale socket behind: %v", err)
+	}
 }
 
 func TestSetupForwardsKeepsUnixSocketOnSetupFailure(t *testing.T) {
@@ -73,6 +92,98 @@ func TestSetupForwardsKeepsUnixSocketOnSetupFailure(t *testing.T) {
 				t.Errorf("pre-existing file was removed on setup failure; stat error = %v", err)
 			}
 		})
+	}
+}
+
+func TestSetupForwardsRemovesStaleUnixSocket(t *testing.T) {
+	for _, asURL := range []bool{false, true} {
+		name := "path"
+		if asURL {
+			name = "URL"
+		}
+		t.Run(name, func(t *testing.T) {
+			socketPath := filepath.Join(socketTempDir(t), "forward.sock")
+			createStaleSocket(t, socketPath)
+			stale, err := os.Stat(socketPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			source := socketPath
+			if asURL {
+				source = unixSocketURL(socketPath)
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var g errgroup.Group
+			// Nothing listens on the destination, so the SSH forward
+			// setup is expected to fail once past the socket listening.
+			err = SetupForwards(ctx, &g, []ForwardConfig{{
+				Source:      source,
+				Destination: &url.URL{Scheme: "ssh", Host: "127.0.0.1:1", Path: "/forwarded-socket"},
+			}}, nil)
+			if err != nil {
+				t.Fatalf("SetupForwards() error = %v", err)
+			}
+			cancel()
+			if err := g.Wait(); err == nil {
+				t.Fatal("expected SSH forward setup to fail")
+			}
+
+			// The stale socket must have been replaced by the one the
+			// forward listened on (or be gone altogether); the setup only
+			// got past net.Listen() because the stale one was removed.
+			current, err := os.Stat(socketPath)
+			if err == nil && os.SameFile(stale, current) {
+				t.Errorf("stale socket was not removed before listening")
+			}
+		})
+	}
+}
+
+func TestRemoveStaleSocket(t *testing.T) {
+	dir := socketTempDir(t)
+
+	// A leftover socket file is removed
+	socketPath := filepath.Join(dir, "stale.sock")
+	createStaleSocket(t, socketPath)
+	if err := removeStaleSocket(socketPath); err != nil {
+		t.Fatalf("removeStaleSocket() error = %v", err)
+	}
+	if _, err := os.Stat(socketPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("stale socket still exists; stat error = %v", err)
+	}
+
+	// A socket still being listened on is left untouched
+	activePath := filepath.Join(dir, "active.sock")
+	listener, err := net.Listen("unix", activePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := removeStaleSocket(activePath); err != nil {
+		t.Fatalf("removeStaleSocket() error = %v", err)
+	}
+	if _, err := os.Stat(activePath); err != nil {
+		t.Errorf("active socket was removed; stat error = %v", err)
+	}
+
+	// A regular file is left untouched
+	filePath := filepath.Join(dir, "regular.file")
+	if err := os.WriteFile(filePath, []byte("existing file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeStaleSocket(filePath); err != nil {
+		t.Fatalf("removeStaleSocket() error = %v", err)
+	}
+	if _, err := os.Stat(filePath); err != nil {
+		t.Errorf("regular file was removed; stat error = %v", err)
+	}
+
+	// A missing file is not an error
+	if err := removeStaleSocket(filepath.Join(dir, "nonexistent")); err != nil {
+		t.Fatalf("removeStaleSocket() error = %v", err)
 	}
 }
 
