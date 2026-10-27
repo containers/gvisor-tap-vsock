@@ -7,7 +7,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -37,6 +40,46 @@ func unixSocketURL(path string) string {
 		path = "/" + path
 	}
 	return (&url.URL{Scheme: "unix", Path: path}).String()
+}
+
+// closeTrackingDialer is an SSHDialer handing out net.Pipe() connections
+// and recording them, so that tests can check they all got closed.
+type closeTrackingDialer struct {
+	dialOnce sync.Once
+	dialed   chan struct{}
+
+	mu    sync.Mutex
+	conns []*trackedConn
+}
+
+func newCloseTrackingDialer() *closeTrackingDialer {
+	return &closeTrackingDialer{dialed: make(chan struct{})}
+}
+
+func (d *closeTrackingDialer) DialContextTCP(_ context.Context, _ string) (net.Conn, error) {
+	d.dialOnce.Do(func() { close(d.dialed) })
+	_, conn := net.Pipe()
+	tracked := &trackedConn{Conn: conn}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.conns = append(d.conns, tracked)
+	return tracked, nil
+}
+
+func (d *closeTrackingDialer) trackedConns() []*trackedConn {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.conns
+}
+
+type trackedConn struct {
+	net.Conn
+	closed atomic.Bool
+}
+
+func (c *trackedConn) Close() error {
+	c.closed.Store(true)
+	return c.Conn.Close()
 }
 
 // createStaleSocket leaves a unix socket file behind at path, as a
@@ -167,6 +210,48 @@ func TestSetupForwardsClosesListenerOnSetupFailure(t *testing.T) {
 	// Close()), rather than being leaked until process exit.
 	if _, err := os.Stat(socketPath); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("socket file still exists after setup failure; stat error = %v", err)
+	}
+}
+
+func TestSetupForwardsClosesConnOnBastionSetupFailure(t *testing.T) {
+	// The identity cannot be parsed, so CreateBastion() fails before the
+	// SSH handshake; the connection it was given must then be closed by
+	// its caller.
+	identity := filepath.Join(t.TempDir(), "identity")
+	if err := os.WriteFile(identity, []byte("not an ssh key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dialer := newCloseTrackingDialer()
+
+	var g errgroup.Group
+	err := SetupForwards(ctx, &g, []ForwardConfig{{
+		Source:      filepath.Join(socketTempDir(t), "forward.sock"),
+		Destination: &url.URL{Scheme: "ssh", User: url.User("root"), Host: "127.0.0.1:1", Path: "/forwarded-socket"},
+		Identity:    identity,
+	}}, dialer)
+	if err != nil {
+		t.Fatalf("SetupForwards() error = %v", err)
+	}
+
+	// Wait for the first connection to the bastion before cancelling,
+	// the forward setup would otherwise give up before dialing anything.
+	select {
+	case <-dialer.dialed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the forward never dialed the bastion")
+	}
+	cancel()
+	if err := g.Wait(); err == nil {
+		t.Fatal("expected SSH forward setup to fail")
+	}
+
+	for i, conn := range dialer.trackedConns() {
+		if !conn.closed.Load() {
+			t.Errorf("connection %d to the bastion was leaked", i)
+		}
 	}
 }
 
