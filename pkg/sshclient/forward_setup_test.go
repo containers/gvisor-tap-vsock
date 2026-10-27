@@ -142,6 +142,34 @@ func TestSetupForwardsRemovesStaleUnixSocket(t *testing.T) {
 	}
 }
 
+func TestSetupForwardsClosesListenerOnSetupFailure(t *testing.T) {
+	socketPath := filepath.Join(socketTempDir(t), "forward.sock")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var g errgroup.Group
+	// Nothing listens on the destination, so the SSH forward setup fails
+	// once the socket is being listened on.
+	err := SetupForwards(ctx, &g, []ForwardConfig{{
+		Source:      socketPath,
+		Destination: &url.URL{Scheme: "ssh", Host: "127.0.0.1:1", Path: "/forwarded-socket"},
+	}}, nil)
+	if err != nil {
+		t.Fatalf("SetupForwards() error = %v", err)
+	}
+	cancel()
+	if err := g.Wait(); err == nil {
+		t.Fatal("expected SSH forward setup to fail")
+	}
+
+	// The listener setupProxy() created must be closed on failure, which
+	// also removes the unix socket file (net.Listen() only unlinks it on
+	// Close()), rather than being leaked until process exit.
+	if _, err := os.Stat(socketPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("socket file still exists after setup failure; stat error = %v", err)
+	}
+}
+
 func TestRemoveStaleSocket(t *testing.T) {
 	dir := socketTempDir(t)
 
