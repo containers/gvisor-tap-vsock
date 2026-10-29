@@ -55,9 +55,14 @@ jobs:
       with:
         go-version: 'stable'
 
+    # The ICMP forwarder test pings the host through an unprivileged ICMP
+    # socket, which the runner does not allow by default.
+    - name: Allow unprivileged ICMP sockets
+      run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
+
     - name: Test
       run: |
-        sudo -s -u ${USER} bash -c 'make test'
+        sudo -s -u ${USER} bash -c 'REQUIRE_ICMP_SOCKET=1 make test'
 
     - uses: actions/upload-artifact@v7
       if: always()
