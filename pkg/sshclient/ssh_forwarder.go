@@ -162,10 +162,18 @@ func setupProxy(ctx context.Context, socketURI *url.URL, dest *url.URL, identity
 		if err != nil {
 			return nil, err
 		}
-		return CreateBastion(dest, passphrase, identity, conn, connectFunc)
+		bastion, err := CreateBastion(dest, passphrase, identity, conn, connectFunc)
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+		return bastion, nil
 	}
 	bastion, err := utils.Retry(ctx, createBastion, "Waiting for sshd")
 	if err != nil {
+		if listener != nil {
+			listener.Close()
+		}
 		return &SSHForward{}, fmt.Errorf("setupProxy failed: %w", err)
 	}
 
