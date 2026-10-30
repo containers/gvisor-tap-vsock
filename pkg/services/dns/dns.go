@@ -33,7 +33,7 @@ type dnsHandler struct {
 	upstream  upstreamResolver
 	// nameservers are the host's upstream DNS servers ("ip:port") used to
 	// forward raw queries for record types that Go's net.Resolver cannot
-	// look up directly (SOA, PTR, AAAA, CAA, ...).
+	// look up directly (SOA, PTR, CAA, ...).
 	nameservers []string
 	client      *dns.Client
 }
@@ -137,24 +137,41 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 
 		resolver := h.upstream
 		switch q.Qtype {
-		case dns.TypeA:
+		case dns.TypeA, dns.TypeAAAA:
 			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
 			if err != nil {
 				m.Rcode = dns.RcodeNameError
 				return
 			}
 			for _, ip := range ips {
-				if len(ip.IP.To4()) != net.IPv4len {
+				if q.Qtype == dns.TypeA {
+					if ip.IP.To4() == nil {
+						continue
+					}
+					m.Answer = append(m.Answer, &dns.A{
+						Hdr: dns.RR_Header{
+							Name:   q.Name,
+							Rrtype: dns.TypeA,
+							Class:  dns.ClassINET,
+							Ttl:    0,
+						},
+						A: ip.IP.To4(),
+					})
 					continue
 				}
-				m.Answer = append(m.Answer, &dns.A{
+
+				// dns.TypeAAA
+				if ip.IP.To4() != nil || ip.IP.To16() == nil {
+					continue
+				}
+				m.Answer = append(m.Answer, &dns.AAAA{
 					Hdr: dns.RR_Header{
 						Name:   q.Name,
-						Rrtype: dns.TypeA,
+						Rrtype: dns.TypeAAAA,
 						Class:  dns.ClassINET,
 						Ttl:    0,
 					},
-					A: ip.IP.To4(),
+					AAAA: ip.IP.To16(),
 				})
 			}
 		case dns.TypeCNAME:
@@ -246,7 +263,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 				})
 			}
 		default:
-			// Record types not handled above (SOA, PTR, AAAA, CAA, ...) are
+			// Record types not handled above (SOA, PTR, CAA, ...) are
 			// forwarded verbatim to the host's upstream nameservers, since
 			// Go's net.Resolver has no generic query for them.
 			h.addAnswersFromNameservers(m, q)
@@ -293,7 +310,7 @@ func (h *dnsHandler) addAnswersFromNameservers(m *dns.Msg, q dns.Question) {
 func hostNameservers() []string {
 	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
 	if err != nil {
-		log.Warnf("cannot read /etc/resolv.conf, DNS queries for SOA/PTR/AAAA and other unhandled types will not be forwarded: %v", err)
+		log.Warnf("cannot read /etc/resolv.conf, DNS queries for SOA/PTR and other unhandled types will not be forwarded: %v", err)
 		return nil
 	}
 	servers := make([]string, 0, len(conf.Servers))
