@@ -73,6 +73,9 @@ github.com/insomniacslk/dhcp/dhcpv4/server4
 github.com/insomniacslk/dhcp/iana
 github.com/insomniacslk/dhcp/interfaces
 github.com/insomniacslk/dhcp/rfc1035label
+# github.com/kdomanski/iso9660 v0.4.0
+## explicit; go 1.19
+github.com/kdomanski/iso9660
 # github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
 ## explicit; go 1.17
 github.com/linuxkit/virtsock/pkg/hvsock
@@ -175,6 +178,12 @@ github.com/tklauser/numcpus
 ## explicit; go 1.21
 github.com/u-root/uio/rand
 github.com/u-root/uio/uio
+# github.com/ulikunitz/xz v0.5.15
+## explicit; go 1.12
+github.com/ulikunitz/xz
+github.com/ulikunitz/xz/internal/hash
+github.com/ulikunitz/xz/internal/xlog
+github.com/ulikunitz/xz/lzma
 # github.com/vishvananda/netlink v1.3.1
 ## explicit; go 1.12
 github.com/vishvananda/netlink

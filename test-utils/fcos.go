@@ -43,6 +43,24 @@ func imageName(info *fcosDownloadInfo) string {
 	return urlSplit[len(urlSplit)-1]
 }
 
+func (downloader *FcosDownload) DownloadImageFromURL(url string) (string, error) {
+	info := &fcosDownloadInfo{
+		Location: url,
+	}
+	compressedImage := filepath.Join(downloader.DataDir, imageName(info))
+	err := DownloadVMImageIfMissing(url, compressedImage)
+
+	if err != nil {
+		return "", err
+	}
+
+	uncompressedImage := ""
+	if uncompressedImage, err = Decompress(compressedImage); err != nil {
+		return "", err
+	}
+	return uncompressedImage, nil
+}
+
 func (downloader *FcosDownload) DownloadImage(artifactType string, formatType string) (string, error) {
 	info, err := getFCOSDownload(artifactType, formatType)
 	if err != nil {
