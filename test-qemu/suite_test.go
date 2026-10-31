@@ -14,6 +14,7 @@ import (
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	e2e_utils "github.com/containers/gvisor-tap-vsock/test-utils"
+	"github.com/containers/gvisor-tap-vsock/test-utils/qemu"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -101,12 +102,12 @@ var _ = ginkgo.BeforeSuite(func() {
 	err = e2e_utils.WaitGvproxy(host, sock)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-	qemuCmd := newQemuCmd()
+	qemuCmd := qemu.NewCmd()
 	qemuCmd.SetIgnition(ignFile)
 	qemuCmd.SetDrive(qemuImage, true)
 	qemuCmd.SetNetdevSocket(net.JoinHostPort("127.0.0.1", strconv.Itoa(qemuPort)), "5a:94:ef:e4:0c:ee")
 	qemuCmd.SetSerial(qconLog)
-	client, err = qemuCmd.Cmd(qemuExecutable())
+	client, err = qemuCmd.Cmd()
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 	client.Stderr = os.Stderr
 	client.Stdout = os.Stdout
