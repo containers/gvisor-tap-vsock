@@ -2,15 +2,12 @@ package dns
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
-	"net/http"
 	"regexp"
 	"strings"
 	"sync"
 
-	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -346,42 +343,19 @@ func (s *Server) ServeTCP() error {
 	return tcpSrv.ActivateAndServe()
 }
 
-func (s *Server) Mux() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/all", func(w http.ResponseWriter, r *http.Request) {
-		s.handler.zonesLock.RLock()
-		err := json.NewEncoder(w).Encode(s.handler.zones)
-		s.handler.zonesLock.RUnlock()
-		if err != nil {
-			apilog.SetError(r, err)
-		}
-	})
+func (s *Server) Zones() []types.Zone {
+	s.handler.zonesLock.RLock()
+	defer s.handler.zonesLock.RUnlock()
+	zones := make([]types.Zone, len(s.handler.zones))
+	copy(zones, s.handler.zones)
+	return zones
+}
 
-	mux.HandleFunc("/add", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "post only", http.StatusBadRequest)
-			return
-		}
-		var req types.Zone
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		apilog.AddField(r, "zone", req.Name)
-
-		if err := s.validateZone(req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		if err := s.addZone(req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-	return mux
+func (s *Server) AddZone(req types.Zone) error {
+	if err := s.validateZone(req); err != nil {
+		return err
+	}
+	return s.addZone(req)
 }
 
 func (s *Server) validateZone(req types.Zone) error {
