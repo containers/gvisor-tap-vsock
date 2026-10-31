@@ -62,8 +62,16 @@ func init() {
 	cmdDir = "../cmd"
 }
 
+// ipv6Enabled reports whether the IPv6 end-to-end tests should run. IPv6 is
+// opt-in because most development environments have no IPv6 connectivity; it is
+// turned on by the "make test-mac-ipv6" target via the TEST_IPV6 env var.
+func ipv6Enabled() bool {
+	return os.Getenv("TEST_IPV6") != ""
+}
+
 func gvproxyCmd() *exec.Cmd {
 	cmd := types.NewGvproxyCommand()
+	cmd.EnableIPv6 = ipv6Enabled()
 	cmd.AddEndpoint(fmt.Sprintf("unix://%s", sock))
 	cmd.AddVfkitSocket("unixgram://" + vfkitSock)
 	cmd.SSHPort = sshPort

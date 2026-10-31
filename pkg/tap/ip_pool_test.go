@@ -41,8 +41,9 @@ func TestIPPool(t *testing.T) {
 }
 
 func TestIPPoolExhaustion(t *testing.T) {
-	// /30 subnet has only 4 IPs: network, 2 usable hosts, broadcast
-	// After skipping network address, we have 3 assignable IPs
+	// /30 subnet has only 4 IPs: network, 2 usable hosts, broadcast.
+	// After skipping the network (.0) and broadcast (.3) addresses, we have
+	// 2 assignable host IPs.
 	pool, err := NewIPPool("192.168.1.0/30")
 	require.NoError(t, err)
 
@@ -55,12 +56,8 @@ func TestIPPoolExhaustion(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "192.168.1.2", ip2.String())
 
-	ip3, err := pool.GetOrAssign("mac3")
-	assert.NoError(t, err)
-	assert.Equal(t, "192.168.1.3", ip3.String())
-
-	// Pool should be exhausted now
-	_, err = pool.GetOrAssign("mac4")
+	// Pool should be exhausted now; the broadcast address (.3) is not handed out.
+	_, err = pool.GetOrAssign("mac3")
 	assert.Error(t, err)
 	assert.Equal(t, "cannot find available IP", err.Error())
 }
@@ -128,8 +125,9 @@ func TestIPPoolReleaseNonExistent(t *testing.T) {
 }
 
 func TestIPPoolSmallSubnet(t *testing.T) {
-	// /29 subnet has 8 IPs total: network + 6 usable + broadcast
-	// After skipping network address (.0), we have 7 assignable IPs (.1 through .7)
+	// /29 subnet has 8 IPs total: network + 6 usable + broadcast.
+	// After skipping the network (.0) and broadcast (.7) addresses, we have
+	// 6 assignable host IPs (.1 through .6).
 	pool, err := NewIPPool("172.16.0.0/29")
 	require.NoError(t, err)
 
@@ -140,7 +138,6 @@ func TestIPPoolSmallSubnet(t *testing.T) {
 		"172.16.0.4",
 		"172.16.0.5",
 		"172.16.0.6",
-		"172.16.0.7",
 	}
 
 	for i, expected := range expectedIPs {

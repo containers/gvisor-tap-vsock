@@ -85,9 +85,19 @@ test: gvproxy test-companion
 test-qemu: gvproxy test-companion
 	go test -timeout 20m  -v ./test-qemu
 
+# IPv6 is opt-in and requires an IPv6-capable environment. Run these tests
+# explicitly; TEST_IPV6 enables the gvproxy -enable-ipv6 flag and the IPv6 specs.
+.PHONY: test-qemu-ipv6
+test-qemu-ipv6: gvproxy test-companion
+	TEST_IPV6=1 go test -timeout 20m  -v ./test-qemu
+
 .PHONY: test-mac
 test-mac: gvproxy
 	go test -timeout 20m  -v ./test-vfkit
+
+.PHONY: test-mac-ipv6
+test-mac-ipv6: gvproxy
+	TEST_IPV6=1 go test -timeout 20m  -v ./test-vfkit
 
 .PHONY: test-mac-debug
 test-mac-debug:

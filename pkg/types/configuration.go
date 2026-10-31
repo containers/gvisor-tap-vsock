@@ -22,6 +22,18 @@ type Configuration struct {
 	// IP address of the virtual gateway
 	GatewayIP string `yaml:"gatewayIP,omitempty"`
 
+	// EnableIPv6 turns on the optional IPv6 support in the virtual network.
+	// When false (the default), the network is IPv4-only and all IPv6
+	// addresses, routes, DHCPv6 and IPv6 DNS listeners are disabled.
+	EnableIPv6 bool `yaml:"enableIPv6,omitempty"`
+
+	// IPv6 address of the virtual gateway. Prefix will be 64.
+	// Only used when EnableIPv6 is true.
+	GatewayIPv6 string `yaml:"gatewayIPv6,omitempty"`
+
+	// IPv6 subnet for the virtual network
+	SubnetIPv6 string `yaml:"subnetIPv6,omitempty"`
+
 	// IP address of the device in the virtual network
 	DeviceIP string `yaml:"deviceIP,omitempty"`
 

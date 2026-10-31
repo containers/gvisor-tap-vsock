@@ -33,6 +33,9 @@ type GvproxyCommand struct {
 
 	// SSHPort to access the guest VM
 	SSHPort int
+
+	// EnableIPv6 turns on the optional IPv6 support in the virtual network
+	EnableIPv6 bool
 }
 
 func NewGvproxyCommand() GvproxyCommand {
@@ -195,6 +198,11 @@ func (c *GvproxyCommand) ToCmdline() []string {
 
 	// ssh-port
 	args = append(args, "-ssh-port", strconv.Itoa(c.SSHPort))
+
+	// enable-ipv6
+	if c.EnableIPv6 {
+		args = append(args, "-enable-ipv6")
+	}
 
 	// sockets
 	args = append(args, c.socketsToCmdline()...)
