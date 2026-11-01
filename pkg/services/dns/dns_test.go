@@ -581,7 +581,7 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
 		// Point the raw forwarder at the mock upstream server. Its AAAA
 		// response intentionally differs from the typed resolver's response.
-		server.handler.nameservers = []string{mockSrv.LocalAddr().String()}
+		server.handler.nameservers = func() []string { return []string{mockSrv.LocalAddr().String()} }
 	})
 
 	ginkgo.AfterEach(func() {
@@ -652,15 +652,39 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 		gomega.Expect(txt.Answer).To(gomega.BeEmpty(), "TXT query for a name owned by a local zone must not be forwarded to the real upstream resolver")
 	})
 
+	ginkgo.It("should use the current upstream servers for each forwarded query", func() {
+		// A second upstream with a different answer, like the home router's
+		// DNS server taking over from a VPN's.
+		const otherPtrTarget = "other.example.org."
+		otherSrv, err := mockdns.NewServer(map[string]mockdns.Zone{
+			ptrName: {
+				PTR: []string{otherPtrTarget},
+			},
+		}, false)
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+		defer func() { _ = otherSrv.Close() }()
+
+		current := []string{mockSrv.LocalAddr().String()}
+		server.handler.nameservers = func() []string { return current }
+		m := query(ptrName, dns.TypePTR)
+		gomega.Expect(m.Answer).To(gomega.HaveLen(1))
+		gomega.Expect(m.Answer[0].(*dns.PTR).Ptr).To(gomega.Equal(ptrTarget))
+
+		current = []string{otherSrv.LocalAddr().String()}
+		m = query(ptrName, dns.TypePTR)
+		gomega.Expect(m.Answer).To(gomega.HaveLen(1))
+		gomega.Expect(m.Answer[0].(*dns.PTR).Ptr).To(gomega.Equal(otherPtrTarget))
+	})
+
 	ginkgo.It("should return SERVFAIL when the upstream cannot be reached", func() {
 		server.handler.client = &dns.Client{Timeout: 200 * time.Millisecond}
-		server.handler.nameservers = []string{"127.0.0.1:1"} // nothing listening
+		server.handler.nameservers = func() []string { return []string{"127.0.0.1:1"} } // nothing listening
 		m := query("example.org.", dns.TypeCAA)
 		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeServerFailure))
 	})
 
 	ginkgo.It("should keep NOERROR with no answers when no upstream is configured", func() {
-		server.handler.nameservers = nil
+		server.handler.nameservers = func() []string { return nil }
 		m := query("example.org.", dns.TypeCAA)
 		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeSuccess))
 		gomega.Expect(m.Answer).To(gomega.BeEmpty())
