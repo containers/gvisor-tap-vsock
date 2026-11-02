@@ -673,6 +673,41 @@ type ARecord struct {
 	expectedIPs []string
 }
 
+func TestDefaultIPAddressFamily(t *testing.T) {
+	tests := []struct {
+		name        string
+		defaultIP   net.IP
+		qtype       uint16
+		wantAnswers int // number of RRs expected in the answer section
+		wantRRType  uint16
+	}{
+		{"IPv4 default answers A", net.ParseIP("192.168.0.1"), dns.TypeA, 1, dns.TypeA},
+		{"IPv4 default gives NODATA for AAAA", net.ParseIP("192.168.0.1"), dns.TypeAAAA, 0, 0},
+		{"IPv6 default answers AAAA", net.ParseIP("fd00::1"), dns.TypeAAAA, 1, dns.TypeAAAA},
+		{"IPv6 default gives NODATA for A", net.ParseIP("fd00::1"), dns.TypeA, 0, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, err := New(nil, nil, []types.Zone{{
+				Name:      "internal.",
+				DefaultIP: tt.defaultIP,
+			}})
+			require.NoError(t, err)
+
+			m := new(dns.Msg)
+			q := dns.Question{Name: "anything.internal.", Qtype: tt.qtype, Qclass: dns.ClassINET}
+
+			// The name exists (default IP), so the zone must claim the query.
+			require.True(t, server.handler.addLocalAnswers(m, q))
+			require.Len(t, m.Answer, tt.wantAnswers)
+			if tt.wantAnswers > 0 {
+				require.Equal(t, tt.wantRRType, m.Answer[0].Header().Rrtype)
+			}
+		})
+	}
+}
+
 func TestDNS(t *testing.T) {
 	log.Infof("starting test DNS servers")
 

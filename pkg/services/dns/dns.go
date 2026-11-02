@@ -89,21 +89,32 @@ func (h *dnsHandler) addLocalAnswers(m *dns.Msg, q dns.Question) bool {
 				m.Rcode = dns.RcodeNameError
 				return true
 			}
-			if q.Qtype != dns.TypeA {
-				// Name exists in this zone, but the zone only ever
-				// serves A records. Answer NOERROR/NODATA locally
-				// instead of forwarding to the real upstream resolver.
-				return true
+
+			// The name exists in this zone. Answer with a record that
+			// matches the query's address family; for any other query
+			// type return NOERROR with no records (NODATA) rather than
+			// forwarding upstream or claiming the name is missing.
+			if q.Qtype == dns.TypeA && matchedIP.To4() != nil {
+				m.Answer = append(m.Answer, &dns.A{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeA,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					A: matchedIP.To4(),
+				})
+			} else if q.Qtype == dns.TypeAAAA && matchedIP.To4() == nil {
+				m.Answer = append(m.Answer, &dns.AAAA{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeAAAA,
+						Class:  dns.ClassINET,
+						Ttl:    0,
+					},
+					AAAA: matchedIP.To16(),
+				})
 			}
-			m.Answer = append(m.Answer, &dns.A{
-				Hdr: dns.RR_Header{
-					Name:   q.Name,
-					Rrtype: dns.TypeA,
-					Class:  dns.ClassINET,
-					Ttl:    0,
-				},
-				A: matchedIP,
-			})
 			return true
 		}
 	}
@@ -327,6 +338,9 @@ func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones [
 }
 
 func (s *Server) Serve() error {
+	if s.udpConn == nil {
+		return nil
+	}
 	mux := dns.NewServeMux()
 	mux.HandleFunc(".", s.handler.handleUDP)
 	srv := &dns.Server{
@@ -337,6 +351,9 @@ func (s *Server) Serve() error {
 }
 
 func (s *Server) ServeTCP() error {
+	if s.tcpLn == nil {
+		return nil
+	}
 	mux := dns.NewServeMux()
 	mux.HandleFunc(".", s.handler.handleTCP)
 	tcpSrv := &dns.Server{

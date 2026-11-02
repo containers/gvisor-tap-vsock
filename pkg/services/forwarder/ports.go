@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -161,6 +162,12 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		switch protocol {
 		case types.UNIX:
 			p.ListenFunc = func(_, socketPath string) (net.Listener, error) {
+				// Remove any stale socket left behind by a previous process
+				// that did not exit cleanly, otherwise net.Listen fails with
+				// "address already in use".
+				if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) { // #nosec G703 - caller-provided forward socket path
+					return nil, err
+				}
 				return net.Listen("unix", socketPath) // override tcp to use unix socket
 			}
 		case types.NPIPE:

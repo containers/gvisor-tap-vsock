@@ -10,6 +10,11 @@ stack:
     deviceIP: 192.168.127.2
     hostIP: 192.168.127.254
     gatewayMacAddress: 5a:94:ef:e4:0c:dd
+    # IPv6 is opt-in and disabled by default. Uncomment to enable it and
+    # optionally override the gateway address and subnet (defaults shown).
+    # enableIPv6: true
+    # gatewayIPv6: fd00::1
+    # subnetIPv6: fd00::/64
     dns:
         - name: containers.internal.
           records:

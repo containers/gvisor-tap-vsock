@@ -33,6 +33,9 @@ type GvproxyArgs struct {
 	gatewayIP          string
 	deviceIP           string
 	hostIP             string
+	enableIPv6         bool
+	gatewayIPv6        string
+	subnetIPv6         string
 	vpnkitSocket       string
 	qemuSocket         string
 	bessSocket         string
@@ -127,6 +130,9 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.StringVar(&args.gatewayIP, "gatewayIP", "", "Gateway IP address, default is first usable address of subnet")
 	flagSet.StringVar(&args.deviceIP, "deviceIP", "", "Device IP address, default is second usable address of subnet")
 	flagSet.StringVar(&args.hostIP, "hostIP", "", "Host IP address, default is last usable address of subnet")
+	flagSet.BoolVar(&args.enableIPv6, "enable-ipv6", false, "Enable IPv6 support in the virtual network (disabled by default)")
+	flagSet.StringVar(&args.gatewayIPv6, "gatewayIPv6", "", "IPv6 gateway address, default is fd00::1 (only used with -enable-ipv6)")
+	flagSet.StringVar(&args.subnetIPv6, "subnetIPv6", "", "IPv6 subnet in CIDR format, default is fd00::/64 (only used with -enable-ipv6)")
 	flagSet.StringVar(&args.vpnkitSocket, "listen-vpnkit", "", "VPNKit socket to be used by Hyperkit")
 	flagSet.StringVar(&args.qemuSocket, "listen-qemu", "", "Socket to be used by Qemu")
 	flagSet.StringVar(&args.bessSocket, "listen-bess", "", "unixpacket socket to be used by Bess-compatible applications")
@@ -250,6 +256,44 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 
 	if config.Stack.GatewayMacAddress == "" {
 		config.Stack.GatewayMacAddress = "5a:94:ef:e4:0c:dd"
+	}
+
+	// IPv6 is opt-in. When enabled (via --enable-ipv6 or enableIPv6 in the
+	// config file), fill in defaults for any unset IPv6 fields and validate
+	// them. When disabled, all IPv6 fields are left empty so the rest of the
+	// stack stays IPv4-only.
+	if args.enableIPv6 {
+		config.Stack.EnableIPv6 = true
+	}
+	if config.Stack.EnableIPv6 {
+		if config.Stack.GatewayIPv6 == "" {
+			config.Stack.GatewayIPv6 = args.gatewayIPv6
+		}
+		if config.Stack.GatewayIPv6 == "" {
+			config.Stack.GatewayIPv6 = "fd00::1"
+		}
+		if config.Stack.SubnetIPv6 == "" {
+			config.Stack.SubnetIPv6 = args.subnetIPv6
+		}
+		if config.Stack.SubnetIPv6 == "" {
+			config.Stack.SubnetIPv6 = "fd00::/64"
+		}
+		gatewayIPv6 := net.ParseIP(config.Stack.GatewayIPv6)
+		if gatewayIPv6 == nil {
+			return config, fmt.Errorf("failed to parse IPv6 gateway address: %q", config.Stack.GatewayIPv6)
+		}
+		if gatewayIPv6.To4() != nil {
+			return config, fmt.Errorf("IPv6 gateway address must not be an IPv4 address: %q", config.Stack.GatewayIPv6)
+		}
+		subnetIP, _, err := net.ParseCIDR(config.Stack.SubnetIPv6)
+		if err != nil {
+			return config, fmt.Errorf("failed to parse IPv6 subnet: %w", err)
+		}
+		if subnetIP.To4() != nil {
+			return config, fmt.Errorf("IPv6 subnet must not be an IPv4 CIDR: %q", config.Stack.SubnetIPv6)
+		}
+	} else if args.gatewayIPv6 != "" || args.subnetIPv6 != "" {
+		log.Warnf("ignoring -gatewayIPv6/-subnetIPv6 because IPv6 is not enabled; pass -enable-ipv6 to use them")
 	}
 	if len(config.Stack.NAT) == 0 {
 		config.Stack.NAT = map[string]string{
@@ -390,34 +434,39 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 
 		config.Stack.CaptureFile = args.pcapFile
 
+		// internalZoneRecords returns the gateway/host records for a
+		// containers/docker internal DNS zone. The gateway AAAA record is
+		// only added when IPv6 is enabled.
+		internalZoneRecords := func() []types.Record {
+			records := []types.Record{
+				{
+					Name: gateway,
+					IP:   net.ParseIP(config.Stack.GatewayIP),
+				},
+				{
+					Name: host,
+					IP:   net.ParseIP(config.Stack.HostIP),
+				},
+			}
+			if config.Stack.EnableIPv6 {
+				records = append(records, types.Record{
+					Name: gateway,
+					IP:   net.ParseIP(config.Stack.GatewayIPv6),
+				})
+			}
+			return records
+		}
+
 		config.Stack.DNS = []types.Zone{
 			{
 				Name:      "containers.internal.",
 				Protected: true,
-				Records: []types.Record{
-					{
-						Name: gateway,
-						IP:   net.ParseIP(config.Stack.GatewayIP),
-					},
-					{
-						Name: host,
-						IP:   net.ParseIP(config.Stack.HostIP),
-					},
-				},
+				Records:   internalZoneRecords(),
 			},
 			{
 				Name:      "docker.internal.",
 				Protected: true,
-				Records: []types.Record{
-					{
-						Name: gateway,
-						IP:   net.ParseIP(config.Stack.GatewayIP),
-					},
-					{
-						Name: host,
-						IP:   net.ParseIP(config.Stack.HostIP),
-					},
-				},
+				Records:   internalZoneRecords(),
 			},
 		}
 		config.Stack.DNSSearchDomains = searchDomains()

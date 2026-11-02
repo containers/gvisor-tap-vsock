@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -111,6 +112,14 @@ func connectForward(ctx context.Context, bastion *Bastion) (CloseWriteConn, erro
 
 func listenUnix(socketURI *url.URL) (net.Listener, error) {
 	path := transport.UnixSocketPath(socketURI, runtime.GOOS)
+
+	// Remove any stale socket left behind by a previous process that did not
+	// exit cleanly (e.g. was killed), otherwise net.Listen fails with
+	// "address already in use" when the daemon restarts.
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) { // #nosec G703 - validated URL path for socket cleanup
+		return nil, err
+	}
+
 	oldmask := fs.Umask(0o177)
 	defer fs.Umask(oldmask)
 	listener, err := net.Listen("unix", path)

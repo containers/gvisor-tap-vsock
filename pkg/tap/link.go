@@ -2,13 +2,16 @@ package tap
 
 import (
 	"net"
+	"net/netip"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 )
 
 type LinkEndpoint struct {
@@ -16,13 +19,15 @@ type LinkEndpoint struct {
 	mtu        uint32
 	mac        tcpip.LinkAddress
 	ip         string
+	ipv6       string
+	subnetIPv6 string
 	virtualIPs map[string]struct{}
 
 	dispatcher    stack.NetworkDispatcher
 	networkSwitch NetworkSwitch
 }
 
-func NewLinkEndpoint(debug bool, mtu uint32, macAddress string, ip string, virtualIPs []string) (*LinkEndpoint, error) {
+func NewLinkEndpoint(debug bool, mtu uint32, macAddress string, ip string, ipv6 string, subnetIPv6 string, virtualIPs []string) (*LinkEndpoint, error) {
 	linkAddr, err := net.ParseMAC(macAddress)
 	if err != nil {
 		return nil, err
@@ -36,6 +41,8 @@ func NewLinkEndpoint(debug bool, mtu uint32, macAddress string, ip string, virtu
 		mtu:        mtu,
 		mac:        tcpip.LinkAddress(linkAddr),
 		ip:         ip,
+		ipv6:       ipv6,
+		subnetIPv6: subnetIPv6,
 		virtualIPs: set,
 	}, nil
 }
@@ -128,6 +135,18 @@ func (e *LinkEndpoint) writePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 		}
 	}
 
+	if pkt.NetworkProtocolNumber == ipv6.ProtocolNumber && pkt.TransportProtocolNumber == icmp.ProtocolNumber6 {
+		transportLayer := header.ICMPv6(pkt.TransportHeader().View().AsSlice())
+		if transportLayer.Type() == header.ICMPv6NeighborAdvert {
+			target := header.NDPNeighborAdvert(transportLayer.MessageBody()).TargetAddress()
+			// also accepts ND package from link local address.
+			if !e.isAllowedNDPTarget(target) {
+				log.Debugf("dropping spoofing packets from the gateway about IP %s", target)
+				return nil
+			}
+		}
+	}
+
 	if e.debug {
 		packet := gopacket.NewPacket(pkt.ToView().AsSlice(), layers.LayerTypeEthernet, gopacket.Default)
 		log.Info(packet.String())
@@ -137,10 +156,40 @@ func (e *LinkEndpoint) writePacket(r stack.RouteInfo, protocol tcpip.NetworkProt
 	return nil
 }
 
+// ndpLinkLocalGateway is the link-local address NDP messages from the gateway
+// may legitimately originate from. Parsed once rather than per packet.
+var ndpLinkLocalGateway = netip.MustParseAddr("fe80::1")
+
+// isAllowedNDPTarget reports whether a Neighbor Advertisement with the given
+// target address may legitimately originate from the gateway. It compares
+// parsed addresses rather than raw strings so that a non-canonical
+// GatewayIPv6 spelling (e.g. "fd00:0:0:0:0:0:0:1") still matches.
+func (e *LinkEndpoint) isAllowedNDPTarget(target tcpip.Address) bool {
+	targetAddr, ok := netip.AddrFromSlice(target.AsSlice())
+	if !ok {
+		return false
+	}
+	targetAddr = targetAddr.Unmap()
+
+	if gw, err := netip.ParseAddr(e.ipv6); err == nil && targetAddr == gw.Unmap() {
+		return true
+	}
+	// also accepts ND package from the link-local gateway address.
+	return targetAddr == ndpLinkLocalGateway
+}
+
 func (e *LinkEndpoint) WriteRawPacket(_ *stack.PacketBuffer) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
 func (e *LinkEndpoint) IP() string {
 	return e.ip
+}
+
+func (e *LinkEndpoint) IPv6() string {
+	return e.ipv6
+}
+
+func (e *LinkEndpoint) SubnetIPv6() string {
+	return e.subnetIPv6
 }

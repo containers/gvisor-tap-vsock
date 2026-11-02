@@ -28,6 +28,30 @@ var _ = ginkgo.Describe("dhcp with qemu", func() {
 	})
 })
 
+// IPv6 support is opt-in: these specs only run when the environment enables
+// IPv6 (see ipv6Enabled). Most development environments have no IPv6
+// connectivity, so they are excluded from the default "make test-qemu" run and
+// executed via "make test-qemu-ipv6" instead.
+func init() {
+	if !ipv6Enabled() {
+		return
+	}
+
+	ginkgo.Describe("ipv6 connectivity with qemu", func() {
+		e2e.BasicIPv6ConnectivityTests(e2e.BasicTestProps{
+			SSHExec: sshExec,
+			Sock:    sock,
+		})
+	})
+
+	ginkgo.Describe("ipv6 dns with qemu", func() {
+		e2e.BasicIPv6DNSTests(e2e.BasicTestProps{
+			SSHExec: sshExec,
+			Sock:    sock,
+		})
+	})
+}
+
 var _ = ginkgo.Describe("command-line format", func() {
 	ginkgo.It("should convert Command to command line format", func() {
 		command := types.NewGvproxyCommand()
