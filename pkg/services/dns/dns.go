@@ -31,10 +31,11 @@ type dnsHandler struct {
 	zones     []types.Zone
 	zonesLock sync.RWMutex
 	upstream  upstreamResolver
-	// nameservers are the host's upstream DNS servers ("ip:port") used to
+	// nameservers returns the host's upstream DNS servers ("ip:port") used to
 	// forward raw queries for record types that Go's net.Resolver cannot
-	// look up directly (SOA, PTR, CAA, ...).
-	nameservers []string
+	// look up directly (SOA, PTR, CAA, ...). It is called for each
+	// forwarded query so that changes to the host's DNS servers are followed.
+	nameservers func() []string
 	client      *dns.Client
 }
 
@@ -275,7 +276,8 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 // nameservers and copies the response back into m. It is used as the fallback
 // for record types that the typed net.Resolver cannot resolve.
 func (h *dnsHandler) addAnswersFromNameservers(m *dns.Msg, q dns.Question) {
-	if len(h.nameservers) == 0 {
+	nameservers := h.nameservers()
+	if len(nameservers) == 0 {
 		// No upstream discovered (e.g. Windows, no /etc/resolv.conf): preserve
 		// the previous behavior (empty NOERROR) and leave the Rcode untouched.
 		return
@@ -285,7 +287,7 @@ func (h *dnsHandler) addAnswersFromNameservers(m *dns.Msg, q dns.Question) {
 	req.SetQuestion(q.Name, q.Qtype)
 	req.RecursionDesired = true
 
-	for _, ns := range h.nameservers {
+	for _, ns := range nameservers {
 		resp, _, err := h.client.Exchange(req, ns)
 		if err != nil || resp == nil {
 			continue
@@ -302,22 +304,6 @@ func (h *dnsHandler) addAnswersFromNameservers(m *dns.Msg, q dns.Question) {
 
 	// The upstream servers are known but none could be reached.
 	m.Rcode = dns.RcodeServerFailure
-}
-
-// hostNameservers returns the upstream DNS servers ("ip:port") configured on
-// the host. /etc/resolv.conf exists on Linux and macOS; on other platforms
-// (e.g. Windows) it is absent and an empty list is returned.
-func hostNameservers() []string {
-	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
-	if err != nil {
-		log.Warnf("cannot read /etc/resolv.conf, DNS queries for SOA/PTR and other unhandled types will not be forwarded: %v", err)
-		return nil
-	}
-	servers := make([]string, 0, len(conf.Servers))
-	for _, s := range conf.Servers {
-		servers = append(servers, net.JoinHostPort(s, conf.Port))
-	}
-	return servers
 }
 
 type Server struct {
@@ -337,7 +323,7 @@ func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones [
 	handler := &dnsHandler{
 		zones:       zones,
 		upstream:    upstream,
-		nameservers: hostNameservers(),
+		nameservers: newResolvConf(hostResolvConf).nameservers,
 		client:      &dns.Client{},
 	}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
