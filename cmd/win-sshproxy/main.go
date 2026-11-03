@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -103,7 +102,20 @@ func main() {
 	}
 
 	logrus.Debug("Setting up proxies")
-	err = setupProxies(ctx, group, sources, dests, identities)
+	forwards := make([]sshclient.ForwardConfig, len(sources))
+	for i := range sources {
+		dest, err := url.Parse(dests[i])
+		if err != nil {
+			logrus.Errorf("Error setting up proxies: %v", err)
+			return
+		}
+		forwards[i] = sshclient.ForwardConfig{
+			Source:      sources[i],
+			Destination: dest,
+			Identity:    identities[i],
+		}
+	}
+	err = sshclient.SetupForwards(ctx, group, forwards, nil)
 	if err != nil {
 		logrus.Errorf("Error setting up proxies: %v", err)
 		return
@@ -133,60 +145,6 @@ func setupLogging(name string) (*eventlog.Log, error) {
 	}
 
 	return log, nil
-}
-
-func setupProxies(ctx context.Context, g *errgroup.Group, sources []string, dests []string, identities []string) error {
-	for i := 0; i < len(sources); i++ {
-		var (
-			src  *url.URL
-			dest *url.URL
-			err  error
-		)
-		if strings.Contains(sources[i], "://") {
-			src, err = url.Parse(sources[i])
-			if err != nil {
-				return err
-			}
-		} else {
-			src = &url.URL{
-				Scheme: "unix",
-				Path:   sources[i],
-			}
-		}
-
-		dest, err = url.Parse(dests[i])
-		if err != nil {
-			return err
-		}
-		j := i
-		g.Go(func() error {
-			forward, err := sshclient.CreateSSHForward(ctx, src, dest, identities[j], nil)
-			if err != nil {
-				return err
-			}
-			go func() {
-				<-ctx.Done()
-				// Abort pending accepts
-				forward.Close()
-			}()
-		loop:
-			for {
-				select {
-				case <-ctx.Done():
-					break loop
-				default:
-					// proceed
-				}
-				err := forward.AcceptAndTunnel(ctx)
-				if err != nil {
-					logrus.Debugf("Error occurred handling ssh forwarded connection: %q", err)
-				}
-			}
-			return nil
-		})
-	}
-
-	return nil
 }
 
 func saveThreadId() (uint32, error) {

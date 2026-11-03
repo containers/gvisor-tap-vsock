@@ -86,3 +86,6 @@ jobs:
 
     - name: Test
       run: go test -v .\test-win-sshproxy
+
+    - name: Unit tests
+      run: go test -v .\pkg\sshclient
