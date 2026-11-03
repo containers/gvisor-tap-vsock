@@ -565,19 +565,22 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 		}, false)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
 
-		// upstream backs the LookupTXT (and other typed-resolver) code paths;
+		// upstream backs the net.Resolver code paths (A, AAAA, TXT, etc.);
 		// nameservers below backs the raw-forward code path used for
-		// SOA/PTR/AAAA/CAA/...
+		// SOA/PTR/CAA/...
 		upstream := &mockdns.Resolver{
 			Zones: map[string]mockdns.Zone{
 				aaaaDomain: {
-					TXT: []string{leakedTxt},
+					A:    []string{"192.0.2.1"},
+					AAAA: []string{"2001:db8::1"},
+					TXT:  []string{leakedTxt},
 				},
 			},
 		}
 		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
-		// Point the raw forwarder at the mock upstream server.
+		// Point the raw forwarder at the mock upstream server. Its AAAA
+		// response intentionally differs from the typed resolver's response.
 		server.handler.nameservers = []string{mockSrv.LocalAddr().String()}
 	})
 
@@ -602,13 +605,13 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 		gomega.Expect(ok).To(gomega.BeTrue(), "expected an SOA answer")
 	})
 
-	ginkgo.It("should forward AAAA queries", func() {
+	ginkgo.It("should resolve AAAA queries and omit IPv4 results", func() {
 		m := query(aaaaDomain, dns.TypeAAAA)
 		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeSuccess))
 		gomega.Expect(m.Answer).To(gomega.HaveLen(1))
 		aaaa, ok := m.Answer[0].(*dns.AAAA)
 		gomega.Expect(ok).To(gomega.BeTrue(), "expected an AAAA answer")
-		gomega.Expect(aaaa.AAAA.String()).To(gomega.Equal("fe80::1"))
+		gomega.Expect(aaaa.AAAA.String()).To(gomega.Equal("2001:db8::1"))
 	})
 
 	ginkgo.It("should forward PTR queries", func() {
@@ -621,13 +624,9 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 	})
 
 	ginkgo.It("should not forward queries for names owned by a local zone", func() {
-		// aaaaDomain falls under this zone's suffix. addLocalAnswers only
-		// special-cases dns.TypeA, so any other query type for a zone-owned
-		// name currently falls through to either the default case (SOA, and
-		// AAAA below) or an existing typed case (TXT), and gets forwarded to
-		// the real upstream instead of being answered (or left empty)
-		// locally -- leaking the internal name and returning whatever
-		// unrelated record the upstream happens to have.
+		// aaaaDomain falls under this zone's suffix. Names owned by a local
+		// zone should return NODATA for non-A queries rather than reaching
+		// either the typed resolver (AAAA, TXT) or raw forwarder (SOA).
 		zoneIP := net.ParseIP("192.168.127.5")
 		err := server.addZone(types.Zone{
 			Name:      "example.org.",
