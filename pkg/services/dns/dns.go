@@ -28,9 +28,11 @@ type upstreamResolver interface {
 var validDNSChars = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 type dnsHandler struct {
-	zones     []types.Zone
-	zonesLock sync.RWMutex
-	upstream  upstreamResolver
+	zones         []types.Zone
+	zonesLock     sync.RWMutex
+	upstream      upstreamResolver
+	allowUpstream bool
+	policy        *types.EgressPolicyHolder
 	// nameservers returns the host's upstream DNS servers ("ip:port") used to
 	// forward raw queries for record types that Go's net.Resolver cannot
 	// look up directly (SOA, PTR, CAA, ...). It is called for each
@@ -135,6 +137,14 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		if done := h.addLocalAnswers(m, q); done {
 			return
 		}
+		if h.policy != nil && !h.policy.DNSAllowed(q.Name) {
+			m.Rcode = dns.RcodeRefused
+			return
+		}
+		if !h.allowUpstream {
+			m.Rcode = dns.RcodeRefused
+			return
+		}
 
 		resolver := h.upstream
 		switch q.Qtype {
@@ -143,6 +153,9 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 			if err != nil {
 				m.Rcode = dns.RcodeNameError
 				return
+			}
+			if h.policy != nil {
+				h.policy.RecordDNS(q.Name, ips)
 			}
 			for _, ip := range ips {
 				if q.Qtype == dns.TypeA {
@@ -312,21 +325,36 @@ type Server struct {
 	handler *dnsHandler
 }
 
-func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Server, error) {
+func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, allowUpstreamOption ...bool) (*Server, error) {
 	upstream := &net.Resolver{
 		PreferGo: false,
 	}
-	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream)
+	allowUpstream := true
+	if len(allowUpstreamOption) > 0 {
+		allowUpstream = allowUpstreamOption[0]
+	}
+	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream, allowUpstream)
 }
 
-func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver) (*Server, error) {
+func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver, allowUpstreamOption ...bool) (*Server, error) {
+	allowUpstream := true
+	if len(allowUpstreamOption) > 0 {
+		allowUpstream = allowUpstreamOption[0]
+	}
 	handler := &dnsHandler{
-		zones:       zones,
-		upstream:    upstream,
-		nameservers: newResolvConf(hostResolvConf).nameservers,
-		client:      &dns.Client{},
+		zones:         zones,
+		upstream:      upstream,
+		allowUpstream: allowUpstream,
+		nameservers:   newResolvConf(hostResolvConf).nameservers,
+		client:        &dns.Client{},
 	}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
+}
+
+// SetEgressPolicy attaches the host-enforced policy. It must be called before
+// the server starts serving queries.
+func (s *Server) SetEgressPolicy(policy *types.EgressPolicyHolder) {
+	s.handler.policy = policy
 }
 
 func (s *Server) Serve() error {

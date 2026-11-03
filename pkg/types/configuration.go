@@ -34,6 +34,11 @@ type Configuration struct {
 	// Built-in DNS records that will be served by the DNS server embedded in the gateway
 	DNS []Zone `yaml:"dns,omitempty"`
 
+	// DNSUpstream is an optional host:port resolver used instead of the system
+	// resolver. It is intended for a controlled policy fixture; when set, it is
+	// the only upstream the gateway is allowed to query.
+	DNSUpstream string `yaml:"dnsUpstream,omitempty"`
+
 	// List of search domains that will be added in all DHCP replies
 	DNSSearchDomains []string `yaml:"dnsSearchDomains,omitempty"`
 
@@ -68,6 +73,10 @@ type Configuration struct {
 
 	// Timeout in seconds for outbound TCP connection attempts (default: 30)
 	TCPConnectTimeout int `yaml:"tcpConnectTimeout,omitempty"`
+
+	// Optional host-enforced layer 3/4 allowlist for sandbox egress.
+	// When present, unmatched TCP and UDP flows are denied.
+	EgressPolicy *EgressPolicy `yaml:"egressPolicy,omitempty"`
 }
 
 type Protocol string
