@@ -161,6 +161,12 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		switch protocol {
 		case types.UNIX:
 			p.ListenFunc = func(_, socketPath string) (net.Listener, error) {
+				// A previous gvproxy instance that did not exit cleanly
+				// may have left its socket file behind, which would make
+				// net.Listen() fail with "address already in use".
+				if err := sshclient.RemoveStaleSocket(socketPath); err != nil {
+					return nil, err
+				}
 				return net.Listen("unix", socketPath) // override tcp to use unix socket
 			}
 		case types.NPIPE:

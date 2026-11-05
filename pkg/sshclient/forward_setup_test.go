@@ -261,8 +261,8 @@ func TestRemoveStaleSocket(t *testing.T) {
 	// A leftover socket file is removed
 	socketPath := filepath.Join(dir, "stale.sock")
 	createStaleSocket(t, socketPath)
-	if err := removeStaleSocket(socketPath); err != nil {
-		t.Fatalf("removeStaleSocket() error = %v", err)
+	if err := RemoveStaleSocket(socketPath); err != nil {
+		t.Fatalf("RemoveStaleSocket() error = %v", err)
 	}
 	if _, err := os.Stat(socketPath); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("stale socket still exists; stat error = %v", err)
@@ -275,8 +275,8 @@ func TestRemoveStaleSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	if err := removeStaleSocket(activePath); err != nil {
-		t.Fatalf("removeStaleSocket() error = %v", err)
+	if err := RemoveStaleSocket(activePath); err != nil {
+		t.Fatalf("RemoveStaleSocket() error = %v", err)
 	}
 	if _, err := os.Stat(activePath); err != nil {
 		t.Errorf("active socket was removed; stat error = %v", err)
@@ -287,16 +287,16 @@ func TestRemoveStaleSocket(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte("existing file"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := removeStaleSocket(filePath); err != nil {
-		t.Fatalf("removeStaleSocket() error = %v", err)
+	if err := RemoveStaleSocket(filePath); err != nil {
+		t.Fatalf("RemoveStaleSocket() error = %v", err)
 	}
 	if _, err := os.Stat(filePath); err != nil {
 		t.Errorf("regular file was removed; stat error = %v", err)
 	}
 
 	// A missing file is not an error
-	if err := removeStaleSocket(filepath.Join(dir, "nonexistent")); err != nil {
-		t.Fatalf("removeStaleSocket() error = %v", err)
+	if err := RemoveStaleSocket(filepath.Join(dir, "nonexistent")); err != nil {
+		t.Fatalf("RemoveStaleSocket() error = %v", err)
 	}
 }
 
