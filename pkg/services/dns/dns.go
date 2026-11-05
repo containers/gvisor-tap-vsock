@@ -3,6 +3,7 @@ package dns
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -130,6 +131,21 @@ func splitTxt(s string) []string {
 
 	return c
 }
+
+// rcodeForLookupError maps an error returned by the upstream resolver to a DNS
+// response code. Only a definitive "not found" answer is reported as
+// NXDOMAIN; anything else (timeouts, unreachable servers, malformed upstream
+// responses, ...) is reported as SERVFAIL so that clients may retry or try
+// another server instead of caching a negative answer for a name that exists.
+func rcodeForLookupError(q dns.Question, err error) int {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+		return dns.RcodeNameError
+	}
+	log.Debugf("upstream lookup of %s %s failed: %v", q.Name, dns.TypeToString[q.Qtype], err)
+	return dns.RcodeServerFailure
+}
+
 func (h *dnsHandler) addAnswers(m *dns.Msg) {
 	for _, q := range m.Question {
 		if done := h.addLocalAnswers(m, q); done {
@@ -141,7 +157,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeA, dns.TypeAAAA:
 			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = dns.RcodeNameError
+				m.Rcode = rcodeForLookupError(q, err)
 				return
 			}
 			for _, ip := range ips {
@@ -178,7 +194,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeCNAME:
 			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = dns.RcodeNameError
+				m.Rcode = rcodeForLookupError(q, err)
 				return
 			}
 			m.Answer = append(m.Answer, &dns.CNAME{
@@ -193,7 +209,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeMX:
 			records, err := resolver.LookupMX(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = dns.RcodeNameError
+				m.Rcode = rcodeForLookupError(q, err)
 				return
 			}
 			for _, mx := range records {
@@ -211,7 +227,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeNS:
 			records, err := resolver.LookupNS(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = dns.RcodeNameError
+				m.Rcode = rcodeForLookupError(q, err)
 				return
 			}
 			for _, ns := range records {
@@ -228,7 +244,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeSRV:
 			_, records, err := resolver.LookupSRV(context.TODO(), "", "", q.Name)
 			if err != nil {
-				m.Rcode = dns.RcodeNameError
+				m.Rcode = rcodeForLookupError(q, err)
 				return
 			}
 			for _, srv := range records {
@@ -248,7 +264,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeTXT:
 			txts, err := resolver.LookupTXT(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = dns.RcodeNameError
+				m.Rcode = rcodeForLookupError(q, err)
 				return
 			}
 
