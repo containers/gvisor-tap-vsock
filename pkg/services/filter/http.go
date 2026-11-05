@@ -2,6 +2,7 @@ package filter
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -305,13 +306,8 @@ func (f *FilterObserver) handleBlocklistPost(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if req.Protocol == "" || req.IP == "" || req.Port == 0 {
-		http.Error(w, "protocol/ip/port or domain is required", http.StatusBadRequest)
-		return
-	}
-
-	if req.Protocol != "tcp" && req.Protocol != "udp" {
-		http.Error(w, "protocol must be tcp or udp", http.StatusBadRequest)
+	if err := validateBlocklistTarget(req.Protocol, req.IP, req.Port); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -363,8 +359,8 @@ func (f *FilterObserver) handleBlocklistDelete(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if req.Protocol == "" || req.IP == "" || req.Port == 0 {
-		http.Error(w, "protocol/ip/port or domain is required", http.StatusBadRequest)
+	if err := validateBlocklistTarget(req.Protocol, req.IP, req.Port); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -535,4 +531,25 @@ func domainBlocklistToJSON(entries []*DomainBlocklistEntry) []map[string]interfa
 		})
 	}
 	return result
+}
+
+// validateBlocklistTarget checks the protocol/ip/port of an IP-based blocklist
+// entry. ICMP has no ports, so an ICMP entry must leave the port unset.
+func validateBlocklistTarget(protocol, ip string, port uint16) error {
+	if protocol == "" || ip == "" {
+		return errors.New("protocol/ip/port or domain is required")
+	}
+	switch protocol {
+	case "tcp", "udp":
+		if port == 0 {
+			return errors.New("protocol/ip/port or domain is required")
+		}
+	case "icmp":
+		if port != 0 {
+			return errors.New("port must be omitted for icmp")
+		}
+	default:
+		return errors.New("protocol must be tcp, udp or icmp")
+	}
+	return nil
 }

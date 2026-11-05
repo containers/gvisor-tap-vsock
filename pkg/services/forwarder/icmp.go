@@ -1,8 +1,10 @@
 package forwarder
 
 import (
+	"regexp"
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -14,22 +16,34 @@ type Forwarder struct {
 	stack   *stack.Stack
 }
 
-func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex) *Forwarder {
+// icmpBlocked reports whether outbound filtering forbids forwarding a ping.
+// Pings to the gateway's own address never reach the forwarder, because the
+// stack answers them itself, so unlike UDP there is no gateway exception: with
+// an allowlist active, every forwarded ping is blocked.
+func icmpBlocked(blockAllOutbound bool, allowlistActive bool) bool {
+	return blockAllOutbound || allowlistActive
+}
+
+func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, blockAllOutbound bool, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) *Forwarder {
+	allowlistActive := len(outboundAllow) > 0
+
 	return NewForwarder(s, func(r *ICMPForwarderRequest) {
 		localAddress := r.ID().LocalAddress
-
-		// Apply NAT translation if needed
-		natLock.Lock()
-		if replaced, ok := nat[localAddress]; ok {
-			localAddress = replaced
-		}
-		natLock.Unlock()
 
 		pkt := r.Packet()
 		if pkt == nil {
 			log.Warningf("Dropping ICMP packet from VM (no packet data)")
 			return
 		}
+		// HandlePacket took a reference for this request. handlePingRequest
+		// releases it once the ping is forwarded; release it here if the
+		// packet is dropped.
+		forwarded := false
+		defer func() {
+			if !forwarded {
+				pkt.DecRef()
+			}
+		}()
 
 		// Check if this is an ICMP Echo Request (PING)
 		transportHeader := pkt.TransportHeader().Slice()
@@ -45,7 +59,38 @@ func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mut
 			return
 		}
 
+		// ICMP has no ports, so blocklist entries and connection records for
+		// pings use port 0. Filtering uses the address the VM pinged, before
+		// NAT, as the TCP and UDP forwarders do.
+		if observer != nil && observer.IsBlocked("icmp", localAddress.String(), 0) {
+			log.Debugf("Blocking ICMP echo to %s due to dynamic blocklist", localAddress.String())
+			observer.RecordConnection("icmp", localAddress.String(), 0, "", false)
+			return
+		}
+		if icmpBlocked(blockAllOutbound, allowlistActive) {
+			if blockAllOutbound {
+				log.Debugf("Blocking outbound ICMP echo to %s (blockAllOutbound=true)", localAddress.String())
+			} else {
+				log.Debugf("Blocking outbound ICMP echo to %s (outboundAllow active)", localAddress.String())
+			}
+			if observer != nil {
+				observer.RecordConnection("icmp", localAddress.String(), 0, "", false)
+			}
+			return
+		}
+		if observer != nil {
+			observer.RecordConnection("icmp", localAddress.String(), 0, "", true)
+		}
+
+		// Apply NAT translation if needed
+		natLock.Lock()
+		if replaced, ok := nat[localAddress]; ok {
+			localAddress = replaced
+		}
+		natLock.Unlock()
+
 		// This is a PING request - forward it using unprivileged ICMP sockets
+		forwarded = true
 		go handlePingRequest(s, r, localAddress, icmpHeader, pkt)
 	})
 }

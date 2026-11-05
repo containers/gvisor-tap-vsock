@@ -48,7 +48,7 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
 	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.BlockAllOutbound, outboundAllow, gatewayIP, filterObserver)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
-	icmpForwarder := forwarder.ICMP(s, translation, &natLock)
+	icmpForwarder := forwarder.ICMP(s, translation, &natLock, configuration.BlockAllOutbound, outboundAllow, filterObserver)
 	s.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
 
 	dnsMux, err := dnsServer(configuration, s, outboundAllow, filterObserver)
