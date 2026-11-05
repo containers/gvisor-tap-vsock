@@ -317,9 +317,48 @@ func TestHTTP_BlocklistInvalidProtocol(t *testing.T) {
 	_, srv := newTestServer(t)
 
 	resp := doRequest(t, http.MethodPost, srv.URL+"/blocklist",
-		`{"protocol":"icmp","ip":"10.0.0.1","port":443}`)
+		`{"protocol":"sctp","ip":"10.0.0.1","port":443}`)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestHTTP_BlocklistICMPWithPort(t *testing.T) {
+	_, srv := newTestServer(t)
+
+	for _, method := range []string{http.MethodPost, http.MethodDelete} {
+		resp := doRequest(t, method, srv.URL+"/blocklist",
+			`{"protocol":"icmp","ip":"10.0.0.1","port":443}`)
+		resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode, method)
+	}
+}
+
+func TestHTTP_BlocklistICMPRoundTrip(t *testing.T) {
+	obs, srv := newTestServer(t)
+
+	resp := doRequest(t, http.MethodPost, srv.URL+"/blocklist",
+		`{"protocol":"icmp","ip":"10.0.0.5","reason":"no pings"}`)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.True(t, obs.IsBlocked("icmp", "10.0.0.5", 0))
+	require.False(t, obs.IsBlocked("tcp", "10.0.0.5", 0))
+
+	result := getJSON(t, srv.URL+"/blocklist")
+	entries := result["entries"].([]interface{})
+	require.Len(t, entries, 1)
+	entry := entries[0].(map[string]interface{})
+	require.Equal(t, "icmp", entry["protocol"])
+	require.Equal(t, "10.0.0.5", entry["ip"])
+	require.Equal(t, float64(0), entry["port"])
+
+	resp2 := doRequest(t, http.MethodDelete, srv.URL+"/blocklist",
+		`{"protocol":"icmp","ip":"10.0.0.5"}`)
+	defer resp2.Body.Close()
+	require.Equal(t, http.StatusOK, resp2.StatusCode)
+	var delResult map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp2.Body).Decode(&delResult))
+	require.Equal(t, true, delResult["removed"])
+	require.False(t, obs.IsBlocked("icmp", "10.0.0.5", 0))
 }
 
 func TestHTTP_AllowlistMissingDomain(t *testing.T) {

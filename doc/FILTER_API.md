@@ -38,7 +38,8 @@ Lists all tracked connections (both allowed and blocked) with aggregated statist
 ```
 
 The `domain` field is populated from the TLS SNI (for HTTPS connections) or from the DNS cache (for plain HTTP connections where the VM resolved the domain through gvisor-tap-vsock's DNS handler). The `sni` field is kept for backward compatibility and contains the raw TLS Server Name Indication value.
-```
+
+`protocol` is `tcp`, `udp` or `icmp`. ICMP records are ICMP echo requests (pings) the VM sent to external hosts; ICMP has no ports, so their `destination_port` is `0`, and every ping counts once in `count`.
 
 #### `GET /services/filter/connections/blocked`
 
@@ -145,7 +146,7 @@ Remove a domain from the dynamic allowlist. Config-sourced patterns cannot be re
 
 ### Blocklist Management
 
-The blocklist supports two blocking modes: **IP-based** (block a specific IP:port:protocol) and **domain-based** (block all traffic to a domain and its subdomains, regardless of port or protocol). Blocking `example.com` automatically blocks `www.example.com`, `mail.example.com`, etc. Domain-based blocking works by looking up the IP→domain mapping from the DNS cache — the VM must have resolved the domain through gvisor-tap-vsock's DNS handler for domain blocking to take effect.
+The blocklist supports two blocking modes: **IP-based** (block a specific IP:port:protocol, or an IP for ICMP) and **domain-based** (block all traffic to a domain and its subdomains, regardless of port or protocol). Blocking `example.com` automatically blocks `www.example.com`, `mail.example.com`, etc. Domain-based blocking works by looking up the IP→domain mapping from the DNS cache — the VM must have resolved the domain through gvisor-tap-vsock's DNS handler for domain blocking to take effect.
 
 #### `GET /services/filter/blocklist`
 
@@ -177,6 +178,8 @@ Get current dynamic blocklist entries (both IP-based and domain-based).
 
 Block by IP:port:protocol or by domain name. Blocking a domain automatically includes all its subdomains.
 
+`protocol` must be `tcp`, `udp` or `icmp`. `port` is required for `tcp` and `udp`, and must be omitted for `icmp`.
+
 **IP-based request:**
 ```json
 {
@@ -184,6 +187,15 @@ Block by IP:port:protocol or by domain name. Blocking a domain automatically inc
   "ip": "10.0.0.5",
   "port": 443,
   "reason": "suspicious activity"
+}
+```
+
+**ICMP request (blocks pings to 10.0.0.5):**
+```json
+{
+  "protocol": "icmp",
+  "ip": "10.0.0.5",
+  "reason": "no pings"
 }
 ```
 
@@ -383,7 +395,9 @@ stack:
 ./bin/gvproxy --config gvproxy-config.yaml
 ```
 
-To block all outbound traffic (only gateway traffic allowed):
+When `outboundAllow` is set, outbound pings (ICMP echo requests) are blocked, since they carry no domain to check against the allowlist.
+
+To block all outbound traffic, TCP, UDP and ICMP (only gateway traffic allowed):
 
 ```yaml
 stack:
