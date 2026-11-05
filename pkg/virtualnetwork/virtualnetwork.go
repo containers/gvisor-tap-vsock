@@ -135,6 +135,7 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 			udp.NewProtocol,
 			icmp.NewProtocol4,
 		},
+		Clock: newClock(),
 	})
 
 	if err := s.CreateNIC(1, endpoint); err != nil {
