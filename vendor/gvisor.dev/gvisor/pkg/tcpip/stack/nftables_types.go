@@ -20,13 +20,13 @@ import (
 
 // NFTablesInterface is an interface for evaluating chains.
 type NFTablesInterface interface {
-	CheckPrerouting(pkt *PacketBuffer, af AddressFamily) bool
-	CheckInput(pkt *PacketBuffer, af AddressFamily) bool
-	CheckForward(pkt *PacketBuffer, af AddressFamily) bool
-	CheckOutput(pkt *PacketBuffer, af AddressFamily) bool
-	CheckPostrouting(pkt *PacketBuffer, af AddressFamily) bool
-	CheckIngress(pkt *PacketBuffer, af AddressFamily) bool
-	CheckEgress(pkt *PacketBuffer, af AddressFamily) bool
+	CheckPrerouting(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckInput(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckForward(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckOutput(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckPostrouting(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckIngress(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckEgress(pkt *PacketBuffer, route *Route, af AddressFamily) bool
 }
 
 // NFHook describes specific points in the pipeline where chains can be attached.
@@ -146,25 +146,4 @@ func (f AddressFamily) String() string {
 		return af
 	}
 	panic(fmt.Sprintf("invalid address family: %d", int(f)))
-}
-
-//
-// Verdict Implementation.
-// There are two types of verdicts:
-// 1. Netfilter (External) Verdicts: Drop, Accept, Stolen, Queue, Repeat, Stop
-// 		These are terminal verdicts that are returned to the kernel.
-// 2. Nftable (Internal) Verdicts:, Continue, Break, Jump, Goto, Return
-// 		These are internal verdicts that only exist within the nftables library.
-// Both share the same numeric space (uint32 Verdict Code).
-//
-
-// NFVerdict represents the result of evaluating a packet against a rule or chain.
-type NFVerdict struct {
-	// Code is the numeric code that represents the verdict issued.
-	Code uint32
-
-	// ChainName is the name of the chain to continue evaluation if the verdict is
-	// Jump or Goto.
-	// Note: the chain must be in the same table as the current chain.
-	ChainName string
 }

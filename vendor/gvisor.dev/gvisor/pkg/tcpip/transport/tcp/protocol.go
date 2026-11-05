@@ -89,24 +89,42 @@ const (
 type protocol struct {
 	stack *stack.Stack
 
-	mu                         protocolRWMutex `state:"nosave"`
-	sackEnabled                bool
-	recovery                   tcpip.TCPRecovery
-	delayEnabled               bool
-	alwaysUseSynCookies        bool
-	sendBufferSize             tcpip.TCPSendBufferSizeRangeOption
-	recvBufferSize             tcpip.TCPReceiveBufferSizeRangeOption
-	congestionControl          string
+	mu protocolRWMutex `state:"nosave"`
+
+	// +checklocks:mu
+	sackEnabled bool
+	// +checklocks:mu
+	recovery tcpip.TCPRecovery
+	// +checklocks:mu
+	delayEnabled bool
+	// +checklocks:mu
+	alwaysUseSynCookies bool
+	// +checklocks:mu
+	sendBufferSize tcpip.TCPSendBufferSizeRangeOption
+	// +checklocks:mu
+	recvBufferSize tcpip.TCPReceiveBufferSizeRangeOption
+	// +checklocks:mu
+	congestionControl string
+	// availableCongestionControl is immutable after construction.
 	availableCongestionControl []string
-	moderateReceiveBuffer      bool
-	lingerTimeout              time.Duration
-	timeWaitTimeout            time.Duration
-	timeWaitReuse              tcpip.TCPTimeWaitReuseOption
-	minRTO                     time.Duration
-	maxRTO                     time.Duration
-	maxRetries                 uint32
-	synRetries                 uint8
-	dispatcher                 dispatcher
+	// +checklocks:mu
+	moderateReceiveBuffer bool
+	// +checklocks:mu
+	lingerTimeout time.Duration
+	// +checklocks:mu
+	timeWaitTimeout time.Duration
+	// +checklocks:mu
+	timeWaitReuse tcpip.TCPTimeWaitReuseOption
+	// +checklocks:mu
+	minRTO time.Duration
+	// +checklocks:mu
+	maxRTO time.Duration
+	// +checklocks:mu
+	maxRetries uint32
+	// +checklocks:mu
+	synRetries uint8
+
+	dispatcher dispatcher
 
 	// probe, if not nil, will be invoked any time an endpoint receives a
 	// TCP segment.
@@ -114,9 +132,11 @@ type protocol struct {
 	// This is immutable after creation.
 	probe TCPProbeFunc `state:"nosave"`
 
-	// The following secrets are initialized once and stay unchanged after.
-	seqnumSecret   [16]byte
-	tsOffsetSecret [16]byte
+	// The following secrets are used for ISN and timestamp-offset
+	// generation. They are not serialized into checkpoint state and are
+	// freshly drawn from the secure RNG on restore.
+	seqnumSecret   [16]byte `state:"nosave"`
+	tsOffsetSecret [16]byte `state:"nosave"`
 }
 
 // Number returns the tcp protocol number.
@@ -181,7 +201,7 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 
 func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
 	// Initialize a random tsOffset that will be added to the recentTS
-	// everytime the timestamp is sent when the Timestamp option is enabled.
+	// every time the timestamp is sent when the Timestamp option is enabled.
 	//
 	// See https://tools.ietf.org/html/rfc7323#section-5.4 for details on
 	// why this is required.
@@ -202,6 +222,7 @@ func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
 // then the route's default TTL will be used.
 func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimit int16) tcpip.Error {
 	net := s.pkt.Network()
+	// TODO: b/528377510 - Verify if passing the NICID is correct.
 	route, err := st.FindRoute(s.pkt.NICID, net.DestinationAddress(), net.SourceAddress(), s.pkt.NetworkProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		return err
@@ -256,6 +277,8 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimi
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.
+//
+// +checklocksexclude:p.mu
 func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip.Error {
 	switch v := option.(type) {
 	case *tcpip.TCPSACKEnabled:
@@ -393,6 +416,8 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 }
 
 // Option implements stack.TransportProtocol.Option.
+//
+// +checklocksexclude:p.mu
 func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Error {
 	switch v := option.(type) {
 	case *tcpip.TCPSACKEnabled:
@@ -497,6 +522,8 @@ func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Er
 }
 
 // SendBufferSize implements stack.SendBufSizeProto.
+//
+// +checklocksexclude:p.mu
 func (p *protocol) SendBufferSize() tcpip.TCPSendBufferSizeRangeOption {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

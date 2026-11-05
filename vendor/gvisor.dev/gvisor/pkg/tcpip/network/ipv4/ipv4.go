@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
@@ -519,6 +520,54 @@ func (e *endpoint) handleFragments(_ *stack.Route, networkMTU uint32, pkt *stack
 	}
 }
 
+// recalculateChecksum recalculates the checksum of a TCP packet.
+func recalculateChecksum(pkt *stack.PacketBuffer, r *stack.Route) tcpip.Error {
+	// RXChecksumValidated indicates that checksum verification may be
+	// safely skipped.
+	if pkt.RXChecksumValidated {
+		return nil
+	}
+	// NeedsCsum is set if the checksum offload is enabled, so no need to
+	// calculate the checksum.
+	if pkt.GSOOptions.Type != stack.GSONone && pkt.GSOOptions.NeedsCsum {
+		return nil
+	}
+	transportHeader := pkt.TransportHeader().Slice()
+	netHdr := header.IPv4(pkt.NetworkHeader().Slice())
+	switch pkt.TransportProtocolNumber {
+	case header.TCPProtocolNumber:
+		if len(transportHeader) < header.TCPMinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
+		tcp := header.TCP(transportHeader)
+		xsum := r.PseudoHeaderChecksum(header.TCPProtocolNumber, netHdr.PayloadLength())
+		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
+		tcp.SetChecksum(0)
+		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
+	case header.UDPProtocolNumber:
+		if len(transportHeader) < header.UDPMinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
+		udp := header.UDP(transportHeader)
+		xsum := r.PseudoHeaderChecksum(header.UDPProtocolNumber, netHdr.PayloadLength())
+		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
+		udp.SetChecksum(0)
+		csum := ^udp.CalculateChecksum(xsum)
+		// RFC 768: If the computed checksum is zero, it is transmitted as all ones.
+		if csum == 0 {
+			csum = 0xFFFF
+		}
+		udp.SetChecksum(csum)
+	case header.ICMPv4ProtocolNumber:
+		if len(transportHeader) < header.ICMPv4MinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
+		icmp := header.ICMPv4(transportHeader)
+		icmp.SetChecksum(header.ICMPv4Checksum(icmp, pkt.Data().Checksum()))
+	}
+	return nil
+}
+
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) tcpip.Error {
 	if err := e.addIPHeader(r.LocalAddress(), r.RemoteAddress(), pkt, params, nil /* options */); err != nil {
@@ -542,7 +591,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckOutput(pkt, stack.IP) {
+		if !nft.CheckOutput(pkt, r, stack.IP) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -562,6 +611,39 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 			ep.handleLocalPacket(pkt, true /* canSkipRXChecksum */)
 			return nil
 		}
+
+		// Similar to the `ip_route_me_harder` in the kernel,
+		// we need to find a new route for the packet.
+		// Implementation is similar to the func forwardUnicastPacket.
+		newRoute, err := stk.FindRoute(0 /* nic id */, netHeader.SourceAddress(), newDstAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
+		if err != nil {
+			e.stats.ip.OutgoingPacketErrors.Increment()
+			return err // Drop the packet
+		}
+		// Release the new route on exit.
+		defer newRoute.Release()
+
+		// Check if we need to recalculate the checksum.
+		// If the original route did not require a checksum but the new one does,
+		// we must calculate the full checksum; otherwise, NAT should have already
+		// done it.
+		if !r.RequiresTXTransportChecksum() && newRoute.RequiresTXTransportChecksum() {
+			if err := recalculateChecksum(pkt, newRoute); err != nil {
+				e.stats.ip.OutgoingPacketErrors.Increment()
+				return err // Drop the packet
+			}
+		}
+
+		// Update the route to the new route.
+		r = newRoute
+
+		// Use the new endpoint to write the packet.
+		forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
+		if !ok {
+			e.stats.ip.OutgoingPacketErrors.Increment()
+			return &tcpip.ErrUnknownNICID{}
+		}
+		return forwardToEp.writePacketPostRouting(r, pkt, true /* headerIncluded */)
 	}
 
 	return e.writePacketPostRouting(r, pkt, false /* headerIncluded */)
@@ -589,7 +671,7 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckPostrouting(pkt, stack.IP) {
+		if !nft.CheckPostrouting(pkt, r, stack.IP) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -706,7 +788,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckForward(pkt, stack.IP) {
+		if !nft.CheckForward(pkt, route, stack.IP) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -746,6 +828,10 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 	// operation.
 	newHdr.SetChecksum(0)
 	newHdr.SetChecksum(^newHdr.CalculateChecksum())
+
+	if route.RequiresTXTransportChecksum() {
+		newPkt.CalculateTransportChecksum()
+	}
 
 	switch err := forwardToEp.writePacketPostRouting(route, newPkt, true /* headerIncluded */); err.(type) {
 	case nil:
@@ -815,7 +901,7 @@ func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingEr
 		}
 
 		if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-			if !nft.CheckForward(pkt, stack.IP) {
+			if !nft.CheckForward(pkt, nil /* route */, stack.IP) {
 				// nftables is telling us to drop the packet.
 				return nil
 			}
@@ -874,7 +960,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	defer hView.Release()
 
 	if !e.nic.IsLoopback() {
-		if !e.protocol.options.AllowExternalLoopbackTraffic {
+		if !e.protocol.allowExternalLoopbackTraffic.Load() {
 			if header.IsV4LoopbackAddress(h.SourceAddress()) {
 				martianPacketLogger.Infof("Martian packet dropped with loopback source address. If your traffic is unexpectedly dropped, you may want to allow martian packets.")
 				stats.InvalidSourceAddressesReceived.Increment()
@@ -900,8 +986,10 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			}
 		}
 
+		nicID := e.nic.ID()
 		// Loopback traffic skips the prerouting chain.
-		inNicName := stk.FindNICNameFromID(e.nic.ID())
+		inNicName := stk.FindNICNameFromID(nicID)
+		pkt.InputNICID = nicID
 		if ok := stk.IPTables().CheckPrerouting(pkt, e, inNicName); !ok {
 			// iptables is telling us to drop the packet.
 			stats.IPTablesPreroutingDropped.Increment()
@@ -909,7 +997,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 
 		if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-			if !nft.CheckPrerouting(pkt, stack.IP) {
+			if !nft.CheckPrerouting(pkt, nil /* route */, stack.IP) {
 				// nftables is telling us to drop the packet.
 				return
 			}
@@ -1257,7 +1345,7 @@ func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, 
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckInput(pkt, stack.IP) {
+		if !nft.CheckInput(pkt, nil /* route */, stack.IP) {
 			// nftables is telling us to drop the packet.
 			return
 		}
@@ -1330,7 +1418,13 @@ func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, 
 
 		// The reassembler doesn't take care of fixing up the header, so we need
 		// to do it here.
-		h.SetTotalLength(uint16(pkt.Data().Size() + len(h)))
+		totalLength := pkt.Data().Size() + len(h)
+		if totalLength > math.MaxUint16 {
+			stats.ip.MalformedPacketsReceived.Increment()
+			stats.ip.MalformedFragmentsReceived.Increment()
+			return
+		}
+		h.SetTotalLength(uint16(totalLength))
 		h.SetFlagsFragmentOffset(0, 0)
 
 		e.protocol.parseTransport(pkt, tcpip.TransportProtocolNumber(transProtoNum))
@@ -1578,6 +1672,11 @@ type protocol struct {
 
 	options Options
 
+	// allowExternalLoopbackTraffic mirrors options.AllowExternalLoopbackTraffic
+	// but is runtime-settable (via SetOption / the route_localnet sysctl). It is
+	// read lock-free on the packet path, so it is stored atomically.
+	allowExternalLoopbackTraffic atomicbitops.Bool
+
 	multicastRouteTable multicast.RouteTable
 	// multicastForwardingDisp is the multicast forwarding event dispatcher that
 	// an integrator can provide to receive multicast forwarding events. Note
@@ -1608,6 +1707,9 @@ func (p *protocol) SetOption(option tcpip.SettableNetworkProtocolOption) tcpip.E
 	case *tcpip.DefaultTTLOption:
 		p.SetDefaultTTL(uint8(*v))
 		return nil
+	case *tcpip.AllowExternalLoopbackTrafficOption:
+		p.allowExternalLoopbackTraffic.Store(bool(*v))
+		return nil
 	default:
 		return &tcpip.ErrUnknownProtocolOption{}
 	}
@@ -1618,6 +1720,9 @@ func (p *protocol) Option(option tcpip.GettableNetworkProtocolOption) tcpip.Erro
 	switch v := option.(type) {
 	case *tcpip.DefaultTTLOption:
 		*v = tcpip.DefaultTTLOption(p.DefaultTTL())
+		return nil
+	case *tcpip.AllowExternalLoopbackTrafficOption:
+		*v = tcpip.AllowExternalLoopbackTrafficOption(p.allowExternalLoopbackTraffic.Load())
 		return nil
 	default:
 		return &tcpip.ErrUnknownProtocolOption{}
@@ -1888,7 +1993,8 @@ func (p *protocol) allowICMPReply(icmpType header.ICMPv4Type, code header.ICMPv4
 }
 
 // SendRejectionError implements stack.RejectIPv4WithHandler.
-func (p *protocol) SendRejectionError(pkt *stack.PacketBuffer, rejectWith stack.RejectIPv4WithICMPType, inputHook bool) tcpip.Error {
+func (p *protocol) SendRejectionError(pkt *stack.PacketBuffer, rejectWith stack.RejectIPv4WithICMPType, hook stack.Hook) tcpip.Error {
+	inputHook := hook == stack.Input
 	switch rejectWith {
 	case stack.RejectIPv4WithICMPNetUnreachable:
 		return p.returnError(&icmpReasonNetworkUnreachable{}, pkt, inputHook)
@@ -1902,6 +2008,8 @@ func (p *protocol) SendRejectionError(pkt *stack.PacketBuffer, rejectWith stack.
 		return p.returnError(&icmpReasonHostProhibited{}, pkt, inputHook)
 	case stack.RejectIPv4WithICMPAdminProhibited:
 		return p.returnError(&icmpReasonAdministrativelyProhibited{}, pkt, inputHook)
+	case stack.RejectIPv4WithTCPReset:
+		return ip.RejectWithTCPReset(pkt, ProtocolNumber, p.stack, hook)
 	default:
 		panic(fmt.Sprintf("unhandled %[1]T = %[1]d", rejectWith))
 	}
@@ -1987,6 +2095,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 			defaultTTL: atomicbitops.FromUint32(DefaultTTL),
 			options:    opts,
 		}
+		p.allowExternalLoopbackTraffic.Store(opts.AllowExternalLoopbackTraffic)
 		p.fragmentation = fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
 		p.eps = make(map[tcpip.NICID]*endpoint)
 		// Set ICMP rate limiting to Linux defaults.
