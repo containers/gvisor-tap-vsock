@@ -13,7 +13,7 @@ require (
 	github.com/inetaf/tcpproxy v0.0.0-20260515195445-c159a6051109
 	github.com/insomniacslk/dhcp v0.0.0-20240710054256-ddd8a41251c9
 	github.com/linuxkit/virtsock v0.0.0-20220523201153-1a23e78aa7a2
-	github.com/mdlayher/vsock v1.3.0
+	github.com/mdlayher/vsock v1.4.0
 	github.com/miekg/dns v1.1.73
 	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
@@ -42,7 +42,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240909124753-873cd0166683 // indirect
-	github.com/mdlayher/socket v0.6.0 // indirect
+	github.com/mdlayher/socket v0.8.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.14 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
