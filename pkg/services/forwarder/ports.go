@@ -238,6 +238,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		}
 
 		var p tcpproxy.Proxy
+		p.ListenFunc = listen
 		p.AddRoute(local, &tcpproxy.DialProxy{
 			Addr: remote,
 			DialContext: func(ctx context.Context, _, _ string) (conn net.Conn, e error) {
