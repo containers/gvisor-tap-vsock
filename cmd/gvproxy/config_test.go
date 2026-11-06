@@ -724,6 +724,7 @@ interfaces:
 			InputConfig: `stack:
     tcpMaxInFlight: 500
     tcpConnectTimeout: 10
+    tcpTimeWaitTimeout: 1
 `,
 			ResultConfig: `log-level: info
 stack:
@@ -739,6 +740,7 @@ stack:
         - 192.168.127.254
     tcpMaxInFlight: 500
     tcpConnectTimeout: 10
+    tcpTimeWaitTimeout: 1
 `,
 		},
 	}
