@@ -2,6 +2,8 @@ package dns
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"regexp"
 	"testing"
@@ -689,6 +691,71 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeSuccess))
 		gomega.Expect(m.Answer).To(gomega.BeEmpty())
 	})
+})
+
+// failingResolver is an upstreamResolver whose lookups all fail with err.
+type failingResolver struct {
+	err error
+}
+
+func (f *failingResolver) LookupIPAddr(context.Context, string) ([]net.IPAddr, error) {
+	return nil, f.err
+}
+
+func (f *failingResolver) LookupCNAME(context.Context, string) (string, error) {
+	return "", f.err
+}
+
+func (f *failingResolver) LookupMX(context.Context, string) ([]*net.MX, error) {
+	return nil, f.err
+}
+
+func (f *failingResolver) LookupNS(context.Context, string) ([]*net.NS, error) {
+	return nil, f.err
+}
+
+func (f *failingResolver) LookupSRV(context.Context, string, string, string) (string, []*net.SRV, error) {
+	return "", nil, f.err
+}
+
+func (f *failingResolver) LookupTXT(context.Context, string) ([]string, error) {
+	return nil, f.err
+}
+
+var _ = ginkgo.Describe("upstream lookup errors", func() {
+	qtypes := []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeCNAME, dns.TypeMX, dns.TypeNS, dns.TypeSRV, dns.TypeTXT}
+
+	query := func(err error, qtype uint16) *dns.Msg {
+		server, newErr := NewWithUpstreamResolver(nil, nil, []types.Zone{}, &failingResolver{err: err})
+		gomega.Expect(newErr).ToNot(gomega.HaveOccurred())
+		m := new(dns.Msg)
+		m.SetQuestion("example.org.", qtype)
+		server.handler.addAnswers(m)
+		return m
+	}
+
+	ginkgo.DescribeTable("should map the lookup error to the right rcode",
+		func(err error, expectedRcode int) {
+			for _, qtype := range qtypes {
+				m := query(err, qtype)
+				gomega.Expect(m.Rcode).To(gomega.Equal(expectedRcode),
+					"qtype %s: expected %s, got %s", dns.TypeToString[qtype], dns.RcodeToString[expectedRcode], dns.RcodeToString[m.Rcode])
+				gomega.Expect(m.Answer).To(gomega.BeEmpty())
+			}
+		},
+		ginkgo.Entry("not found -> NXDOMAIN",
+			&net.DNSError{Err: "no such host", Name: "example.org.", IsNotFound: true}, dns.RcodeNameError),
+		ginkgo.Entry("wrapped not found -> NXDOMAIN",
+			fmt.Errorf("lookup: %w", &net.DNSError{Err: "no such host", Name: "example.org.", IsNotFound: true}), dns.RcodeNameError),
+		ginkgo.Entry("timeout -> SERVFAIL",
+			&net.DNSError{Err: "i/o timeout", Name: "example.org.", IsTimeout: true}, dns.RcodeServerFailure),
+		ginkgo.Entry("temporary failure -> SERVFAIL",
+			&net.DNSError{Err: "server misbehaving", Name: "example.org.", IsTemporary: true}, dns.RcodeServerFailure),
+		ginkgo.Entry("context canceled -> SERVFAIL",
+			context.Canceled, dns.RcodeServerFailure),
+		ginkgo.Entry("generic error -> SERVFAIL",
+			errors.New("network is unreachable"), dns.RcodeServerFailure),
+	)
 })
 
 type ARecord struct {
