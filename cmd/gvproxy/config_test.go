@@ -74,6 +74,19 @@ func TestConfigInit(t *testing.T) {
 	}
 }
 
+func TestValidateEgressPolicyAPIToken(t *testing.T) {
+	t.Parallel()
+	if err := validateEgressPolicyAPIToken(true, ""); err == nil {
+		t.Fatal("required egress policy accepted an empty API token")
+	}
+	if err := validateEgressPolicyAPIToken(true, "synthetic-valid-test-token"); err != nil {
+		t.Fatalf("required egress policy rejected a configured API token: %v", err)
+	}
+	if err := validateEgressPolicyAPIToken(false, ""); err != nil {
+		t.Fatalf("legacy mode rejected an empty API token: %v", err)
+	}
+}
+
 func getCaseDataPossibleDefaultListen() []string {
 	return []string{
 		"unix:///var/run/gvproxy/default.sock",

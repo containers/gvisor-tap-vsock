@@ -41,6 +41,11 @@ func (n *VirtualNetwork) newServicesMux() *http.ServeMux {
 			apilog.SetError(r, err)
 		}
 	})
+	reloadHandler := http.Handler(http.HandlerFunc(n.reloadEgressPolicyHandler))
+	if n.apiToken != "" {
+		reloadHandler = tokenauth.BearerAuthMiddleware(n.apiToken)(reloadHandler)
+	}
+	mux.Handle("/egress-policy/reload", reloadHandler)
 	mux.HandleFunc("/tunnel", func(w http.ResponseWriter, r *http.Request) {
 		ip := r.URL.Query().Get("ip")
 		apilog.AddField(r, "ip", ip)
@@ -103,7 +108,42 @@ func (n *VirtualNetwork) newServicesMux() *http.ServeMux {
 
 // ServicesMux returns the services mux wrapped with audit logging middleware.
 func (n *VirtualNetwork) ServicesMux() http.Handler {
-	return apilog.Middleware(n.newServicesMux())
+	handler := http.Handler(n.newServicesMux())
+	if n.apiToken != "" {
+		handler = tokenauth.BearerAuthMiddleware(n.apiToken)(handler)
+	}
+	return apilog.Middleware(handler)
+}
+
+func (n *VirtualNetwork) reloadEgressPolicyHandler(w http.ResponseWriter, r *http.Request) {
+	if n.apiToken == "" {
+		http.Error(w, "API token is required", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.ContentLength > 0 || len(r.TransferEncoding) > 0 {
+		http.Error(w, "request body is not supported", http.StatusBadRequest)
+		return
+	}
+	if n.egressPolicyLoader == nil {
+		http.Error(w, "policy reload is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := n.ReloadEgressPolicy(); err != nil {
+		log.Errorf("egress policy reload rejected: %v", err)
+		http.Error(w, "policy reload rejected", http.StatusUnprocessableEntity)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(struct {
+		Revision string `json:"revision"`
+	}{Revision: n.EgressPolicyRevision()}); err != nil {
+		apilog.SetError(r, err)
+	}
 }
 
 // Mux returns the full mux (services + connect) wrapped with audit logging middleware.

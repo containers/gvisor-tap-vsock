@@ -199,7 +199,10 @@ var _ = ginkgo.Describe("dns add test", func() {
 		}))
 	})
 
-	ginkgo.It("Should pass DNS requests to default system DNS server", func() {
+	ginkgo.It("forwards DNS requests to the configured upstream resolver", func() {
+		server.handler.upstream = &mockdns.Resolver{Zones: map[string]mockdns.Zone{
+			"fixture.test.": {A: []string{"192.0.2.42"}},
+		}}
 		m := &dns.Msg{
 			MsgHdr: dns.MsgHdr{
 				Authoritative:     false,
@@ -212,15 +215,16 @@ var _ = ginkgo.Describe("dns add test", func() {
 		}
 
 		m.Question[0] = dns.Question{
-			Name:   "redhat.com.",
+			Name:   "fixture.test.",
 			Qtype:  1,
 			Qclass: 1,
 		}
 
 		server.handler.addAnswers(m)
 
-		gomega.Expect(m.Answer[0].Header().Name).To(gomega.Equal("redhat.com."))
-		gomega.Expect(m.Answer[0].String()).To(gomega.SatisfyAny(gomega.ContainSubstring("34.235.198.240"), gomega.ContainSubstring("52.200.142.250")))
+		gomega.Expect(m.Answer).To(gomega.HaveLen(1))
+		gomega.Expect(m.Answer[0].Header().Name).To(gomega.Equal("fixture.test."))
+		gomega.Expect(m.Answer[0].String()).To(gomega.ContainSubstring("192.0.2.42"))
 	})
 
 	ginkgo.It("should match existing zones case-insensitively", func() {
@@ -701,8 +705,8 @@ func TestDNS(t *testing.T) {
 
 	upstream := &mockdns.Resolver{
 		Zones: map[string]mockdns.Zone{
-			"redhat.com.": {
-				A: []string{"52.200.142.250", "34.235.198.240"},
+			"fixture.test.": {
+				A: []string{"192.0.2.42", "192.0.2.43"},
 			},
 		},
 	}
@@ -724,38 +728,36 @@ func TestDNS(t *testing.T) {
 			return d.DialContext(ctx, network, nameserver)
 		},
 	}
-	redhatdotcom := ARecord{
-		name:        "redhat.com",
-		expectedIPs: []string{"52.200.142.250"},
+	fixture := ARecord{
+		name:        "fixture.test",
+		expectedIPs: []string{"192.0.2.42", "192.0.2.43"},
 	}
-	record := redhatdotcom
+	record := fixture
 	{
 		log.Infof("looking up %s", record.name)
 		ipGvisor, err := r.LookupHost(context.Background(), record.name)
 		require.NoError(t, err)
-		require.Subset(t, ipGvisor, record.expectedIPs)
+		require.ElementsMatch(t, record.expectedIPs, ipGvisor)
 		log.Infof("ip gvisor: %+v", ipGvisor)
-
-		ipGo, err := net.LookupHost(record.name)
-		require.NoError(t, err)
-		log.Infof("ip go: %+v", ipGo)
-		require.Subset(t, ipGvisor, ipGo)
 	}
 }
 
 func startDNSServer(upstream upstreamResolver) (string, func(), error) {
-	udpConn, err := net.ListenPacket("udp", "127.0.0.1:5354")
+	udpConn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		return "", nil, err
 	}
 
-	tcpLn, err := net.Listen("tcp", "127.0.0.1:5354")
+	tcpLn, err := net.Listen("tcp", udpConn.LocalAddr().String())
 	if err != nil {
+		_ = udpConn.Close()
 		return "", nil, err
 	}
 
 	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream)
 	if err != nil {
+		_ = udpConn.Close()
+		_ = tcpLn.Close()
 		return "", nil, err
 	}
 
@@ -769,7 +771,7 @@ func startDNSServer(upstream upstreamResolver) (string, func(), error) {
 			log.Errorf("serve TCP error: %T %s", err, err)
 		}
 	}()
-	return "127.0.0.1:5354", func() {
+	return udpConn.LocalAddr().String(), func() {
 		udpConn.Close()
 		tcpLn.Close()
 	}, nil

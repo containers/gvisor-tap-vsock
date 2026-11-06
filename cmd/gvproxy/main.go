@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -45,8 +46,25 @@ func main() {
 	log.Info(GvproxyVersion())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	// Make this the last defer statement in the stack
-	defer log.Exit(exitCode)
+	if config.RequireOwnerLease {
+		lease := os.NewFile(3, "gateway-supervisor-lease")
+		if lease == nil {
+			log.Fatal("gateway supervisor lease is missing")
+		}
+		info, err := lease.Stat()
+		if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+			log.Fatal("gateway supervisor lease is invalid")
+		}
+		defer lease.Close()
+		go func() {
+			_, _ = io.Copy(io.Discard, lease)
+			cancel()
+		}()
+	}
+	// Make this the last defer statement in the stack. The closure is required
+	// because deferred arguments are evaluated immediately; log.Exit(exitCode)
+	// would always observe the initial zero value and mask startup failures.
+	defer func() { log.Exit(exitCode) }()
 
 	// Create a PID file if requested
 	if config.PIDFile != "" {
@@ -117,22 +135,26 @@ func InDebugMode() bool {
 	return log.GetLevel().String() == "debug"
 }
 
+func validateEgressPolicyAPIToken(required bool, token string) error {
+	if required && token == "" {
+		return errors.New("API token is required when exposing the services API or enabling egress policy")
+	}
+	return nil
+}
+
 func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
-	vn, err := virtualnetwork.New(&config.Stack)
+	// Load authentication before starting listeners. Egress policy mode must
+	// never expose the policy or service API through the legacy open mode.
+	apiToken, err := tokenauth.ReadToken(config.APITokenFile)
 	if err != nil {
 		return err
 	}
-
-	g.Go(func() error {
-		<-ctx.Done()
-		if err := vn.Close(); err != nil {
-			log.Errorf("error shutting down virtual network: %q", err)
-		}
+	requireAPIToken := config.RequireEgressPolicy || config.Stack.EgressPolicy != nil || config.Services != ""
+	if err := validateEgressPolicyAPIToken(requireAPIToken, apiToken); err != nil {
 		return err
-	})
+	}
 
-	// Configure API token from file or environment variable
-	apiToken, err := tokenauth.ReadToken(config.APITokenFile)
+	vn, err := virtualnetwork.New(&config.Stack, config.RequireEgressPolicy)
 	if err != nil {
 		return err
 	}
@@ -142,6 +164,43 @@ func run(ctx context.Context, g *errgroup.Group, config *GvproxyConfig) error {
 	} else {
 		log.Warning("No API token configured, API authentication disabled (backwards compatibility mode)")
 	}
+	vn.SetEgressPolicyLoader(func() (*types.EgressPolicy, error) {
+		if config.ConfigPath == "" {
+			return nil, errors.New("gvproxy was not started with -config")
+		}
+		return LoadEgressPolicyFromFile(config.ConfigPath)
+	})
+
+	g.Go(func() error {
+		<-ctx.Done()
+		if err := vn.Close(); err != nil {
+			log.Errorf("error shutting down virtual network: %q", err)
+		}
+		return err
+	})
+
+	// SIGHUP reloads only the egress policy. Invalid updates are rejected and
+	// the previous immutable snapshot remains active.
+	sighup := make(chan os.Signal, 1)
+	signal.Notify(sighup, syscall.SIGHUP)
+	g.Go(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-sighup:
+				if config.ConfigPath == "" {
+					log.Warning("SIGHUP ignored: gvproxy was not started with -config")
+					continue
+				}
+				if err := vn.ReloadEgressPolicy(); err != nil {
+					log.Errorf("egress policy reload rejected: %v", err)
+					continue
+				}
+				log.Infof("egress policy reloaded revision=%s", vn.EgressPolicyRevision())
+			}
+		}
+	})
 
 	log.Info("waiting for clients...")
 

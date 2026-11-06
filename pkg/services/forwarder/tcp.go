@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/inetaf/tcpproxy"
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -23,7 +24,7 @@ const (
 	defaultTCPConnectTimeout = 30 * time.Second
 )
 
-func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, maxInFlight int, connectTimeout time.Duration) *tcp.Forwarder {
+func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, maxInFlight int, connectTimeout time.Duration, policy *types.EgressPolicyHolder) *tcp.Forwarder {
 	if maxInFlight <= 0 {
 		maxInFlight = defaultTCPMaxInFlight
 	}
@@ -43,11 +44,25 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 			localAddress = replaced
 		}
 		natLock.Unlock()
+		if !policy.Allows("tcp", localAddress.String(), r.ID().LocalPort) {
+			log.Debugf("egress policy denied tcp %s:%d revision=%s", localAddress, r.ID().LocalPort, policy.Revision())
+			r.Complete(true)
+			return
+		}
 		outbound, err := net.DialTimeout("tcp", net.JoinHostPort(localAddress.String(), fmt.Sprint(r.ID().LocalPort)), connectTimeout)
 		if err != nil {
 			log.Tracef("net.DialTimeout() = %v", err)
 			r.Complete(true)
 			return
+		}
+		flowID := policy.Track("tcp", localAddress.String(), r.ID().LocalPort, outbound)
+		if flowID == 0 && policy.Enabled() {
+			_ = outbound.Close()
+			r.Complete(true)
+			return
+		}
+		if flowID != 0 {
+			defer policy.Untrack(flowID)
 		}
 
 		var wq waiter.Queue
