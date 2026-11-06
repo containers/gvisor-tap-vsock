@@ -20,11 +20,11 @@
 package stack
 
 import (
-	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math/rand"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/log"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
@@ -113,6 +114,10 @@ type Stack struct {
 	// clock is used to generate user-visible times.
 	clock tcpip.Clock
 
+	// clockResolution is an upper bound on the quantization interval of
+	// monotonic timestamps returned by clock.
+	clockResolution time.Duration
+
 	// handleLocal allows non-loopback interfaces to loop packets.
 	handleLocal bool
 
@@ -121,7 +126,11 @@ type Stack struct {
 	tables *IPTables `state:"nosave"`
 
 	// nftables is the nftables interface for packet filtering and manipulation rules.
-	nftables NFTablesInterface `state:"nosave"`
+	// Using atomic.Pointer for RCU lock-free reads.
+	nftables atomic.Pointer[NFTablesInterface] `state:"nosave"`
+
+	// nftablesUpdateMu serializes concurrent netlink batch modifications to nftables.
+	nftablesUpdateMu sync.Mutex `state:"nosave"`
 
 	// nftablesConfigured indicates whether NFTables is configured with at
 	// least one rule on a chain at a network hook.
@@ -183,17 +192,23 @@ type Stack struct {
 	// initialized at stack startup.
 	tsOffsetSecret uint32
 
-	// saveRestoreEnabled indicates whether the stack is saved and restored.
-	saveRestoreEnabled bool
-
 	// removeConf indicates whether to remove NICs and routes and terminate
 	// active connections before saving. This flag will be set to true only
 	// when resume is false.
 	removeConf bool `state:"nosave"`
 
+	// allowLiveTCPMigration allows TCP connection state to be migrated.
+	// If false, any connected TCP endpoints will be terminated
+	// during save/restore.
+	allowLiveTCPMigration bool `state:"nosave"`
+
 	// externalNetworkingDisabled indicates whether external networking is
 	// disabled. This means all non-loopback NICs are disabled.
 	externalNetworkingDisabled bool
+
+	// allowConnectedOnSave indicates whether connections should be
+	// allowed to remain connected during save.
+	allowConnectedOnSave bool
 }
 
 // NetworkProtocolFactory instantiates a network protocol.
@@ -221,6 +236,17 @@ type Options struct {
 	// If Clock is nil, tcpip.NewStdClock() will be used.
 	Clock tcpip.Clock
 
+	// ClockResolution is an upper bound on the quantization interval of
+	// timestamps returned by Clock.NowMonotonic. It should be set when the
+	// clock advances in discrete steps large enough to affect TCP loss detection;
+	// for example, some Windows monotonic clocks commonly update every 500 us.
+	// TCP RACK uses this value to avoid declaring loss based on timestamp
+	// quantization alone. It does not describe timer wake-up precision.
+	//
+	// A value of zero means that no quantization allowance is needed or known.
+	// Values less than zero are clamped to zero.
+	ClockResolution time.Duration
+
 	// Stats are optional statistic counters.
 	Stats tcpip.Stats
 
@@ -243,6 +269,11 @@ type Options struct {
 	// AllowPacketEndpointWrite determines if packet endpoints support write
 	// operations.
 	AllowPacketEndpointWrite bool
+
+	// AllowLiveTCPMigration allows TCP connection state to be migrated.
+	// If false, any connected TCP endpoints will be terminated
+	// during save/restore.
+	AllowLiveTCPMigration bool
 
 	// RandSource is an optional source to use to generate random
 	// numbers. If omitted it defaults to a Source seeded by the data
@@ -399,6 +430,11 @@ func New(opts Options) *Stack {
 
 	opts.NUDConfigs.resetInvalidFields()
 
+	clockResolution := opts.ClockResolution
+	if clockResolution < 0 {
+		clockResolution = 0
+	}
+
 	s := &Stack{
 		transportProtocols:           make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
 		networkProtocols:             make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
@@ -408,10 +444,10 @@ func New(opts Options) *Stack {
 		cleanupEndpoints:             make(map[TransportEndpoint]struct{}),
 		PortManager:                  ports.NewPortManager(),
 		clock:                        clock,
+		clockResolution:              clockResolution,
 		stats:                        opts.Stats.FillIn(),
 		handleLocal:                  opts.HandleLocal,
 		tables:                       opts.IPTables,
-		nftables:                     opts.NFTables,
 		icmpRateLimiter:              NewICMPRateLimiter(clock),
 		seed:                         secureRNG.Uint32(),
 		nudConfigs:                   opts.NUDConfigs,
@@ -428,9 +464,11 @@ func New(opts Options) *Stack {
 			Default: DefaultBufferSize,
 			Max:     DefaultMaxBufferSize,
 		},
-		tcpInvalidRateLimit: defaultTCPInvalidRateLimit,
-		tsOffsetSecret:      secureRNG.Uint32(),
+		tcpInvalidRateLimit:   defaultTCPInvalidRateLimit,
+		tsOffsetSecret:        secureRNG.Uint32(),
+		allowLiveTCPMigration: opts.AllowLiveTCPMigration,
 	}
+	s.SetNFTables(opts.NFTables)
 
 	// Add specified network protocols.
 	for _, netProtoFactory := range opts.NetworkProtocols {
@@ -547,6 +585,16 @@ func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h f
 // scheduling work.
 func (s *Stack) Clock() tcpip.Clock {
 	return s.clock
+}
+
+// ClockResolution returns an upper bound on the quantization interval of
+// monotonic timestamps returned by the Stack's clock.
+//
+// A zero value means to trust the clock advances between reads at a precision
+// close to the precision of the value it returns; consuming code should need no
+// corrections for clock resolution.
+func (s *Stack) ClockResolution() time.Duration {
+	return s.clockResolution
 }
 
 // Stats returns a mutable copy of the current stats.
@@ -743,12 +791,16 @@ func (s *Stack) NICMulticastForwarding(id tcpip.NICID, protocol tcpip.NetworkPro
 
 // PortRange returns the UDP and TCP inclusive range of ephemeral ports used in
 // both IPv4 and IPv6.
+//
+// +checklocksexclude:s.PortManager.ephemeralMu
 func (s *Stack) PortRange() (uint16, uint16) {
 	return s.PortManager.PortRange()
 }
 
 // SetPortRange sets the UDP and TCP IPv4 and IPv6 ephemeral port range
 // (inclusive).
+//
+// +checklocksexclude:s.PortManager.ephemeralMu
 func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
 	return s.PortManager.SetPortRange(start, end)
 }
@@ -904,6 +956,9 @@ type NICOptions struct {
 	// EnableExperimentIPOption specifies whether the NIC is responsible for
 	// passing the experiment IP option.
 	EnableExperimentIPOption bool
+
+	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
+	Kind string
 }
 
 // GetNICByID return a network device associated with the specified ID.
@@ -1187,6 +1242,9 @@ type NICInfo struct {
 
 	// Primary is the index of the main controlling interface in a bonded setup.
 	Primary tcpip.NICID
+
+	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
+	Kind string
 }
 
 // HasNIC returns true if the NICID is defined in the stack.
@@ -1239,6 +1297,7 @@ func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 		ARPHardwareType:     nic.NetworkLinkEndpoint.ARPHardwareType(),
 		Forwarding:          make(map[tcpip.NetworkProtocolNumber]bool),
 		MulticastForwarding: make(map[tcpip.NetworkProtocolNumber]bool),
+		Kind:                nic.kind,
 	}
 
 	for proto := range s.networkProtocols {
@@ -2075,10 +2134,20 @@ func (s *Stack) getNICs() map[tcpip.NICID]*nic {
 	return nics
 }
 
+// ResetConfig resets the stack's NICs and ID generator.
+func (s *Stack) ResetConfig() {
+	nics := make(map[tcpip.NICID]*nic)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nics = nics
+	s.loopbackNIC = nil
+	s.nicIDGen.Store(0)
+}
+
 // ReplaceConfig replaces config in the loaded stack.
 func (s *Stack) ReplaceConfig(st *Stack) {
 	if st == nil {
-		panic("stack.Stack cannot be nil when netstack s/r is enabled")
+		panic("stack.Stack cannot be nil when replacing config")
 	}
 
 	// Update route table.
@@ -2091,11 +2160,7 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 
 	// Update iptables and nftables.
 	s.tables = st.IPTables()
-	s.nftables = st.NFTables()
-
-	// Update NICs.
-	s.nics = make(map[tcpip.NICID]*nic)
-	s.loopbackNIC = nil
+	s.SetNFTables(st.NFTables())
 	for id, nic := range nics {
 		nic.stack = s
 		s.nics[id] = nic
@@ -2116,7 +2181,6 @@ func (s *Stack) Restore() {
 	s.mu.Lock()
 	eps := s.restoredEndpoints
 	s.restoredEndpoints = nil
-	saveRestoreEnabled := s.saveRestoreEnabled
 	s.mu.Unlock()
 	for _, e := range eps {
 		e.Restore(s)
@@ -2126,13 +2190,9 @@ func (s *Stack) Restore() {
 	// protocol level background workers.
 	tcpip.AsyncLoading.Wait()
 
-	// Now resume any protocol level background workers.
+	// Now restore any protocol level background workers.
 	for _, p := range s.transportProtocols {
-		if saveRestoreEnabled {
-			p.proto.Restore()
-		} else {
-			p.proto.Resume()
-		}
+		p.proto.Restore()
 	}
 }
 
@@ -2208,6 +2268,12 @@ func (s *Stack) unregisterPacketEndpointLocked(nicID tcpip.NICID, netProto tcpip
 // WritePacketToRemote writes a payload on the specified NIC using the provided
 // network protocol and remote link address.
 func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.Buffer) tcpip.Error {
+	return s.WritePacketToRemoteWithMark(nicID, remote, netProto, payload, 0)
+}
+
+// WritePacketToRemoteWithMark writes a payload on the specified NIC using the
+// provided network protocol, remote link address, and packet mark.
+func (s *Stack) WritePacketToRemoteWithMark(nicID tcpip.NICID, remote tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.Buffer, mark uint32) tcpip.Error {
 	s.mu.Lock()
 	nic, ok := s.nics[nicID]
 	s.mu.Unlock()
@@ -2217,6 +2283,7 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 	pkt := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: int(nic.MaxHeaderLength()),
 		Payload:            payload,
+		Mark:               mark,
 	})
 	defer pkt.DecRef()
 	pkt.NetworkProtocolNumber = netProto
@@ -2226,6 +2293,12 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 // WriteRawPacket writes data directly to the specified NIC without adding any
 // headers.
 func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, payload buffer.Buffer) tcpip.Error {
+	return s.WriteRawPacketWithMark(nicID, proto, payload, 0)
+}
+
+// WriteRawPacketWithMark writes data directly to the specified NIC without adding any
+// headers, setting the specified packet mark.
+func (s *Stack) WriteRawPacketWithMark(nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, payload buffer.Buffer, mark uint32) tcpip.Error {
 	s.mu.RLock()
 	nic, ok := s.nics[nicID]
 	s.mu.RUnlock()
@@ -2235,6 +2308,7 @@ func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNum
 
 	pkt := NewPacketBuffer(PacketBufferOptions{
 		Payload: payload,
+		Mark:    mark,
 	})
 	defer pkt.DecRef()
 	pkt.NetworkProtocolNumber = proto
@@ -2300,14 +2374,37 @@ func (s *Stack) IPTables() *IPTables {
 	return s.tables
 }
 
+// SetIPTables sets the stack's iptables.
+func (s *Stack) SetIPTables(tables *IPTables) {
+	s.tables = tables
+}
+
 // NFTables returns the stack's nftables.
 func (s *Stack) NFTables() NFTablesInterface {
-	return s.nftables
+	val := s.nftables.Load()
+	if val == nil {
+		return nil
+	}
+	return *val
 }
 
 // SetNFTables sets the stack's nftables.
 func (s *Stack) SetNFTables(nft NFTablesInterface) {
-	s.nftables = nft
+	if nft == nil {
+		s.nftables.Store(nil)
+	} else {
+		s.nftables.Store(&nft)
+	}
+}
+
+// LockNFTablesUpdate locks the stack's nftables update mutex for netlink batch modification.
+func (s *Stack) LockNFTablesUpdate() {
+	s.nftablesUpdateMu.Lock()
+}
+
+// UnlockNFTablesUpdate unlocks the stack's nftables update mutex.
+func (s *Stack) UnlockNFTablesUpdate() {
+	s.nftablesUpdateMu.Unlock()
 }
 
 // IsNFTablesConfigured returns true if the stack has nftables configured.
@@ -2543,38 +2640,6 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 	return id, peer.CreateNICWithOptions(id, linkEp, NICOptions{Name: name})
 }
 
-// EnableSaveRestore marks the saveRestoreEnabled to true.
-func (s *Stack) EnableSaveRestore() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.saveRestoreEnabled = true
-}
-
-// IsSaveRestoreEnabled returns true if save restore is enabled for the stack.
-func (s *Stack) IsSaveRestoreEnabled() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return s.saveRestoreEnabled
-}
-
-// contextID is this package's type for context.Context.Value keys.
-type contextID int
-
-const (
-	// CtxRestoreStack is a Context.Value key for the stack to be used in restore.
-	CtxRestoreStack contextID = iota
-)
-
-// RestoreStackFromContext returns the stack to be used during restore.
-func RestoreStackFromContext(ctx context.Context) *Stack {
-	if st := ctx.Value(CtxRestoreStack); st != nil {
-		return st.(*Stack)
-	}
-	return nil
-}
-
 // SetRemoveConf sets the removeConf in stack to the given value.
 func (s *Stack) SetRemoveConf(removeConf bool) {
 	s.mu.Lock()
@@ -2587,6 +2652,34 @@ func (s *Stack) GetRemoveConf() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.removeConf
+}
+
+// SetAllowConnectedOnSave sets allowConnectedOnSave in stack with the given value.
+func (s *Stack) SetAllowConnectedOnSave(allowConnectedOnSave bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.allowConnectedOnSave = allowConnectedOnSave
+}
+
+// GetAllowConnectedOnSave gets the allowConnectedOnSave from stack.
+func (s *Stack) GetAllowConnectedOnSave() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.allowConnectedOnSave
+}
+
+// AllowLiveTCPMigration returns if TCP connections can be migrated.
+func (s *Stack) AllowLiveTCPMigration() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.allowLiveTCPMigration
+}
+
+// SetAllowLiveTCPMigration sets if TCP connections can be migrated.
+func (s *Stack) SetAllowLiveTCPMigration(allow bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.allowLiveTCPMigration = allow
 }
 
 // DisableAllNonLoopbackNICs disables all non-loopback NICs in the stack.

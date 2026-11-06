@@ -60,8 +60,11 @@ func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Packet
 	// address, which promiscuous mode creates for each address that the stack
 	// does not own. Forwarding a request that gvisor answers would give the VM
 	// a second reply.
+	//
+	// Return false so gvisor knows the packet was not consumed: gvisor skips
+	// its built-in echo reply when the default handler returns true.
 	if !pkt.NetworkPacketInfo.LocalAddressTemporary {
-		return true
+		return false
 	}
 	f.handler(NewICMPForwarderRequest(f.stack, id, pkt.IncRef()))
 	return true
