@@ -85,7 +85,7 @@ func freeHostAddr(network string, ip net.IP) string {
 
 var _ = ginkgo.Describe("source IP propagation", func() {
 	ginkgo.It("should propagate routable IPv4 source addresses", func() {
-		bindAddr := sourceBindAddr(net.ParseIP("10.0.2.50"), 1234)
+		bindAddr := SourceBindAddr(net.ParseIP("10.0.2.50"), 1234)
 		gomega.Expect(bindAddr).ToNot(gomega.BeNil())
 		gomega.Expect(bindAddr.NIC).To(gomega.Equal(tcpip.NICID(1)))
 		gomega.Expect(bindAddr.Addr).To(gomega.Equal(tcpip.AddrFrom4([4]byte{10, 0, 2, 50})))
@@ -98,10 +98,10 @@ var _ = ginkgo.Describe("source IP propagation", func() {
 	// address on the (non-loopback) tap NIC. This covers host-local forwards
 	// such as 127.0.0.1:2222 -> 192.168.127.2:22.
 	ginkgo.It("should not propagate loopback or unspecified source addresses", func() {
-		gomega.Expect(sourceBindAddr(net.ParseIP("127.0.0.1"), 2222)).To(gomega.BeNil())
-		gomega.Expect(sourceBindAddr(net.IPv4zero, 0)).To(gomega.BeNil())
-		gomega.Expect(sourceBindAddr(net.ParseIP("::1"), 2222)).To(gomega.BeNil())
-		gomega.Expect(sourceBindAddr(net.ParseIP("2001:db8::1"), 2222)).To(gomega.BeNil())
+		gomega.Expect(SourceBindAddr(net.ParseIP("127.0.0.1"), 2222)).To(gomega.BeNil())
+		gomega.Expect(SourceBindAddr(net.IPv4zero, 0)).To(gomega.BeNil())
+		gomega.Expect(SourceBindAddr(net.ParseIP("::1"), 2222)).To(gomega.BeNil())
+		gomega.Expect(SourceBindAddr(net.ParseIP("2001:db8::1"), 2222)).To(gomega.BeNil())
 	})
 })
 
