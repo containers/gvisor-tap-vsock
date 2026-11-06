@@ -25,16 +25,7 @@ func (n *VirtualNetwork) Dial(network, addr string) (net.Conn, error) {
 }
 
 func (n *VirtualNetwork) DialContextTCP(ctx context.Context, addr string) (net.Conn, error) {
-	ip, port, err := splitIPPort("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	return gonet.DialContextTCP(ctx, n.stack,
-		tcpip.FullAddress{
-			NIC:  1,
-			Addr: tcpip.AddrFrom4Slice(ip.To4()),
-			Port: port,
-		}, ipv4.ProtocolNumber)
+	return n.DialContextTCPFrom(ctx, nil, addr)
 }
 
 // DialContextTCPFrom is like DialContextTCP, but the connection originates
