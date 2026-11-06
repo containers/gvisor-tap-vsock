@@ -35,6 +35,8 @@ type dnsHandler struct {
 	// forward raw queries for record types that Go's net.Resolver cannot
 	// look up directly (SOA, PTR, CAA, ...). It is called for each
 	// forwarded query so that changes to the host's DNS servers are followed.
+	// It is nil on Windows, where these queries go through the system's DNS
+	// client instead (see addAnswersFromSystem).
 	nameservers func() []string
 	client      *dns.Client
 }
@@ -267,7 +269,11 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 			// Record types not handled above (SOA, PTR, CAA, ...) are
 			// forwarded verbatim to the host's upstream nameservers, since
 			// Go's net.Resolver has no generic query for them.
-			h.addAnswersFromNameservers(m, q)
+			if h.nameservers == nil {
+				h.addAnswersFromSystem(m, q)
+			} else {
+				h.addAnswersFromNameservers(m, q)
+			}
 		}
 	}
 }
@@ -278,8 +284,8 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 func (h *dnsHandler) addAnswersFromNameservers(m *dns.Msg, q dns.Question) {
 	nameservers := h.nameservers()
 	if len(nameservers) == 0 {
-		// No upstream discovered (e.g. Windows, no /etc/resolv.conf): preserve
-		// the previous behavior (empty NOERROR) and leave the Rcode untouched.
+		// No upstream discovered (no valid server in /etc/resolv.conf):
+		// answer with an empty NOERROR and leave the Rcode untouched.
 		return
 	}
 
@@ -323,7 +329,7 @@ func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones [
 	handler := &dnsHandler{
 		zones:       zones,
 		upstream:    upstream,
-		nameservers: newResolvConf(hostResolvConf).nameservers,
+		nameservers: hostNameservers(),
 		client:      &dns.Client{},
 	}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
