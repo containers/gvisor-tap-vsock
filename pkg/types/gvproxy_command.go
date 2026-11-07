@@ -33,6 +33,9 @@ type GvproxyCommand struct {
 
 	// SSHPort to access the guest VM
 	SSHPort int
+
+	// GatewayExposeAllProtocols allows all protocols on the gateway /expose API
+	GatewayExposeAllProtocols bool
 }
 
 func NewGvproxyCommand() GvproxyCommand {
@@ -210,6 +213,11 @@ func (c *GvproxyCommand) ToCmdline() []string {
 	// log-file
 	if c.LogFile != "" {
 		args = append(args, "-log-file", c.LogFile)
+	}
+
+	// gateway-expose-all-protocols
+	if c.GatewayExposeAllProtocols {
+		args = append(args, "-gateway-expose-all-protocols")
 	}
 
 	return args
