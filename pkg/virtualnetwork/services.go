@@ -26,11 +26,11 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	translation := parseNATTable(configuration)
 
 	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess,
-		configuration.TCPMaxInFlight, time.Duration(configuration.TCPConnectTimeout)*time.Second)
+		configuration.TCPMaxInFlight, time.Duration(configuration.TCPConnectTimeout)*time.Second, configuration.DialFilter)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.Ec2MetadataAccess)
+	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.DialFilter)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
-	icmpForwarder := forwarder.ICMP(s, translation, &natLock)
+	icmpForwarder := forwarder.ICMP(s, translation, &natLock, configuration.DialFilter)
 	s.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
 
 	dnsMux, err := dnsServer(configuration, s)
@@ -81,6 +81,7 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler
 	if err != nil {
 		return nil, err
 	}
+	server.SetAnswerObserver(configuration.DNSObserver)
 
 	go func() {
 		if err := server.Serve(); err != nil {
