@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
@@ -24,6 +25,7 @@ const (
 )
 
 type GvproxyArgs struct {
+	tcpTimeWaitTimeout *int
 	config             string
 	endpoints          arrayFlags
 	debug              bool
@@ -121,6 +123,14 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.Var(&args.endpoints, "listen", "control endpoint")
 	flagSet.BoolVar(&args.debug, "debug", false, "Print debug info")
 	flagSet.StringVar(&args.pcapFile, "pcap", "", "Capture network traffic to a pcap file")
+	flagSet.Func("tcp-time-wait-timeout", "TCP TIME-WAIT timeout in seconds (default: 60)", func(value string) error {
+		timeout, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		args.tcpTimeWaitTimeout = &timeout
+		return nil
+	})
 	flagSet.IntVar(&args.mtu, "mtu", 0, "Set the MTU (default: 1500)")
 	flagSet.IntVar(&args.sshPort, "ssh-port", 2222, "Port to access the guest virtual machine. Must be between 1024 and 65535")
 	flagSet.StringVar(&args.subnet, "subnet", "192.168.127.0/24", "Subnet address in CIDR format, e.g. 192.168.127.0/24")
@@ -269,6 +279,9 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	// Default vpnkit mac addresses enabled only for the default mode
 
 	// Patch config with CLI args
+	if args.tcpTimeWaitTimeout != nil {
+		config.Stack.TCPTimeWaitTimeout = args.tcpTimeWaitTimeout
+	}
 	if args.qemuSocket != "" {
 		config.Interfaces.Qemu = args.qemuSocket
 	}

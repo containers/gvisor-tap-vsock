@@ -38,7 +38,7 @@ func parseTCPTimeWaitTimeout(timeoutSeconds int) (time.Duration, error) {
 	if timeoutSeconds < 0 {
 		return 0, errors.New("TCP time-wait timeout must not be negative")
 	}
-	if int64(timeoutSeconds) > (1<<63-1)/int64(time.Second) {
+	if int64(timeoutSeconds) > math.MaxInt64/int64(time.Second) {
 		return 0, errors.New("TCP time-wait timeout is too large")
 	}
 	return time.Duration(timeoutSeconds) * time.Second, nil
@@ -53,8 +53,13 @@ func (n *VirtualNetwork) SetAPIToken(token string) {
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {
-	if _, err := parseTCPTimeWaitTimeout(configuration.TCPTimeWaitTimeout); err != nil {
-		return nil, err
+	var timeWaitTimeout *time.Duration
+	if configuration.TCPTimeWaitTimeout != nil {
+		timeout, err := parseTCPTimeWaitTimeout(*configuration.TCPTimeWaitTimeout)
+		if err != nil {
+			return nil, err
+		}
+		timeWaitTimeout = &timeout
 	}
 
 	var endpoint stack.LinkEndpoint
@@ -97,7 +102,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 	} else {
 		endpoint = tapEndpoint
 	}
-	stack, err := createStack(configuration, endpoint)
+	stack, err := createStack(configuration, endpoint, timeWaitTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create network stack: %w", err)
 	}
@@ -139,12 +144,7 @@ func (n *VirtualNetwork) BytesReceived() uint64 {
 	return n.networkSwitch.Received
 }
 
-func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint) (*stack.Stack, error) {
-	timeWaitTimeout, err := parseTCPTimeWaitTimeout(configuration.TCPTimeWaitTimeout)
-	if err != nil {
-		return nil, err
-	}
-
+func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint, timeWaitTimeout *time.Duration) (*stack.Stack, error) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
 			ipv4.NewProtocol,
@@ -157,8 +157,8 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 		},
 	})
 
-	if timeWaitTimeout > 0 {
-		tcpTimeWaitTimeout := tcpip.TCPTimeWaitTimeoutOption(timeWaitTimeout)
+	if timeWaitTimeout != nil {
+		tcpTimeWaitTimeout := tcpip.TCPTimeWaitTimeoutOption(*timeWaitTimeout)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &tcpTimeWaitTimeout); err != nil {
 			return nil, fmt.Errorf("cannot set TCP time-wait timeout: %s", err)
 		}

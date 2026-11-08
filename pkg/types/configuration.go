@@ -67,7 +67,7 @@ type Configuration struct {
 	TCPConnectTimeout int `yaml:"tcpConnectTimeout,omitempty"`
 
 	// Timeout in seconds for TCP connections in TIME-WAIT (default: 60)
-	TCPTimeWaitTimeout int `yaml:"tcpTimeWaitTimeout,omitempty"`
+	TCPTimeWaitTimeout *int `yaml:"tcpTimeWaitTimeout,omitempty"`
 }
 
 type Protocol string
