@@ -4,7 +4,8 @@ import (
 	"net"
 	"net/url"
 
-	"github.com/linuxkit/virtsock/pkg/hvsock"
+	"github.com/Microsoft/go-winio"
+	"github.com/Microsoft/go-winio/pkg/guid"
 )
 
 const DefaultURL = "vsock://00000400-FACB-11E6-BD58-64006A7986D3"
@@ -12,12 +13,12 @@ const DefaultURL = "vsock://00000400-FACB-11E6-BD58-64006A7986D3"
 func listenURL(parsed *url.URL) (net.Listener, error) {
 	switch parsed.Scheme {
 	case "vsock":
-		svcid, err := hvsock.GUIDFromString(parsed.Hostname())
+		svcid, err := guid.FromString(parsed.Hostname())
 		if err != nil {
 			return nil, err
 		}
-		return hvsock.Listen(hvsock.Addr{
-			VMID:      hvsock.GUIDWildcard,
+		return winio.ListenHvsock(&winio.HvsockAddr{
+			VMID:      winio.HvsockGUIDWildcard(),
 			ServiceID: svcid,
 		})
 	default:
