@@ -10,3 +10,7 @@ import "net"
 func listen(network, address string) (net.Listener, error) {
 	return net.Listen(network, address)
 }
+
+func listenPacket(network, address string) (net.PacketConn, error) {
+	return net.ListenPacket(network, address)
+}

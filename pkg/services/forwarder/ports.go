@@ -210,7 +210,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		if err != nil {
 			return err
 		}
-		listener, err := net.ListenUDP("udp", addr)
+		listener, err := listenPacket("udp", addr.String())
 		if err != nil {
 			return err
 		}

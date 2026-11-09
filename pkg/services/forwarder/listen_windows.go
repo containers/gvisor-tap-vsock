@@ -31,3 +31,7 @@ var exclusiveListenConfig = net.ListenConfig{
 func listen(network, address string) (net.Listener, error) {
 	return exclusiveListenConfig.Listen(context.Background(), network, address)
 }
+
+func listenPacket(network, address string) (net.PacketConn, error) {
+	return exclusiveListenConfig.ListenPacket(context.Background(), network, address)
+}

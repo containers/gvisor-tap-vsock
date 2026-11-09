@@ -34,4 +34,18 @@ var _ = ginkgo.Describe("exclusive listen on windows", ginkgo.Label("exclusive-b
 		ginkgo.Entry("IPv4 wildcard", "0.0.0.0:0"),
 		ginkgo.Entry("IPv4 loopback", "127.0.0.1:0"),
 	)
+
+	ginkgo.It("fails when the UDP port is already used by another socket", func() {
+		other, err := net.ListenPacket("udp4", "0.0.0.0:0")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		defer other.Close()
+		port := other.LocalAddr().(*net.UDPAddr).Port
+
+		conn, err := listenPacket("udp", fmt.Sprintf(":%d", port))
+		if err == nil {
+			conn.Close()
+		}
+		gomega.Expect(err).Should(gomega.HaveOccurred(),
+			"expected exclusive bind on :%d to fail while %s is in use", port, other.LocalAddr())
+	})
 })
