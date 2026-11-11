@@ -17,14 +17,14 @@ var _ = ginkgo.Describe("connectivity with qemu", func() {
 var _ = ginkgo.Describe("dns with qemu", func() {
 	e2e.BasicDNSTests(e2e.BasicTestProps{
 		SSHExec: sshExec,
-		Sock:    sock,
+		Sock:    func() string { return sock },
 	})
 })
 
 var _ = ginkgo.Describe("dhcp with qemu", func() {
 	e2e.BasicDHCPTests(e2e.BasicTestProps{
 		SSHExec: sshExec,
-		Sock:    sock,
+		Sock:    func() string { return sock },
 	})
 })
 

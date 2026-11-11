@@ -201,7 +201,7 @@ var _ = ginkgo.Describe("port forwarding", func() {
 			ginkgo.Skip("AF_UNIX not supported on Windows")
 		}
 
-		unix2tcpfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
+		unix2tcpfwdsock := filepath.Join(runDir, "podman-unix-to-unix-forwarding.sock")
 
 		out, err := sshExec(`curl http://gateway.containers.internal/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2tcpfwdsock + `","remote":"tcp://192.168.127.2:8080"}'`)
 		gomega.Expect(string(out)).Should(gomega.Equal(""))
@@ -244,7 +244,7 @@ var _ = ginkgo.Describe("port forwarding", func() {
 			ginkgo.Skip("AF_UNIX not supported on Windows")
 		}
 
-		unix2unixfwdsock, _ := filepath.Abs(filepath.Join(tmpDir, "podman-unix-to-unix-forwarding.sock"))
+		unix2unixfwdsock := filepath.Join(runDir, "podman-unix-to-unix-forwarding.sock")
 
 		remoteuri := fmt.Sprintf(`ssh-tunnel://root@%s:%d%s?key=%s`, "192.168.127.2", 22, podmanSock, privateKeyFile)
 		_, err := sshExec(`curl http://192.168.127.1/services/forwarder/expose -X POST -d'{"protocol":"unix","local":"` + unix2unixfwdsock + `","remote":"` + remoteuri + `"}'`)

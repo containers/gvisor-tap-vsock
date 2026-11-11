@@ -29,19 +29,19 @@ func TestSuite(t *testing.T) {
 }
 
 const (
-	sock         = "/tmp/gvproxy-api-vfkit.sock"
-	vfkitSock    = "/tmp/vfkit.sock"
-	ignitionSock = "/tmp/ignition.sock"
 	sshPort      = 2223
 	ignitionUser = "test"
 	// #nosec "test" (for manual usage)
 	ignitionPasswordHash = "$y$j9T$TqJWt3/mKJbH0sYi6B/LD1$QjVRuUgntjTHjAdAkqhkr4F73m.Be4jBXdAaKw98sPC" // notsecret
-	efiStore             = "efi-variable-store"
 	vfkitVersionNeeded   = 0.6
 )
 
 var (
 	tmpDir         string
+	sock           string
+	vfkitSock      string
+	ignitionSock   string
+	efiStore       string
 	binDir         string
 	host           *exec.Cmd
 	client         *exec.Cmd
@@ -100,9 +100,6 @@ func vfkitCmd(diskImage string) (*exec.Cmd, error) {
 }
 
 var _ = ginkgo.BeforeSuite(func() {
-	// clear the environment before running the tests. It may happen the tests were abruptly stopped earlier leaving a dirty env
-	cleanup()
-
 	// check if vfkit version is greater than v0.5 (ignition support is available starting from v0.6)
 	version, err := vfkitVersion()
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
@@ -110,6 +107,15 @@ var _ = ginkgo.BeforeSuite(func() {
 
 	// check if ssh port is free
 	gomega.Expect(e2e_utils.IsPortAvailable(sshPort)).Should(gomega.BeTrue())
+
+	// Unix sockets and the EFI variable store go to a temporary directory
+	// which is removed at the end of the suite, so that files left behind
+	// by an aborted run do not make the next test run fail.
+	runDir := ginkgo.GinkgoT().TempDir()
+	sock = filepath.Join(runDir, "gvproxy-api-vfkit.sock")
+	vfkitSock = filepath.Join(runDir, "vfkit.sock")
+	ignitionSock = filepath.Join(runDir, "ignition.sock")
+	efiStore = filepath.Join(runDir, "efi-variable-store")
 
 	gomega.Expect(os.MkdirAll(filepath.Join(tmpDir, "disks"), os.ModePerm)).Should(gomega.Succeed())
 
@@ -192,17 +198,6 @@ func sshCommand(cmd ...string) *exec.Cmd {
 	return sshCmd
 }
 
-func cleanup() {
-	_ = os.Remove(efiStore)
-	_ = os.Remove(sock)
-	_ = os.Remove(vfkitSock)
-
-	// this is handled by vfkit since vfkit v0.6.1 released in March 2025
-	// it removes the ignition.sock file
-	socketPath := filepath.Join(os.TempDir(), "ignition.sock")
-	_ = os.Remove(socketPath)
-}
-
 func scp(src, dst string) error {
 	sshCmd := exec.Command("/usr/bin/scp",
 		"-o", "UserKnownHostsFile=/dev/null",
@@ -234,5 +229,4 @@ var _ = ginkgo.AfterSuite(func() {
 			log.Error(err)
 		}
 	}
-	cleanup()
 })
