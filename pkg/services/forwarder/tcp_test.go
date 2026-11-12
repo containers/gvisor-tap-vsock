@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	"github.com/inetaf/tcpproxy"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -504,6 +505,66 @@ func TestSNIMatchesDestination_EmptyResolved(t *testing.T) {
 	dest := tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
 	require.False(t, sniMatchesDestination(dest, nil))
 	require.False(t, sniMatchesDestination(dest, []net.IPAddr{}))
+}
+
+// ---------------------------------------------------------------------------
+// SNI destination verification (DNS answer cache, then host lookup)
+// ---------------------------------------------------------------------------
+
+func failingLookup(t *testing.T) func(context.Context, string) ([]net.IPAddr, error) {
+	return func(context.Context, string) ([]net.IPAddr, error) {
+		t.Fatal("host lookup must not be called")
+		return nil, nil
+	}
+}
+
+func staticLookup(ips ...string) func(context.Context, string) ([]net.IPAddr, error) {
+	return func(context.Context, string) ([]net.IPAddr, error) {
+		var addrs []net.IPAddr
+		for _, ip := range ips {
+			addrs = append(addrs, net.IPAddr{IP: net.ParseIP(ip)})
+		}
+		return addrs, nil
+	}
+}
+
+func TestVerifySNIDestination_DNSAnswerAccepted(t *testing.T) {
+	obs := filter.NewFilterObserver(0)
+	obs.RecordDNSResolution("cdn.example.com", []string{"1.2.3.4"})
+	dest := tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
+
+	// The guest got 1.2.3.4 from the embedded DNS server; a host lookup that
+	// now returns a different rotation must not be consulted.
+	require.NoError(t, verifySNIDestination("cdn.example.com", dest, obs, failingLookup(t)))
+}
+
+func TestVerifySNIDestination_DNSAnswerForOtherNameFallsBack(t *testing.T) {
+	obs := filter.NewFilterObserver(0)
+	obs.RecordDNSResolution("evil.com", []string{"6.6.6.6"})
+	dest := tcpip.AddrFrom4([4]byte{6, 6, 6, 6})
+
+	// 6.6.6.6 was answered for evil.com, not for the claimed SNI, so the
+	// cache must not vouch for it and the host lookup decides.
+	err := verifySNIDestination("allowed.example.com", dest, obs, staticLookup("1.2.3.4"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "possible SNI spoofing")
+}
+
+func TestVerifySNIDestination_HostLookupFallback(t *testing.T) {
+	dest := tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
+	require.NoError(t, verifySNIDestination("example.com", dest, nil, staticLookup("5.6.7.8", "1.2.3.4")))
+	require.NoError(t, verifySNIDestination("example.com", dest, filter.NewFilterObserver(0), staticLookup("1.2.3.4")))
+	require.Error(t, verifySNIDestination("example.com", dest, nil, staticLookup("5.6.7.8")))
+}
+
+func TestVerifySNIDestination_HostLookupError(t *testing.T) {
+	dest := tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
+	lookup := func(context.Context, string) ([]net.IPAddr, error) {
+		return nil, fmt.Errorf("no such host")
+	}
+	err := verifySNIDestination("example.com", dest, nil, lookup)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "DNS lookup failed")
 }
 
 // ---------------------------------------------------------------------------
