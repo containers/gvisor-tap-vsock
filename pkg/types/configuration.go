@@ -77,9 +77,13 @@ type Configuration struct {
 	// DNS queries and TLS connections (port 443) whose SNI matches at least one
 	// pattern. Internal gateway traffic is always permitted. Each string is
 	// compiled as a regexp at startup.
-	// TLS connections are also checked that the SNI hostname resolves (via the
-	// host's default DNS resolver) to the destination IP the guest connected to;
-	// that resolver may differ from DNS settings inside the guest.
+	// Domains added at runtime through the filter API's dynamic allowlist are
+	// allowed the same way, and enforcement is on while either list is non-empty.
+	// TLS connections are also checked that the SNI hostname resolves to the
+	// destination IP the guest connected to: an address the embedded DNS server
+	// returned to the guest for that name is accepted; otherwise the name is
+	// resolved with the host's default DNS resolver, which may differ from DNS
+	// settings inside the guest.
 	OutboundAllow []string `yaml:"outboundAllow,omitempty"`
 
 	// MaxFilterHistory caps the number of connection and DNS records kept

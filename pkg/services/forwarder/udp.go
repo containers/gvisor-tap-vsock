@@ -39,7 +39,6 @@ func udpRoutingAction(
 }
 
 func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, blockAllOutbound bool, outboundAllow []*regexp.Regexp, gatewayIP net.IP, observer *filter.FilterObserver) *udp.Forwarder {
-	allowlistActive := len(outboundAllow) > 0
 	var gatewayAddr tcpip.Address
 	if gatewayIP != nil {
 		gatewayAddr = tcpip.AddrFrom4Slice(gatewayIP.To4())
@@ -55,6 +54,8 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 			return true
 		}
 
+		// Evaluated per request: the dynamic allowlist can change at runtime.
+		allowlistActive := filter.AllowlistActive(outboundAllow, observer)
 		action := udpRoutingAction(localAddress, blockAllOutbound, allowlistActive, gatewayAddr)
 		if action == udpBlock {
 			if blockAllOutbound {

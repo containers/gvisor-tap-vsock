@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/foxcpp/go-mockdns"
 	"github.com/miekg/dns"
@@ -809,6 +810,74 @@ func TestDNSOutboundAllowAllowed(t *testing.T) {
 	require.Contains(t, ips, "1.2.3.4")
 }
 
+func testResolver(nameserver string) *net.Resolver {
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 5 * time.Second}
+			return d.DialContext(ctx, network, nameserver)
+		},
+	}
+}
+
+func TestDNSDynamicAllowlistOnlyEnforces(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{
+			"api.github.com.": {A: []string{"1.2.3.4"}},
+			"blocked.com.":    {A: []string{"5.6.7.8"}},
+		},
+	}
+	obs := filter.NewFilterObserver(0)
+	obs.AddAllowlistDomain("github.com")
+
+	nameserver, cleanup, err := startDNSServerWithObserver(upstream, nil, obs)
+	require.NoError(t, err)
+	defer cleanup()
+	time.Sleep(100 * time.Millisecond)
+	r := testResolver(nameserver)
+
+	// With no static patterns, the dynamic allowlist alone must enforce.
+	_, err = r.LookupHost(context.Background(), "blocked.com")
+	require.Error(t, err, "blocked.com is not in the dynamic allowlist")
+
+	ips, err := r.LookupHost(context.Background(), "api.github.com")
+	require.NoError(t, err)
+	require.Contains(t, ips, "1.2.3.4")
+	require.True(t, obs.ResolvedTo("api.github.com", "1.2.3.4"),
+		"answers given to the guest must be recorded for the SNI check")
+
+	// Removing the last dynamic entry turns enforcement off again.
+	obs.RemoveAllowlistDomain("github.com")
+	_, err = r.LookupHost(context.Background(), "blocked.com")
+	require.NoError(t, err)
+}
+
+func TestDNSStaticAndDynamicAllowlistUnion(t *testing.T) {
+	upstream := &mockdns.Resolver{
+		Zones: map[string]mockdns.Zone{
+			"static.example.com.": {A: []string{"1.1.1.1"}},
+			"trusted.org.":        {A: []string{"2.2.2.2"}},
+			"blocked.com.":        {A: []string{"3.3.3.3"}},
+		},
+	}
+	obs := filter.NewFilterObserver(0)
+	obs.AddAllowlistDomain("trusted.org")
+	static := []*regexp.Regexp{regexp.MustCompile(`^.*\.example\.com$`)}
+
+	nameserver, cleanup, err := startDNSServerWithObserver(upstream, static, obs)
+	require.NoError(t, err)
+	defer cleanup()
+	time.Sleep(100 * time.Millisecond)
+	r := testResolver(nameserver)
+
+	_, err = r.LookupHost(context.Background(), "static.example.com")
+	require.NoError(t, err)
+	_, err = r.LookupHost(context.Background(), "trusted.org")
+	require.NoError(t, err)
+	_, err = r.LookupHost(context.Background(), "blocked.com")
+	require.Error(t, err)
+}
+
 func TestDNSOutboundAllowLocalZoneNotAffected(t *testing.T) {
 	upstream := &mockdns.Resolver{
 		Zones: map[string]mockdns.Zone{},
@@ -877,6 +946,10 @@ func TestDNSOutboundAllowCaseNormalization(t *testing.T) {
 }
 
 func startDNSServer(upstream upstreamResolver, outboundAllow []*regexp.Regexp) (string, func(), error) {
+	return startDNSServerWithObserver(upstream, outboundAllow, nil)
+}
+
+func startDNSServerWithObserver(upstream upstreamResolver, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) (string, func(), error) {
 	udpConn, err := net.ListenPacket("udp", "127.0.0.1:5354")
 	if err != nil {
 		return "", nil, err
@@ -887,7 +960,7 @@ func startDNSServer(upstream upstreamResolver, outboundAllow []*regexp.Regexp) (
 		return "", nil, err
 	}
 
-	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow, nil)
+	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow, observer)
 	if err != nil {
 		return "", nil, err
 	}

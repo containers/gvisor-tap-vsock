@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"net"
 	"regexp"
 	"sync"
 	"time"
@@ -77,6 +78,12 @@ type FilterObserver struct {
 
 	// IP→domain reverse lookup cache (populated from DNS resolutions)
 	dnsCache map[string]string
+	// domain→set of IPs the DNS server has answered with for that domain.
+	// Unlike dnsCache, which keeps only the last domain seen for an IP, this
+	// keeps every pairing, so names sharing CDN addresses do not evict each
+	// other. Used to verify that a TLS connection's SNI matches its
+	// destination without re-resolving the name on the host.
+	domainIPs map[string]map[string]struct{}
 
 	// Dynamic filtering state
 	dynamicAllowlist   map[string]*DomainAllowlistEntry
@@ -114,6 +121,7 @@ func NewFilterObserver(maxEntries int) *FilterObserver {
 		dnsQueries:       make(map[string]*DNSRecord),
 		maxEntries:       maxEntries,
 		dnsCache:         make(map[string]string),
+		domainIPs:        make(map[string]map[string]struct{}),
 		dynamicAllowlist: make(map[string]*DomainAllowlistEntry),
 		configAllowlist:  make(map[string]*ConfigAllowlistEntry),
 		dynamicBlocklist: make(map[ConnectionKey]*BlocklistEntry),
@@ -384,10 +392,36 @@ func (f *FilterObserver) RemoveBlocklistEntry(protocol, ip string, port uint16) 
 // RecordDNSResolution records IP→domain mappings from DNS A-record resolutions
 func (f *FilterObserver) RecordDNSResolution(domain string, ips []string) {
 	f.mu.Lock()
+	set := f.domainIPs[domain]
+	if set == nil {
+		set = make(map[string]struct{}, len(ips))
+		f.domainIPs[domain] = set
+	}
 	for _, ip := range ips {
 		f.dnsCache[ip] = domain
+		set[normalizeIP(ip)] = struct{}{}
 	}
 	f.mu.Unlock()
+}
+
+// ResolvedTo reports whether the DNS server has answered a query for domain
+// with ip. domain must be lowercase without a trailing dot, as recorded by
+// the DNS server.
+func (f *FilterObserver) ResolvedTo(domain, ip string) bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	_, ok := f.domainIPs[domain][normalizeIP(ip)]
+	return ok
+}
+
+// normalizeIP returns the canonical text form of ip so that, for example,
+// differently written IPv6 addresses compare equal. Unparsable input is
+// returned unchanged.
+func normalizeIP(ip string) string {
+	if parsed := net.ParseIP(ip); parsed != nil {
+		return parsed.String()
+	}
+	return ip
 }
 
 // LookupDomain returns the domain name for an IP from the DNS cache

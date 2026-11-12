@@ -25,8 +25,6 @@ func icmpBlocked(blockAllOutbound bool, allowlistActive bool) bool {
 }
 
 func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, blockAllOutbound bool, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) *Forwarder {
-	allowlistActive := len(outboundAllow) > 0
-
 	return NewForwarder(s, func(r *ICMPForwarderRequest) {
 		localAddress := r.ID().LocalAddress
 
@@ -67,7 +65,8 @@ func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mut
 			observer.RecordConnection("icmp", localAddress.String(), 0, "", false)
 			return
 		}
-		if icmpBlocked(blockAllOutbound, allowlistActive) {
+		// Evaluated per request: the dynamic allowlist can change at runtime.
+		if icmpBlocked(blockAllOutbound, filter.AllowlistActive(outboundAllow, observer)) {
 			if blockAllOutbound {
 				log.Debugf("Blocking outbound ICMP echo to %s (blockAllOutbound=true)", localAddress.String())
 			} else {

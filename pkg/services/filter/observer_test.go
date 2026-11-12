@@ -305,3 +305,37 @@ func TestGetStats_IncludesDomainBlocklistCount(t *testing.T) {
 	stats := obs.GetStats()
 	require.Equal(t, 2, stats["blocklist_entries"])
 }
+
+func TestResolvedTo(t *testing.T) {
+	obs := NewFilterObserver(0)
+	require.False(t, obs.ResolvedTo("example.com", "1.2.3.4"))
+
+	obs.RecordDNSResolution("example.com", []string{"1.2.3.4", "1.2.3.5"})
+	require.True(t, obs.ResolvedTo("example.com", "1.2.3.4"))
+	require.True(t, obs.ResolvedTo("example.com", "1.2.3.5"))
+	require.False(t, obs.ResolvedTo("example.com", "9.9.9.9"))
+	require.False(t, obs.ResolvedTo("other.com", "1.2.3.4"))
+
+	// Later answers add to earlier ones: a rotating CDN answer must not
+	// invalidate an address the guest already received.
+	obs.RecordDNSResolution("example.com", []string{"1.2.3.6"})
+	require.True(t, obs.ResolvedTo("example.com", "1.2.3.4"))
+	require.True(t, obs.ResolvedTo("example.com", "1.2.3.6"))
+}
+
+func TestResolvedTo_SharedIP(t *testing.T) {
+	obs := NewFilterObserver(0)
+	obs.RecordDNSResolution("a.example.com", []string{"10.0.0.1"})
+	obs.RecordDNSResolution("b.example.com", []string{"10.0.0.1"})
+
+	// The IP→domain cache keeps only the last name, but both pairings are
+	// valid for the SNI check.
+	require.True(t, obs.ResolvedTo("a.example.com", "10.0.0.1"))
+	require.True(t, obs.ResolvedTo("b.example.com", "10.0.0.1"))
+}
+
+func TestResolvedTo_IPv6Normalization(t *testing.T) {
+	obs := NewFilterObserver(0)
+	obs.RecordDNSResolution("example.com", []string{"2001:db8:0:0:0:0:0:1"})
+	require.True(t, obs.ResolvedTo("example.com", "2001:db8::1"))
+}

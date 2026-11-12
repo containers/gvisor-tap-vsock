@@ -68,7 +68,6 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 	if connectTimeout <= 0 {
 		connectTimeout = defaultTCPConnectTimeout
 	}
-	allowlistActive := len(outboundAllow) > 0
 	var gatewayAddr tcpip.Address
 	if gatewayIP != nil {
 		gatewayAddr = tcpip.AddrFrom4Slice(gatewayIP.To4())
@@ -85,6 +84,8 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 			return
 		}
 
+		// Evaluated per connection: the dynamic allowlist can change at runtime.
+		allowlistActive := filter.AllowlistActive(outboundAllow, observer)
 		action := tcpRoutingAction(localAddress, r.ID().LocalPort,
 			blockAllOutbound, allowlistActive, gatewayAddr)
 		switch action {
@@ -202,7 +203,7 @@ func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip
 		return
 	}
 
-	if !filter.MatchesOutboundAllowlist(sni, outboundAllow) {
+	if !filter.DomainAllowed(sni, outboundAllow, observer) {
 		log.Debugf("Blocking TLS to %s: SNI %q not in allowlist", localAddress.String(), sni)
 		if observer != nil {
 			observer.RecordConnection("tcp", localAddress.String(), outboundAllowlistTLSPort, sni, false)
@@ -211,24 +212,11 @@ func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip
 		return
 	}
 
-	// DNS cross-check: verify the SNI resolves to the destination IP (host default
-	// resolver; may differ from guest DNS). See types.Configuration.OutboundAllow.
-	// This detects SNI spoofing where a client sends an allowed domain but
-	// connects to an unrelated IP.
-	dnsCtx, dnsCancel := context.WithTimeout(context.Background(), sniDNSLookupTimeout)
-	defer dnsCancel()
-	resolvedIPs, dnsErr := net.DefaultResolver.LookupIPAddr(dnsCtx, sni)
-	if dnsErr != nil {
-		log.Debugf("Blocking TLS to %s: SNI %q DNS lookup failed: %v", localAddress.String(), sni, dnsErr)
-		if observer != nil {
-			observer.RecordConnection("tcp", localAddress.String(), outboundAllowlistTLSPort, sni, false)
-		}
-		guestConn.Close()
-		return
-	}
-	if !sniMatchesDestination(localAddress, resolvedIPs) {
-		log.Debugf("Blocking TLS to %s: SNI %q resolves to %v, not %s (possible SNI spoofing)",
-			localAddress.String(), sni, resolvedIPs, localAddress.String())
+	// DNS cross-check: verify the SNI resolves to the destination IP. This
+	// detects SNI spoofing where a client sends an allowed domain but connects
+	// to an unrelated IP.
+	if err := verifySNIDestination(sni, localAddress, observer, net.DefaultResolver.LookupIPAddr); err != nil {
+		log.Debugf("Blocking TLS to %s: %v", localAddress.String(), err)
 		if observer != nil {
 			observer.RecordConnection("tcp", localAddress.String(), outboundAllowlistTLSPort, sni, false)
 		}
@@ -272,6 +260,31 @@ func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip
 		},
 	}
 	remote.HandleConn(wrappedConn)
+}
+
+// verifySNIDestination checks that dest is an address sni resolves to. It
+// first consults the answers the embedded DNS server gave the guest: a guest
+// connecting to an address from its own lookup is accepted even when a fresh
+// lookup would return a different set, as happens with CDNs that rotate their
+// answers. When the DNS server has not answered for sni with dest (for
+// example the guest cached an answer from before gvproxy started), it falls
+// back to resolving sni with lookup on the host, whose resolver may differ
+// from the guest's DNS settings.
+func verifySNIDestination(sni string, dest tcpip.Address, observer *filter.FilterObserver, lookup func(ctx context.Context, host string) ([]net.IPAddr, error)) error {
+	if observer != nil && observer.ResolvedTo(sni, dest.String()) {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), sniDNSLookupTimeout)
+	defer cancel()
+	resolvedIPs, err := lookup(ctx, sni)
+	if err != nil {
+		return fmt.Errorf("SNI %q DNS lookup failed: %w", sni, err)
+	}
+	if !sniMatchesDestination(dest, resolvedIPs) {
+		return fmt.Errorf("SNI %q resolves to %v, not %s (possible SNI spoofing)", sni, resolvedIPs, dest.String())
+	}
+	return nil
 }
 
 // sniMatchesDestination checks whether any of the resolved IPs for the SNI

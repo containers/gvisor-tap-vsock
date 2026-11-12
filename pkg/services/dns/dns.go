@@ -142,11 +142,8 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 
 		// Check outbound allowlist before upstream resolution.
 		domain := strings.ToLower(strings.TrimSuffix(q.Name, "."))
-		if len(h.outboundAllow) > 0 || (h.observer != nil && h.observer.HasDynamicAllowlist()) {
-			staticAllowed := len(h.outboundAllow) == 0 || filter.MatchesOutboundAllowlist(domain, h.outboundAllow)
-			dynamicAllowed := h.observer != nil && h.observer.MatchesDynamicAllowlist(domain)
-
-			if !staticAllowed && !dynamicAllowed {
+		if filter.AllowlistActive(h.outboundAllow, h.observer) {
+			if !filter.DomainAllowed(domain, h.outboundAllow, h.observer) {
 				log.Debugf("Blocking DNS query for %q (not in allowlist)", domain)
 				if h.observer != nil {
 					h.observer.RecordDNS(domain, false)

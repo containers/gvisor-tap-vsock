@@ -490,5 +490,7 @@ func main() {
 - **Memory Management**: Connection and DNS history is capped by `maxFilterHistory` (default 10000 entries per map). When the limit is reached the oldest entry is evicted automatically. History can also be cleared manually with `DELETE /services/filter/history`
 - **Domain Matching**: Both allowlist and blocklist use domain names. Adding `example.com` automatically matches `example.com` and all subdomains (`www.example.com`, `api.example.com`, etc.)
 - **Config vs Dynamic**: The YAML config file uses regex patterns for the allowlist (`outboundAllow`). The REST API uses plain domain names. Config-sourced patterns cannot be removed via the API.
+- **Enforcement**: Allowlist enforcement is on while the config allowlist or the dynamic allowlist has at least one entry. A domain is allowed if it matches either list, for both DNS queries and TLS connections (SNI). Adding the first dynamic entry while no config patterns are set turns enforcement on immediately (only DNS, gateway traffic and TLS to allowed domains pass), and removing the last one turns it off again.
+- **SNI Destination Check**: A TLS connection is only allowed when its destination IP is an address the SNI name resolves to. Addresses the embedded DNS handler returned to the VM for that name are accepted directly, so CDNs that rotate their answers do not cause false blocks. Otherwise the name is resolved with the host's resolver.
 - **SSE Buffering**: SSE subscriber channels are buffered. Slow consumers may miss events.
 - **Thread Safety**: All API operations are thread-safe
