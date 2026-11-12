@@ -93,9 +93,12 @@ Get current allowlist entries. Dynamic entries are shown as domain names; config
   ],
   "config_patterns": [
     "^.*\\.example\\.com$"
-  ]
+  ],
+  "enforced": true
 }
 ```
+
+`enforced` reports whether allowlist enforcement is on (see [Notes](#notes)).
 
 #### `POST /services/filter/allowlist`
 
@@ -141,6 +144,27 @@ Remove a domain from the dynamic allowlist. Config-sourced patterns cannot be re
   "success": false,
   "removed": false,
   "note": "Domain not found in dynamic allowlist"
+}
+```
+
+#### `DELETE /services/filter/allowlist/enforcement`
+
+Turn off allowlist enforcement that was started by the dynamic allowlist. Adding a dynamic entry turns enforcement on, and removing the last entry does not turn it off (an empty allowlist allows nothing), so this is the only way to give the VM back its full outbound connectivity without restarting gvproxy. Adding a dynamic entry afterwards turns enforcement on again.
+
+**Response:**
+```json
+{
+  "success": true,
+  "enforced": false
+}
+```
+
+Returns `409 Conflict`, leaving enforcement on, when dynamic allowlist entries remain (remove them first) or when config patterns (`outboundAllow`) enforce the allowlist:
+```json
+{
+  "success": false,
+  "enforced": true,
+  "error": "dynamic allowlist entries remain; remove them first"
 }
 ```
 
@@ -291,7 +315,7 @@ Server-Sent Events (SSE) stream for real-time filtering decisions.
 - `connection_allowed` - Connection allowed
 - `dns_blocked` - DNS query blocked
 - `dns_allowed` - DNS query allowed
-- `allowlist_updated` - Allowlist pattern added/removed
+- `allowlist_updated` - Allowlist pattern added/removed, or enforcement disabled (`"action":"enforcement_disabled"`)
 - `blocklist_updated` - Blocklist entry added/removed
 
 **Event Format:**
@@ -490,7 +514,8 @@ func main() {
 - **Memory Management**: Connection and DNS history is capped by `maxFilterHistory` (default 10000 entries per map). When the limit is reached the oldest entry is evicted automatically. History can also be cleared manually with `DELETE /services/filter/history`
 - **Domain Matching**: Both allowlist and blocklist use domain names. Adding `example.com` automatically matches `example.com` and all subdomains (`www.example.com`, `api.example.com`, etc.)
 - **Config vs Dynamic**: The YAML config file uses regex patterns for the allowlist (`outboundAllow`). The REST API uses plain domain names. Config-sourced patterns cannot be removed via the API.
-- **Enforcement**: Allowlist enforcement is on while the config allowlist or the dynamic allowlist has at least one entry. A domain is allowed if it matches either list, for both DNS queries and TLS connections (SNI). Adding the first dynamic entry while no config patterns are set turns enforcement on immediately (only DNS, gateway traffic and TLS to allowed domains pass), and removing the last one turns it off again.
-- **SNI Destination Check**: A TLS connection is only allowed when its destination IP is an address the SNI name resolves to. Addresses the embedded DNS handler returned to the VM for that name are accepted directly, so CDNs that rotate their answers do not cause false blocks. Otherwise the name is resolved with the host's resolver.
+- **Enforcement**: Allowlist enforcement is on while the config allowlist or the dynamic allowlist has at least one entry. A domain is allowed if it matches either list, for both DNS queries and TLS connections (SNI). Adding the first dynamic entry while no config patterns are set turns enforcement on immediately (only DNS, gateway traffic and TLS to allowed domains pass). Enforcement then stays on: removing the last dynamic entry leaves an empty allowlist that allows nothing, rather than opening all outbound traffic. Turn it off explicitly with `DELETE /services/filter/allowlist/enforcement`.
+- **SNI Destination Check**: A TLS connection is only allowed when its destination IP is an address the SNI name resolves to. Addresses the embedded DNS handler returned to the VM for that name within the last 10 minutes are accepted directly, so CDNs that rotate their answers do not cause false blocks. Otherwise the name is resolved with the host's resolver.
+- **DNS Caches**: The IP→domain cache (used for labeling and domain blocking) and the record of DNS answers (used for the SNI check) are each capped at `maxFilterHistory` entries, evicting the oldest. DNS answers also expire after 10 minutes. The IP→domain cache does not expire with time, so a domain block keeps applying to an address the VM resolved earlier.
 - **SSE Buffering**: SSE subscriber channels are buffered. Slow consumers may miss events.
 - **Thread Safety**: All API operations are thread-safe

@@ -3,6 +3,7 @@ package filter
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -338,4 +339,89 @@ func TestResolvedTo_IPv6Normalization(t *testing.T) {
 	obs := NewFilterObserver(0)
 	obs.RecordDNSResolution("example.com", []string{"2001:db8:0:0:0:0:0:1"})
 	require.True(t, obs.ResolvedTo("example.com", "2001:db8::1"))
+}
+
+// fakeClock lets tests move the observer's notion of time.
+type fakeClock struct{ t time.Time }
+
+func (c *fakeClock) now() time.Time          { return c.t }
+func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
+
+func newObserverWithClock(maxEntries int) (*FilterObserver, *fakeClock) {
+	obs := NewFilterObserver(maxEntries)
+	clock := &fakeClock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	obs.now = clock.now
+	return obs, clock
+}
+
+func TestResolvedTo_ExpiresAfterRetention(t *testing.T) {
+	obs, clock := newObserverWithClock(0)
+	obs.RecordDNSResolution("example.com", []string{"1.2.3.4"})
+
+	clock.advance(dnsAnswerRetention)
+	require.True(t, obs.ResolvedTo("example.com", "1.2.3.4"), "still valid at the retention boundary")
+
+	clock.advance(time.Second)
+	require.False(t, obs.ResolvedTo("example.com", "1.2.3.4"), "expired after the retention window")
+
+	// A fresh answer renews the pairing.
+	obs.RecordDNSResolution("example.com", []string{"1.2.3.4"})
+	require.True(t, obs.ResolvedTo("example.com", "1.2.3.4"))
+}
+
+func TestDomainIPs_CapEvictsExpiredFirst(t *testing.T) {
+	obs, clock := newObserverWithClock(3)
+	obs.RecordDNSResolution("old.com", []string{"1.1.1.1", "1.1.1.2"})
+	clock.advance(dnsAnswerRetention + time.Second)
+	obs.RecordDNSResolution("new.com", []string{"2.2.2.1"})
+
+	// The map is full; inserting sweeps both expired old.com pairings.
+	obs.RecordDNSResolution("newer.com", []string{"3.3.3.1"})
+	require.Len(t, obs.domainIPs, 2)
+	require.True(t, obs.ResolvedTo("new.com", "2.2.2.1"))
+	require.True(t, obs.ResolvedTo("newer.com", "3.3.3.1"))
+}
+
+func TestDomainIPs_CapEvictsOldestWhenNoneExpired(t *testing.T) {
+	obs, clock := newObserverWithClock(2)
+	obs.RecordDNSResolution("a.com", []string{"1.1.1.1"})
+	clock.advance(time.Second)
+	obs.RecordDNSResolution("b.com", []string{"2.2.2.2"})
+	clock.advance(time.Second)
+	obs.RecordDNSResolution("c.com", []string{"3.3.3.3"})
+
+	require.Len(t, obs.domainIPs, 2)
+	require.False(t, obs.ResolvedTo("a.com", "1.1.1.1"), "oldest pairing evicted")
+	require.True(t, obs.ResolvedTo("b.com", "2.2.2.2"))
+	require.True(t, obs.ResolvedTo("c.com", "3.3.3.3"))
+}
+
+func TestDNSCache_CappedButDoesNotExpire(t *testing.T) {
+	obs, clock := newObserverWithClock(2)
+	obs.RecordDNSResolution("a.com", []string{"1.1.1.1"})
+	clock.advance(time.Second)
+	obs.RecordDNSResolution("b.com", []string{"2.2.2.2"})
+
+	// Time alone must not drop IP→domain mappings: the domain blocklist
+	// relies on them for as long as the guest may use the address.
+	clock.advance(24 * time.Hour)
+	require.Equal(t, "a.com", obs.LookupDomain("1.1.1.1"))
+
+	// Re-answering refreshes a.com, so b.com is the oldest when the cap is hit.
+	obs.RecordDNSResolution("a.com", []string{"1.1.1.1"})
+	clock.advance(time.Second)
+	obs.RecordDNSResolution("c.com", []string{"3.3.3.3"})
+	require.Len(t, obs.dnsCache, 2)
+	require.Equal(t, "a.com", obs.LookupDomain("1.1.1.1"))
+	require.Equal(t, "", obs.LookupDomain("2.2.2.2"), "oldest mapping evicted")
+	require.Equal(t, "c.com", obs.LookupDomain("3.3.3.3"))
+}
+
+func TestDomainBlocklist_SurvivesRetention(t *testing.T) {
+	obs, clock := newObserverWithClock(0)
+	obs.RecordDNSResolution("evil.com", []string{"6.6.6.6"})
+	obs.AddDomainBlocklistEntry("evil.com", "test")
+
+	clock.advance(dnsAnswerRetention * 10)
+	require.True(t, obs.IsBlocked("tcp", "6.6.6.6", 443))
 }

@@ -23,6 +23,7 @@ func (f *FilterObserver) Mux() http.Handler {
 
 	// Allowlist endpoints
 	mux.HandleFunc("/allowlist", f.handleAllowlist)
+	mux.HandleFunc("/allowlist/enforcement", f.handleAllowlistEnforcement)
 
 	// Blocklist endpoints
 	mux.HandleFunc("/blocklist", f.handleBlocklist)
@@ -148,6 +149,31 @@ func (f *FilterObserver) handleAllowlist(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// handleAllowlistEnforcement handles DELETE /allowlist/enforcement, which
+// turns off enforcement started by the dynamic allowlist. It answers 409
+// Conflict, with enforcement left on, when dynamic entries remain or config
+// patterns enforce the allowlist.
+func (f *FilterObserver) handleAllowlistEnforcement(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	response := map[string]interface{}{"success": true}
+	status := http.StatusOK
+	if err := f.DisableDynamicAllowlistEnforcement(); err != nil {
+		response["success"] = false
+		response["error"] = err.Error()
+		status = http.StatusConflict
+	}
+	response["enforced"] = f.AllowlistEnforced()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	// The status is already written, so an encoding error cannot be reported.
+	_ = json.NewEncoder(w).Encode(response)
+}
+
 // handleAllowlistGet handles GET /allowlist
 func (f *FilterObserver) handleAllowlistGet(w http.ResponseWriter, r *http.Request) {
 	domains := f.GetAllowlistDomains()
@@ -156,6 +182,7 @@ func (f *FilterObserver) handleAllowlistGet(w http.ResponseWriter, r *http.Reque
 	response := map[string]interface{}{
 		"domains":         domainAllowlistToJSON(domains),
 		"config_patterns": configPatterns,
+		"enforced":        f.AllowlistEnforced(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

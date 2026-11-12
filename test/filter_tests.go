@@ -80,10 +80,25 @@ func FilterAPITests(props FilterTestProps) {
 		gomega.Expect(json.Unmarshal(body, &addResult)).Should(gomega.Succeed())
 		gomega.Expect(addResult["success"]).Should(gomega.BeTrue())
 
-		// Verify it appears in GET
+		// Adding a dynamic entry turns allowlist enforcement on for the whole
+		// gvproxy, which the other suites share. Restore it even if an
+		// assertion below fails, or later specs lose outbound connectivity.
+		ginkgo.DeferCleanup(func() {
+			for _, req := range []struct{ method, path, body string }{
+				{http.MethodDelete, "/services/filter/allowlist", `{"domain":"test.integration.com"}`},
+				{http.MethodDelete, "/services/filter/allowlist/enforcement", ""},
+			} {
+				if r, e := filterDoRequest(client, req.method, req.path, req.body); e == nil {
+					r.Body.Close()
+				}
+			}
+		})
+
+		// Verify it appears in GET, with enforcement on
 		result, err := filterGet(client, "/services/filter/allowlist")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		gomega.Expect(result["domains"]).ShouldNot(gomega.BeNil())
+		gomega.Expect(result["enforced"]).Should(gomega.BeTrue())
 
 		// Remove domain
 		resp2, err := filterDoRequest(client, http.MethodDelete, "/services/filter/allowlist",
@@ -91,6 +106,21 @@ func FilterAPITests(props FilterTestProps) {
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		defer resp2.Body.Close()
 		gomega.Expect(resp2.StatusCode).Should(gomega.Equal(http.StatusOK))
+
+		// Removing the last entry keeps enforcement on
+		result, err = filterGet(client, "/services/filter/allowlist")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(result["enforced"]).Should(gomega.BeTrue())
+
+		// Turn enforcement off explicitly
+		resp3, err := filterDoRequest(client, http.MethodDelete, "/services/filter/allowlist/enforcement", "")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		defer resp3.Body.Close()
+		gomega.Expect(resp3.StatusCode).Should(gomega.Equal(http.StatusOK))
+
+		result, err = filterGet(client, "/services/filter/allowlist")
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+		gomega.Expect(result["enforced"]).Should(gomega.BeFalse())
 	})
 
 	ginkgo.It("should add and remove blocklist entries via API", func() {

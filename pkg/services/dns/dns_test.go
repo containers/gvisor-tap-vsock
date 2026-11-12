@@ -846,10 +846,12 @@ func TestDNSDynamicAllowlistOnlyEnforces(t *testing.T) {
 	require.True(t, obs.ResolvedTo("api.github.com", "1.2.3.4"),
 		"answers given to the guest must be recorded for the SNI check")
 
-	// Removing the last dynamic entry turns enforcement off again.
+	// Removing the last dynamic entry keeps enforcement on: nothing resolves.
 	obs.RemoveAllowlistDomain("github.com")
 	_, err = r.LookupHost(context.Background(), "blocked.com")
-	require.NoError(t, err)
+	require.Error(t, err, "removing the last entry must not open DNS")
+	_, err = r.LookupHost(context.Background(), "api.github.com")
+	require.Error(t, err, "api.github.com was removed from the allowlist")
 }
 
 func TestDNSStaticAndDynamicAllowlistUnion(t *testing.T) {
