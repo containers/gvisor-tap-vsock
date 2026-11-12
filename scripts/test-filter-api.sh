@@ -45,6 +45,11 @@ curl -s --unix-socket "$SOCK" -X DELETE "$BASE_URL/allowlist" \
   -H "Content-Type: application/json" \
   -d '{"domain":"example.com"}' | jq .
 
+# Enforcement started by the dynamic allowlist stays on after the last entry
+# is removed; turn it off so the VM gets its outbound connectivity back.
+echo -e "\n11b. Turn off allowlist enforcement:"
+curl -s --unix-socket "$SOCK" -X DELETE "$BASE_URL/allowlist/enforcement" | jq .
+
 echo -e "\n12. Remove from blocklist:"
 curl -s --unix-socket "$SOCK" -X DELETE "$BASE_URL/blocklist" \
   -H "Content-Type: application/json" \

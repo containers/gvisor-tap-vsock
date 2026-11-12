@@ -512,3 +512,60 @@ func TestHTTP_DomainBlocklistDeleteNonexistent(t *testing.T) {
 	require.Equal(t, false, result["success"])
 	require.Equal(t, false, result["removed"])
 }
+
+func decodeJSON(t *testing.T, resp *http.Response) map[string]interface{} {
+	t.Helper()
+	var result map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	return result
+}
+
+func TestHTTP_DisableAllowlistEnforcement(t *testing.T) {
+	_, srv := newTestServer(t)
+	url := srv.URL + "/allowlist/enforcement"
+
+	resp := doRequest(t, http.MethodPost, srv.URL+"/allowlist", `{"domain":"example.com"}`)
+	resp.Body.Close()
+	require.Equal(t, true, getJSON(t, srv.URL+"/allowlist")["enforced"])
+
+	// Refused while a dynamic entry remains.
+	resp = doRequest(t, http.MethodDelete, url, "")
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusConflict, resp.StatusCode)
+	result := decodeJSON(t, resp)
+	require.Equal(t, false, result["success"])
+	require.Equal(t, true, result["enforced"])
+	require.NotEmpty(t, result["error"])
+
+	// Removing the entry keeps enforcement on until it is disabled explicitly.
+	resp2 := doRequest(t, http.MethodDelete, srv.URL+"/allowlist", `{"domain":"example.com"}`)
+	resp2.Body.Close()
+	require.Equal(t, true, getJSON(t, srv.URL+"/allowlist")["enforced"])
+
+	resp3 := doRequest(t, http.MethodDelete, url, "")
+	defer resp3.Body.Close()
+	require.Equal(t, http.StatusOK, resp3.StatusCode)
+	result = decodeJSON(t, resp3)
+	require.Equal(t, true, result["success"])
+	require.Equal(t, false, result["enforced"])
+	require.Equal(t, false, getJSON(t, srv.URL+"/allowlist")["enforced"])
+}
+
+func TestHTTP_DisableAllowlistEnforcement_ConfigPatterns(t *testing.T) {
+	obs, srv := newTestServer(t)
+	obs.SetConfigAllowlist([]*regexp.Regexp{regexp.MustCompile(`^example\.com$`)})
+
+	resp := doRequest(t, http.MethodDelete, srv.URL+"/allowlist/enforcement", "")
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusConflict, resp.StatusCode)
+	require.Equal(t, true, decodeJSON(t, resp)["enforced"])
+}
+
+func TestHTTP_AllowlistEnforcementMethodNotAllowed(t *testing.T) {
+	_, srv := newTestServer(t)
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut} {
+		resp := doRequest(t, method, srv.URL+"/allowlist/enforcement", "")
+		resp.Body.Close()
+		require.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode, method)
+	}
+}

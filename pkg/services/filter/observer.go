@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"errors"
 	"net"
 	"regexp"
 	"sync"
@@ -69,6 +70,26 @@ type ConfigAllowlistEntry struct {
 
 const defaultMaxFilterHistory = 10000
 
+// dnsAnswerRetention is how long an answer from the embedded DNS server keeps
+// vouching for a TLS connection's destination (see ResolvedTo). The DNS
+// server answers with TTL 0, so guests are expected to re-resolve rather
+// than cache; the window covers applications that keep addresses for a while
+// (browsers, JVM, connection pools). Once it lapses, the SNI check falls back
+// to resolving the name on the host, so expiry never allows more than before.
+const dnsAnswerRetention = 10 * time.Minute
+
+// dnsCacheEntry is an IP→domain mapping with the time it was last answered.
+type dnsCacheEntry struct {
+	domain   string
+	lastSeen time.Time
+}
+
+// domainIPKey is one (domain, IP) pairing returned by the DNS server.
+type domainIPKey struct {
+	domain string
+	ip     string
+}
+
 // FilterObserver tracks connection and DNS filtering decisions
 type FilterObserver struct {
 	mu          sync.RWMutex
@@ -76,22 +97,34 @@ type FilterObserver struct {
 	dnsQueries  map[string]*DNSRecord
 	maxEntries  int
 
-	// IP→domain reverse lookup cache (populated from DNS resolutions)
-	dnsCache map[string]string
-	// domain→set of IPs the DNS server has answered with for that domain.
-	// Unlike dnsCache, which keeps only the last domain seen for an IP, this
-	// keeps every pairing, so names sharing CDN addresses do not evict each
-	// other. Used to verify that a TLS connection's SNI matches its
-	// destination without re-resolving the name on the host.
-	domainIPs map[string]map[string]struct{}
+	// IP→domain reverse lookup cache (populated from DNS resolutions). Used
+	// to label connections and to enforce the domain blocklist, so entries do
+	// not expire with time (that would let a guest holding an address escape
+	// a domain block); the map is capped at maxEntries, evicting the entry
+	// answered longest ago.
+	dnsCache map[string]dnsCacheEntry
+	// Every (domain, IP) pairing the DNS server has answered with, and when.
+	// Unlike dnsCache, which keeps only the last domain seen for an IP, names
+	// sharing CDN addresses do not evict each other. Used to verify that a
+	// TLS connection's SNI matches its destination without re-resolving the
+	// name on the host. Entries expire after dnsAnswerRetention and the map
+	// is capped at maxEntries.
+	domainIPs map[domainIPKey]time.Time
+	// now returns the current time; replaced in tests.
+	now func() time.Time
 
 	// Dynamic filtering state
 	dynamicAllowlist   map[string]*DomainAllowlistEntry
 	dynamicAllowlistMu sync.RWMutex
-	configAllowlist    map[string]*ConfigAllowlistEntry
-	dynamicBlocklist   map[ConnectionKey]*BlocklistEntry
-	domainBlocklist    map[string]*DomainBlocklistEntry
-	dynamicBlocklistMu sync.RWMutex
+	// dynamicAllowlistEnforced is set when a dynamic allowlist entry is added
+	// and cleared only by DisableDynamicAllowlistEnforcement, so removing the
+	// last entry does not turn allowlist enforcement off and open all
+	// outbound traffic.
+	dynamicAllowlistEnforced bool
+	configAllowlist          map[string]*ConfigAllowlistEntry
+	dynamicBlocklist         map[ConnectionKey]*BlocklistEntry
+	domainBlocklist          map[string]*DomainBlocklistEntry
+	dynamicBlocklistMu       sync.RWMutex
 
 	// SSE subscribers
 	subscribers   map[chan Event]bool
@@ -120,8 +153,9 @@ func NewFilterObserver(maxEntries int) *FilterObserver {
 		connections:      make(map[ConnectionKey]*ConnectionRecord),
 		dnsQueries:       make(map[string]*DNSRecord),
 		maxEntries:       maxEntries,
-		dnsCache:         make(map[string]string),
-		domainIPs:        make(map[string]map[string]struct{}),
+		dnsCache:         make(map[string]dnsCacheEntry),
+		domainIPs:        make(map[domainIPKey]time.Time),
+		now:              time.Now,
 		dynamicAllowlist: make(map[string]*DomainAllowlistEntry),
 		configAllowlist:  make(map[string]*ConfigAllowlistEntry),
 		dynamicBlocklist: make(map[ConnectionKey]*BlocklistEntry),
@@ -308,6 +342,7 @@ func (f *FilterObserver) AddAllowlistDomain(domain string) {
 		compiled: compiled,
 		AddedAt:  time.Now(),
 	}
+	f.dynamicAllowlistEnforced = true
 	f.dynamicAllowlistMu.Unlock()
 
 	f.publishEvent("allowlist_updated", map[string]interface{}{
@@ -392,26 +427,70 @@ func (f *FilterObserver) RemoveBlocklistEntry(protocol, ip string, port uint16) 
 // RecordDNSResolution records IP→domain mappings from DNS A-record resolutions
 func (f *FilterObserver) RecordDNSResolution(domain string, ips []string) {
 	f.mu.Lock()
-	set := f.domainIPs[domain]
-	if set == nil {
-		set = make(map[string]struct{}, len(ips))
-		f.domainIPs[domain] = set
-	}
+	defer f.mu.Unlock()
+
+	now := f.now()
 	for _, ip := range ips {
-		f.dnsCache[ip] = domain
-		set[normalizeIP(ip)] = struct{}{}
+		if _, exists := f.dnsCache[ip]; !exists && len(f.dnsCache) >= f.maxEntries {
+			f.evictOldestDNSCacheEntry()
+		}
+		f.dnsCache[ip] = dnsCacheEntry{domain: domain, lastSeen: now}
+
+		key := domainIPKey{domain: domain, ip: normalizeIP(ip)}
+		if _, exists := f.domainIPs[key]; !exists && len(f.domainIPs) >= f.maxEntries {
+			f.evictDomainIPs(now)
+		}
+		f.domainIPs[key] = now
 	}
-	f.mu.Unlock()
 }
 
-// ResolvedTo reports whether the DNS server has answered a query for domain
-// with ip. domain must be lowercase without a trailing dot, as recorded by
-// the DNS server.
+// ResolvedTo reports whether the DNS server answered a query for domain with
+// ip within the last dnsAnswerRetention. domain must be lowercase without a
+// trailing dot, as recorded by the DNS server.
 func (f *FilterObserver) ResolvedTo(domain, ip string) bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	_, ok := f.domainIPs[domain][normalizeIP(ip)]
-	return ok
+	seen, ok := f.domainIPs[domainIPKey{domain: domain, ip: normalizeIP(ip)}]
+	return ok && f.now().Sub(seen) <= dnsAnswerRetention
+}
+
+// evictOldestDNSCacheEntry removes the IP→domain mapping answered longest
+// ago. Caller must hold f.mu.
+func (f *FilterObserver) evictOldestDNSCacheEntry() {
+	var oldestIP string
+	var oldest time.Time
+	first := true
+	for ip, entry := range f.dnsCache {
+		if first || entry.lastSeen.Before(oldest) {
+			oldestIP, oldest, first = ip, entry.lastSeen, false
+		}
+	}
+	if !first {
+		delete(f.dnsCache, oldestIP)
+	}
+}
+
+// evictDomainIPs makes room in domainIPs: it removes every expired pairing,
+// and if none had expired, the pairing answered longest ago. Caller must
+// hold f.mu.
+func (f *FilterObserver) evictDomainIPs(now time.Time) {
+	var oldestKey domainIPKey
+	var oldest time.Time
+	first := true
+	removed := false
+	for key, seen := range f.domainIPs {
+		if now.Sub(seen) > dnsAnswerRetention {
+			delete(f.domainIPs, key)
+			removed = true
+			continue
+		}
+		if first || seen.Before(oldest) {
+			oldestKey, oldest, first = key, seen, false
+		}
+	}
+	if !removed && !first {
+		delete(f.domainIPs, oldestKey)
+	}
 }
 
 // normalizeIP returns the canonical text form of ip so that, for example,
@@ -427,7 +506,7 @@ func normalizeIP(ip string) string {
 // LookupDomain returns the domain name for an IP from the DNS cache
 func (f *FilterObserver) LookupDomain(ip string) string {
 	f.mu.RLock()
-	domain := f.dnsCache[ip]
+	domain := f.dnsCache[ip].domain
 	f.mu.RUnlock()
 	return domain
 }
@@ -436,7 +515,7 @@ func (f *FilterObserver) LookupDomain(ip string) string {
 // but may hold other locks). This acquires f.mu.RLock internally.
 func (f *FilterObserver) lookupDomainLocked(ip string) string {
 	f.mu.RLock()
-	domain := f.dnsCache[ip]
+	domain := f.dnsCache[ip].domain
 	f.mu.RUnlock()
 	return domain
 }
@@ -598,6 +677,52 @@ func (f *FilterObserver) HasDynamicAllowlist() bool {
 	f.dynamicAllowlistMu.RLock()
 	defer f.dynamicAllowlistMu.RUnlock()
 	return len(f.dynamicAllowlist) > 0
+}
+
+// Errors returned by DisableDynamicAllowlistEnforcement when disabling would
+// not turn enforcement off.
+var (
+	ErrAllowlistEntriesRemain    = errors.New("dynamic allowlist entries remain; remove them first")
+	ErrAllowlistEnforcedByConfig = errors.New("allowlist enforcement is set by config patterns and cannot be disabled at runtime")
+)
+
+// AllowlistEnforced reports whether allowlist enforcement is on: config
+// patterns were set with SetConfigAllowlist, or a dynamic allowlist entry has
+// been added and enforcement was not disabled since. Enforcement started by
+// the dynamic allowlist stays on after its last entry is removed (everything
+// but DNS and gateway traffic is then blocked) until it is turned off with
+// DisableDynamicAllowlistEnforcement.
+func (f *FilterObserver) AllowlistEnforced() bool {
+	f.dynamicAllowlistMu.RLock()
+	defer f.dynamicAllowlistMu.RUnlock()
+	return f.dynamicAllowlistEnforced || len(f.configAllowlist) > 0
+}
+
+// DisableDynamicAllowlistEnforcement turns off enforcement started by the
+// dynamic allowlist. It refuses, leaving enforcement on, when that would not
+// turn enforcement off: dynamic entries remain (ErrAllowlistEntriesRemain) or
+// config patterns are set (ErrAllowlistEnforcedByConfig). Adding a dynamic
+// entry afterwards turns enforcement on again.
+func (f *FilterObserver) DisableDynamicAllowlistEnforcement() error {
+	f.dynamicAllowlistMu.Lock()
+	switch {
+	case len(f.configAllowlist) > 0:
+		f.dynamicAllowlistMu.Unlock()
+		return ErrAllowlistEnforcedByConfig
+	case len(f.dynamicAllowlist) > 0:
+		f.dynamicAllowlistMu.Unlock()
+		return ErrAllowlistEntriesRemain
+	}
+	wasEnforced := f.dynamicAllowlistEnforced
+	f.dynamicAllowlistEnforced = false
+	f.dynamicAllowlistMu.Unlock()
+
+	if wasEnforced {
+		f.publishEvent("allowlist_updated", map[string]interface{}{
+			"action": "enforcement_disabled",
+		})
+	}
+	return nil
 }
 
 // evictOldestConnection removes the connection record with the oldest LastSeen.

@@ -31,8 +31,15 @@ func TestAllowlistActive(t *testing.T) {
 	obs.AddAllowlistDomain("github.com")
 	require.True(t, AllowlistActive(nil, obs), "a dynamic entry alone must turn enforcement on")
 
+	// Removing the last dynamic entry must not open all outbound traffic.
 	obs.RemoveAllowlistDomain("github.com")
-	require.False(t, AllowlistActive(nil, obs))
+	require.True(t, AllowlistActive(nil, obs), "enforcement must stay on after the last entry is removed")
+	require.False(t, DomainAllowed("github.com", nil, obs), "an empty allowlist allows nothing")
+
+	// Config patterns registered on the observer also count as enforcement.
+	withConfig := NewFilterObserver(0)
+	withConfig.SetConfigAllowlist(static)
+	require.True(t, withConfig.AllowlistEnforced())
 }
 
 func TestDomainAllowed(t *testing.T) {
@@ -48,4 +55,30 @@ func TestDomainAllowed(t *testing.T) {
 	require.False(t, DomainAllowed("example.com", nil, obs))
 	require.True(t, DomainAllowed("example.com", static, nil), "nil observer")
 	require.False(t, DomainAllowed("github.com", static, nil))
+}
+
+func TestDisableDynamicAllowlistEnforcement(t *testing.T) {
+	obs := NewFilterObserver(0)
+	require.NoError(t, obs.DisableDynamicAllowlistEnforcement(), "disabling when already off is a no-op")
+
+	obs.AddAllowlistDomain("github.com")
+	require.ErrorIs(t, obs.DisableDynamicAllowlistEnforcement(), ErrAllowlistEntriesRemain)
+	require.True(t, AllowlistActive(nil, obs), "a refused disable must leave enforcement on")
+
+	obs.RemoveAllowlistDomain("github.com")
+	require.True(t, AllowlistActive(nil, obs), "removing the last entry alone keeps enforcement on")
+
+	require.NoError(t, obs.DisableDynamicAllowlistEnforcement())
+	require.False(t, AllowlistActive(nil, obs), "explicit disable turns enforcement off")
+
+	// Adding an entry again re-enables enforcement.
+	obs.AddAllowlistDomain("github.com")
+	require.True(t, AllowlistActive(nil, obs))
+}
+
+func TestDisableDynamicAllowlistEnforcement_ConfigPatterns(t *testing.T) {
+	obs := NewFilterObserver(0)
+	obs.SetConfigAllowlist([]*regexp.Regexp{regexp.MustCompile(`^example\.com$`)})
+	require.ErrorIs(t, obs.DisableDynamicAllowlistEnforcement(), ErrAllowlistEnforcedByConfig)
+	require.True(t, obs.AllowlistEnforced())
 }
