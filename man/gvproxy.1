@@ -1,0 +1,325 @@
+.Dd October 31, 2026
+.Dt GVPROXY 1
+.Os
+.Sh NAME
+.Nm gvproxy
+.Nd userspace network proxy and virtual gateway for virtual machines
+.Sh SYNOPSIS
+.Nm
+.Op Fl debug
+.Op Fl forward-dest Ar dest
+.Op Fl forward-identity Ar key
+.Op Fl forward-sock Ar socket
+.Op Fl forward-user Ar user
+.Op Fl listen Ar endpoint
+.Op Fl listen-bess Ar socket
+.Op Fl listen-qemu Ar socket
+.Op Fl listen-stdio Ar pipe
+.Op Fl listen-vfkit Ar socket
+.Op Fl listen-vpnkit Ar socket
+.Op Fl log-file Ar file
+.Op Fl mtu Ar mtu
+.Op Fl pid-file Ar file
+.Op Fl ssh-port Ar port
+.Op Fl version
+.Op Fl api-token-file Ar file
+.Op Fl notification Ar socket
+.Op Fl services Ar endpoint
+.Sh DESCRIPTION
+The
+.Nm
+daemon is a userspace network proxy and virtual gateway for virtual
+machines, containers, and emulators.
+It is written in pure Go and based on the
+.Lk https://github.com/google/gvisor gVisor
+network stack
+.Pq pkg/tcpip .
+It serves as a high-performance replacement for
+.Xr slirp 1
+and VPNKit without requiring root privileges or host TUN/TAP devices.
+.Pp
+Compared to traditional user-mode SLIRP implementations,
+.Nm
+provides an embedded, configurable DNS server, an internal DHCP server,
+dynamic port forwarding, and an administrative HTTP API.
+.Pp
+On Linux,
+.Nm
+can provide network connectivity to guests running under
+.Xr qemu-system-x86_64 1 ,
+User Mode Linux
+.Pq UML ,
+and systems utilizing
+.Xr vsock 7 .
+.Pp
+.Nm
+supports multiple operational modes and subsystems:
+.Bl -bullet
+.It
+.Sy Network Gateway and DHCP :
+.Nm
+operates a virtual network gateway (typically at IP address
+.Li 192.168.127.1 )
+that serves as the default gateway for guest operating systems.
+An integrated DHCP server automatically configures guest networking
+parameters, including IP assignment, MTU, DNS servers, and search
+domains.
+.It
+.Sy DNS Server :
+The built-in DNS server resolves queries for guest virtual machines and
+can be configured to serve static DNS zones.
+Guests can query it by specifying
+.Li nameserver 192.168.127.1
+in
+.Pa /etc/resolv.conf .
+.It
+.Sy Dynamic Port Forwarding :
+Ports can be dynamically exposed and unexposed between the host and the
+virtual machine without restarting the daemon.
+Forwarding can be managed by issuing HTTP requests to the control API
+either from the host via a UNIX domain socket or from the guest VM via
+.Li http://192.168.127.1:80 .
+.It
+.Sy Host Management HTTP API :
+When started with
+.Fl listen
+or
+.Fl services ,
+.Nm
+exposes a RESTful HTTP management interface.
+This API provides endpoints for packet statistics
+.Pq Pa /stats ,
+dynamic port mapping
+.Pq Pa /services/forwarder/* ,
+and network tunneling into guest IP endpoints.
+The
+.Fl services
+flag exposes this same API but omits the
+.Pa /connect
+endpoint, which is useful when no guest helper daemon is running.
+.It
+.Sy API Authentication :
+Requests from inside the guest to the virtual gateway API
+.Pq Li http://192.168.127.1:80
+can be secured with Bearer token authentication.
+When enabled via
+.Fl api-token-file
+or the
+.Ev GV_API_TOKEN
+environment variable, requests must supply an HTTP
+.Li Authorization: Bearer
+header with the token.
+Tokens must be strings of at least 32 characters (commonly 44-character
+base64url strings).
+Host-side endpoints rely on file system permissions of the listening
+UNIX domain socket and remain unauthenticated.
+.It
+.Sy Lifecycle Notifications :
+When configured with
+.Fl notification ,
+.Nm
+emits JSON messages over a UNIX domain socket.
+These events indicate when
+.Nm
+is ready to accept connections
+.Pq Dv ready ,
+when guest interfaces attach or detach
+.Pq Dv connection_established , Dv connection_closed
+along with guest MAC addresses, and hypervisor errors
+.Pq Dv hypervisor_error .
+.It
+.Sy Limitations :
+ICMP packets are not forwarded outside the virtual network.
+.El
+.Sh OPTIONS
+.Bl -tag -width indent
+.It Fl debug
+Enable and print verbose debugging information.
+.It Fl forward-dest Ar dest
+Forward a UNIX domain socket to the guest virtual machine over SSH.
+Specifies the target socket path on the guest.
+.It Fl forward-identity Ar key
+Path to the SSH private identity key used for SSH socket forwarding.
+.It Fl forward-sock Ar socket
+Path to the local host UNIX domain socket to be forwarded into the guest
+virtual machine over SSH.
+.It Fl forward-user Ar user
+SSH user account used to log in to the guest for UNIX socket forwarding.
+.It Fl listen Ar endpoint
+Specify a control endpoint URI for the host HTTP management API.
+Can be specified multiple times.
+Supported schemes include
+.Li unix://
+(e.g.,
+.Li unix:///tmp/network.sock )
+and
+.Li vsock://
+(e.g.,
+.Li vsock://:1024 ) .
+.It Fl listen-bess Ar socket
+Path to a
+.Li unixpacket
+socket to be used by BESS-compatible applications, such as User Mode
+Linux
+.Pq UML .
+Format is
+.Li unixpacket:///path/to/socket .
+.It Fl listen-qemu Ar socket
+Endpoint socket used for QEMU virtual network communication.
+Supported schemes include
+.Li unix://
+(e.g.,
+.Li unix:///tmp/qemu.sock )
+and
+.Li tcp://
+(e.g.,
+.Li tcp://0.0.0.0:1234 ) .
+.It Fl listen-stdio Ar pipe
+Accept network communication through a standard I/O (stdio) pipe.
+.It Fl listen-vfkit Ar socket
+Path to a
+.Li unixgram
+socket for vfkit-compatible applications.
+Format is
+.Li unixgram:///path/to/socket .
+.It Fl listen-vpnkit Ar socket
+Path to a VPNKit-compatible socket for Hyperkit.
+.It Fl log-file Ar file
+Output log messages (via logrus) to the specified file path.
+.It Fl mtu Ar mtu
+Set the Maximum Transmission Unit (MTU) for the virtual network.
+The default value is 1500.
+.It Fl pid-file Ar file
+Write the process ID (PID) of the daemon to the specified file upon
+startup.
+.It Fl ssh-port Ar port
+Port used to access the guest virtual machine over SSH.
+Must be an integer between 1024 and 65535.
+The default is 2222.
+.It Fl version
+Print program version information and exit.
+.It Fl api-token-file Ar file
+Path to a file containing a Bearer token string to authenticate guest VM
+requests to the gateway HTTP API.
+Leading and trailing whitespace in the file is automatically trimmed.
+.It Fl notification Ar socket
+Listening UNIX domain socket URI
+.Pq e.g., Li unix:///tmp/notification.sock
+to which JSON lifecycle events will be delivered.
+.It Fl services Ar endpoint
+Expose the HTTP services and statistics API without the
+.Pa /connect
+endpoint.
+.El
+.Sh EXAMPLES
+.Ss QEMU with a UNIX Domain Socket
+Start
+.Nm
+listening on a control socket and a QEMU UNIX domain socket:
+.Bd -literal -offset indent
+$ gvproxy -debug \\
+    -listen unix:///tmp/network.sock \\
+    -listen-qemu unix:///tmp/qemu.sock
+.Ed
+.Pp
+Launch QEMU (version 7.2.0 or newer) using a stream socket:
+.Bd -literal -offset indent
+$ qemu-system-x86_64 [options] \\
+    -netdev stream,id=vlan,addr.type=unix,addr.path=/tmp/qemu.sock \\
+    -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee
+.Ed
+.Ss QEMU with a TCP Socket
+Run
+.Nm
+listening for QEMU on a local TCP port:
+.Bd -literal -offset indent
+$ gvproxy -debug \\
+    -listen unix:///tmp/network.sock \\
+    -listen-qemu tcp://0.0.0.0:1234
+.Ed
+.Pp
+Launch QEMU connecting to the TCP socket:
+.Bd -literal -offset indent
+$ qemu-system-x86_64 [options] \\
+    -netdev socket,id=vlan,connect=127.0.0.1:1234 \\
+    -device virtio-net-pci,netdev=vlan,mac=5a:94:ef:e4:0c:ee
+.Ed
+.Ss User Mode Linux (UML) with BESS Socket Transport
+Start
+.Nm
+with a BESS unixpacket socket:
+.Bd -literal -offset indent
+$ gvproxy -debug \\
+    -listen unix:///tmp/network.sock \\
+    -listen-bess unixpacket:///tmp/bess.sock
+.Ed
+.Pp
+Start User Mode Linux attached to the socket:
+.Bd -literal -offset indent
+$ linux.uml vec0:transport=bess,dst=/tmp/bess.sock,depth=128,gro=1,\\
+mac=5a:94:ef:e4:0c:ee root=/dev/root rootfstype=hostfs \\
+init=/bin/bash mem=2G
+.Ed
+.Pp
+Configure network routing inside the UML guest:
+.Bd -literal -offset indent
+# ip addr add 192.168.127.2/24 dev vec0
+# ip link set vec0 up
+# ip route add default via 192.168.127.254
+.Ed
+.Ss Running with vsock on Linux
+Launch
+.Nm
+on the host with vsock and control endpoints:
+.Bd -literal -offset indent
+$ sudo gvproxy -debug \\
+    -listen vsock://:1024 \\
+    -listen unix:///tmp/network.sock
+.Ed
+.Pp
+Inside the virtual machine, run the forwarder container:
+.Bd -literal -offset indent
+# docker run -d --name=gvisor-tap-vsock --privileged --net=host -it \\
+    quay.io/crcont/gvisor-tap-vsock:latest
+# ping -c1 192.168.127.1
+# curl http://redhat.com
+.Ed
+.Ss Dynamic Port Forwarding via the Host API
+Expose host port 6443 to guest IP 192.168.127.2 on port 6443:
+.Bd -literal -offset indent
+$ curl --unix-socket /tmp/network.sock \\
+    http:/unix/services/forwarder/expose -X POST \\
+    -d '{"local":":6443","remote":"192.168.127.2:6443"}'
+.Ed
+.Pp
+List all currently exposed ports:
+.Bd -literal -offset indent
+$ curl --unix-socket /tmp/network.sock \\
+    http:/unix/services/forwarder/all
+.Ed
+.Pp
+Unexpose host port 6443:
+.Bd -literal -offset indent
+$ curl --unix-socket /tmp/network.sock \\
+    http:/unix/services/forwarder/unexpose -X POST \\
+    -d '{"local":":6443"}'
+.Ed
+.Ss Receiving Lifecycle Notifications
+Listen for JSON event notifications on a UNIX domain socket:
+.Bd -literal -offset indent
+$ nc -k -U -l /tmp/notification.sock
+.Ed
+.Pp
+Start
+.Nm
+with notification delivery enabled:
+.Bd -literal -offset indent
+$ gvproxy --notification unix:///tmp/notification.sock
+.Ed
+.Sh SEE ALSO
+.Xr curl 1 ,
+.Xr qemu-system-x86_64 1 ,
+.Xr ssh 1 ,
+.Xr unix 7 ,
+.Xr vsock 7 ,
+.Xr ip 8
