@@ -45,7 +45,11 @@ func newConnTrackKey(addr *net.UDPAddr) *connTrackKey {
 	}
 }
 
-type connTrackMap map[connTrackKey]net.Conn
+type trackedUDPConn struct {
+	net.Conn
+}
+
+type connTrackMap map[connTrackKey]*trackedUDPConn
 
 // UDPProxy is proxy for which handles UDP datagrams. It implements the Proxy
 // interface to handle UDP traffic forwarding between the frontend and backend
@@ -66,13 +70,37 @@ func NewUDPProxy(listener udpConn, dialer func(from net.Addr) (net.Conn, error))
 	}, nil
 }
 
-func (proxy *UDPProxy) replyLoop(proxyConn net.Conn, clientAddr net.Addr, clientKey *connTrackKey) {
-	defer func() {
-		proxy.connTrackLock.Lock()
-		delete(proxy.connTrackTable, *clientKey)
-		proxy.connTrackLock.Unlock()
-		proxyConn.Close()
-	}()
+func (proxy *UDPProxy) connFor(clientAddr net.Addr, clientKey connTrackKey) (*trackedUDPConn, error) {
+	proxy.connTrackLock.Lock()
+	defer proxy.connTrackLock.Unlock()
+	if conn, ok := proxy.connTrackTable[clientKey]; ok {
+		return conn, nil
+	}
+
+	conn, err := proxy.dialer(clientAddr)
+	if err != nil {
+		return nil, err
+	}
+	tracked := &trackedUDPConn{Conn: conn}
+	proxy.connTrackTable[clientKey] = tracked
+	go proxy.replyLoop(tracked, clientAddr, &clientKey)
+	return tracked, nil
+}
+
+// removeConn drops a tracked socket only if it is still the current socket for
+// the client. A reply loop for a retired socket may finish after a replacement
+// has already been installed.
+func (proxy *UDPProxy) removeConn(clientKey connTrackKey, conn *trackedUDPConn) {
+	proxy.connTrackLock.Lock()
+	if proxy.connTrackTable[clientKey] == conn {
+		delete(proxy.connTrackTable, clientKey)
+	}
+	proxy.connTrackLock.Unlock()
+	_ = conn.Close()
+}
+
+func (proxy *UDPProxy) replyLoop(proxyConn *trackedUDPConn, clientAddr net.Addr, clientKey *connTrackKey) {
+	defer proxy.removeConn(*clientKey, proxyConn)
 
 	readBuf := make([]byte, UDPBufSize)
 	for {
@@ -120,23 +148,28 @@ func (proxy *UDPProxy) Run() {
 		}
 
 		fromKey := newConnTrackKey(from.(*net.UDPAddr))
-		proxy.connTrackLock.Lock()
-		proxyConn, hit := proxy.connTrackTable[*fromKey]
-		if !hit {
-			proxyConn, err = proxy.dialer(from)
-			if err != nil {
-				log.Errorf("Can't proxy a datagram to udp: %s\n", err)
-				proxy.connTrackLock.Unlock()
-				continue
-			}
-			proxy.connTrackTable[*fromKey] = proxyConn
-			go proxy.replyLoop(proxyConn, from, fromKey)
+		proxyConn, err := proxy.connFor(from, *fromKey)
+		if err != nil {
+			log.Errorf("Can't proxy a datagram to udp: %s\n", err)
+			continue
 		}
-		proxy.connTrackLock.Unlock()
 		for i := 0; i != read; {
 			_ = proxyConn.SetReadDeadline(time.Now().Add(UDPConnTrackTimeout))
 			written, err := proxyConn.Write(readBuf[i:read])
+			if errors.Is(err, syscall.EADDRNOTAVAIL) {
+				// A connected UDP socket can remain bound to a source address
+				// removed by a host network change. Retire it and retry this
+				// datagram through a socket bound to the current route.
+				proxy.removeConn(*fromKey, proxyConn)
+				proxyConn, err = proxy.connFor(from, *fromKey)
+				if err == nil {
+					written, err = proxyConn.Write(readBuf[i:read])
+				}
+			}
 			if err != nil {
+				if errors.Is(err, syscall.EADDRNOTAVAIL) {
+					proxy.removeConn(*fromKey, proxyConn)
+				}
 				log.Errorf("Can't proxy a datagram to udp: %s\n", err)
 				break
 			}
@@ -151,7 +184,7 @@ func (proxy *UDPProxy) Close() error {
 	proxy.connTrackLock.Lock()
 	defer proxy.connTrackLock.Unlock()
 	for _, conn := range proxy.connTrackTable {
-		conn.Close()
+		_ = conn.Close()
 	}
 	return nil
 }
