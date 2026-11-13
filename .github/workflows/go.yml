@@ -89,3 +89,6 @@ jobs:
 
     - name: Unit tests
       run: go test -v .\pkg\sshclient
+
+    - name: Exclusive port forward tests
+      run: go test -v .\pkg\services\forwarder "-ginkgo.label-filter=exclusive-bind"
