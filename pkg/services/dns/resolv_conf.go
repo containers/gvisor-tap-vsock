@@ -13,10 +13,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// hostResolvConf lists the host's DNS servers. It exists on Linux and macOS;
-// on other platforms (e.g. Windows) it is absent and no server is found.
-const hostResolvConf = "/etc/resolv.conf"
-
 var errNoNameservers = errors.New("no valid nameserver line")
 
 // recentChange is how long after a change the file is read on every use. A
