@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/tcpip/transport"
 )
 
 // saveReceivedAt is invoked by stateify.
@@ -36,20 +35,21 @@ func (p *udpPacket) loadReceivedAt(_ context.Context, nsec int64) {
 
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad(ctx context.Context) {
-	if e.stack.IsSaveRestoreEnabled() {
-		e.stack.RegisterRestoredEndpoint(e)
-	} else {
-		stack.RestoreStackFromContext(ctx).RegisterRestoredEndpoint(e)
-	}
+	e.stack.RegisterRestoredEndpoint(e)
 }
 
 // beforeSave is invoked by stateify.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) beforeSave() {
 	e.freeze()
 	e.stack.RegisterResumableEndpoint(e)
 }
 
-// Restore implements tcpip.RestoredEndpoint.Restore.
+// Restore implements stack.RestoredEndpoint.Restore.
+//
+// +checklocksexclude:e.rcvMu
+// +checklocksexclude:e.mu
 func (e *endpoint) Restore(s *stack.Stack) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -60,37 +60,13 @@ func (e *endpoint) Restore(s *stack.Stack) {
 		return
 	}
 
-	// Unfreeze the endpoint to handle packets.
-	e.frozen = false
-	if e.stack.IsSaveRestoreEnabled() {
-		e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
-		return
-	}
-	e.stack = s
+	e.thaw()
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
-
-	switch state := e.net.State(); state {
-	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
-	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
-		// Our saved state had a port, but we don't actually have a
-		// reservation. We need to remove the port from our state, but still
-		// pass it to the reservation machinery.
-		var err tcpip.Error
-		id := e.net.Info().ID
-		id.LocalPort = e.localPort
-		id.RemotePort = e.remotePort
-		id, e.boundBindToDevice, err = e.registerWithStack(e.effectiveNetProtos, id)
-		if err != nil {
-			panic("registering udp endpoint with the stack failed during restore")
-		}
-		e.localPort = id.LocalPort
-		e.remotePort = id.RemotePort
-	default:
-		panic("unhandled state")
-	}
 }
 
-// Resume implements tcpip.ResumableEndpoint.Resume.
+// Resume implements stack.ResumableEndpoint.Resume.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Resume() {
 	e.thaw()
 }
