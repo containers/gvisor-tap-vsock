@@ -24,32 +24,34 @@ const (
 )
 
 type GvproxyArgs struct {
-	config             string
-	endpoints          arrayFlags
-	debug              bool
-	mtu                int
-	sshPort            int
-	subnet             string
-	gatewayIP          string
-	bootFileName       string
-	deviceIP           string
-	hostIP             string
-	vpnkitSocket       string
-	qemuSocket         string
-	bessSocket         string
-	stdioSocket        string
-	vfkitSocket        string
-	notificationSocket string
-	forwardSocket      arrayFlags
-	forwardDest        arrayFlags
-	forwardUser        arrayFlags
-	forwardIdentify    arrayFlags
-	pidFile            string
-	pcapFile           string
-	logFile            string
-	servicesEndpoint   string
-	ec2MetadataAccess  bool
-	apiTokenFile       string
+	config              string
+	endpoints           arrayFlags
+	debug               bool
+	mtu                 int
+	sshPort             int
+	subnet              string
+	gatewayIP           string
+	bootFileName        string
+	deviceIP            string
+	hostIP              string
+	vpnkitSocket        string
+	qemuSocket          string
+	bessSocket          string
+	stdioSocket         string
+	vfkitSocket         string
+	notificationSocket  string
+	forwardSocket       arrayFlags
+	forwardDest         arrayFlags
+	forwardUser         arrayFlags
+	forwardIdentify     arrayFlags
+	pidFile             string
+	pcapFile            string
+	logFile             string
+	servicesEndpoint    string
+	ec2MetadataAccess   bool
+	apiTokenFile        string
+	requireEgressPolicy bool
+	requireOwnerLease   bool
 }
 
 type GvproxyConfig struct {
@@ -63,13 +65,18 @@ type GvproxyConfig struct {
 		Stdio  string `yaml:"stdio,omitempty"`
 		Vfkit  string `yaml:"vfkit,omitempty"`
 	} `yaml:"interfaces,omitempty"`
-	Forwards           []GvproxyConfigForward `yaml:"forwards,omitempty"`
-	PIDFile            string                 `yaml:"pid-file,omitempty"`
-	LogFile            string                 `yaml:"log-file,omitempty"`
-	Services           string                 `yaml:"services,omitempty"`
-	Ec2MetadataAccess  bool                   `yaml:"ec2-metadata-access,omitempty"`
-	NotificationSocket string                 `yaml:"notification,omitempty"`
-	APITokenFile       string                 `yaml:"api-token-file,omitempty"`
+	Forwards            []GvproxyConfigForward `yaml:"forwards,omitempty"`
+	PIDFile             string                 `yaml:"pid-file,omitempty"`
+	LogFile             string                 `yaml:"log-file,omitempty"`
+	Services            string                 `yaml:"services,omitempty"`
+	Ec2MetadataAccess   bool                   `yaml:"ec2-metadata-access,omitempty"`
+	NotificationSocket  string                 `yaml:"notification,omitempty"`
+	APITokenFile        string                 `yaml:"api-token-file,omitempty"`
+	RequireEgressPolicy bool                   `yaml:"require-egress-policy,omitempty"`
+	RequireOwnerLease   bool                   `yaml:"-"`
+	// ConfigPath is the file used for SIGHUP policy reloads. It is not part of
+	// the serialized configuration.
+	ConfigPath string `yaml:"-"`
 }
 
 type GvproxyConfigForward struct {
@@ -95,6 +102,7 @@ func GvproxyInit() (*GvproxyConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse command line arguments: %w", err)
 	}
+	config.RequireOwnerLease = args.requireOwnerLease
 
 	if version.ShowVersion() {
 		fmt.Println(version.String())
@@ -115,6 +123,24 @@ func GvproxyInit() (*GvproxyConfig, error) {
 
 	// Pass it to the testable function
 	return GvproxyConfigure(&config, &args, version.String())
+}
+
+// LoadEgressPolicyFromFile reads only the policy portion of a gvproxy YAML
+// configuration. It is used for SIGHUP reloads and performs no IO on success
+// other than the read itself.
+func LoadEgressPolicyFromFile(path string) (*types.EgressPolicy, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+	var config GvproxyConfig
+	if err := yaml.Unmarshal(content, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+	if err := config.Stack.EgressPolicy.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid egress policy: %w", err)
+	}
+	return config.Stack.EgressPolicy, nil
 }
 
 func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*GvproxyArgs, error) {
@@ -144,6 +170,8 @@ func GvproxyArgParse(flagSet *flag.FlagSet, args *GvproxyArgs, argv []string) (*
 	flagSet.BoolVar(&args.ec2MetadataAccess, "ec2-metadata-access", false, "Permits access to EC2 Metadata Service and Amazon Time Sync Service")
 	flagSet.StringVar(&args.notificationSocket, "notification", "", "Socket to be used to send network-ready notifications")
 	flagSet.StringVar(&args.apiTokenFile, "api-token-file", "", "Path to file where API token will be read from (needs 0600 permissions on macOS and Linux)")
+	flagSet.BoolVar(&args.requireEgressPolicy, "require-egress-policy", false, "Fail closed unless the configuration contains an egressPolicy")
+	flagSet.BoolVar(&args.requireOwnerLease, "require-owner-lease", false, "Exit when owner lease on descriptor 3 closes")
 	if err := flagSet.Parse(argv); err != nil {
 		return nil, err
 	}
@@ -317,6 +345,16 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 	}
 	if args.bootFileName != "" {
 		config.Stack.BootFileName = args.bootFileName
+	}
+	if args.requireEgressPolicy {
+		config.RequireEgressPolicy = true
+	}
+	config.ConfigPath = args.config
+	if err := config.Stack.EgressPolicy.Validate(); err != nil {
+		return config, fmt.Errorf("invalid egress policy: %w", err)
+	}
+	if config.RequireEgressPolicy && config.Stack.EgressPolicy == nil {
+		return config, errors.New("egress policy is required but not configured")
 	}
 
 	// Make sure the qemu socket provided is valid syntax
