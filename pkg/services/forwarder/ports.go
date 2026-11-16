@@ -2,19 +2,16 @@ package forwarder
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/inetaf/tcpproxy"
@@ -34,10 +31,14 @@ type PortsForwarder struct {
 	proxies     map[ProxyKey]proxy
 }
 
+type ProxyInfo struct {
+	Local    string `json:"local"`
+	Remote   string `json:"remote"`
+	Protocol string `json:"protocol"`
+}
+
 type proxy struct {
-	Local      string `json:"local"`
-	Remote     string `json:"remote"`
-	Protocol   string `json:"protocol"`
+	ProxyInfo
 	underlying io.Closer
 }
 
@@ -190,9 +191,11 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 			}
 		}()
 		f.proxies[key(protocol, local)] = proxy{
-			Protocol: string(protocol),
-			Local:    local,
-			Remote:   remote,
+			ProxyInfo: ProxyInfo{
+				Protocol: string(protocol),
+				Local:    local,
+				Remote:   remote,
+			},
 			underlying: CloseWrapper(func() error {
 				if cleanup != nil {
 					cleanup()
@@ -226,9 +229,11 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		}
 		go p.Run()
 		f.proxies[key(protocol, local)] = proxy{
-			Protocol:   "udp",
-			Local:      local,
-			Remote:     remote,
+			ProxyInfo: ProxyInfo{
+				Protocol: "udp",
+				Local:    local,
+				Remote:   remote,
+			},
 			underlying: p,
 		}
 	case types.TCP:
@@ -259,9 +264,11 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 			}
 		}()
 		f.proxies[key(protocol, local)] = proxy{
-			Protocol:   "tcp",
-			Local:      local,
-			Remote:     remote,
+			ProxyInfo: ProxyInfo{
+				Protocol: "tcp",
+				Local:    local,
+				Remote:   remote,
+			},
 			underlying: &p,
 		}
 	default:
@@ -299,90 +306,25 @@ func (f *PortsForwarder) Close() error {
 	return nil
 }
 
-func (f *PortsForwarder) Mux() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/all", func(w http.ResponseWriter, r *http.Request) {
-		f.proxiesLock.Lock()
-		defer f.proxiesLock.Unlock()
-		ret := make([]proxy, 0)
-		for _, proxy := range f.proxies {
-			ret = append(ret, proxy)
+func (f *PortsForwarder) List() []ProxyInfo {
+	f.proxiesLock.Lock()
+	defer f.proxiesLock.Unlock()
+	ret := make([]ProxyInfo, 0)
+	for _, p := range f.proxies {
+		ret = append(ret, p.ProxyInfo)
+	}
+	sort.Slice(ret, func(i, j int) bool {
+		if ret[i].Local == ret[j].Local {
+			return ret[i].Protocol < ret[j].Protocol
 		}
-		sort.Slice(ret, func(i, j int) bool {
-			if ret[i].Local == ret[j].Local {
-				return ret[i].Protocol < ret[j].Protocol
-			}
-			return ret[i].Local < ret[j].Local
-		})
-		if err := json.NewEncoder(w).Encode(ret); err != nil {
-			apilog.SetError(r, err)
-		}
+		return ret[i].Local < ret[j].Local
 	})
-	mux.HandleFunc("/expose", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "post only", http.StatusBadRequest)
-			return
-		}
-		var req types.ExposeRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if req.Protocol == "" {
-			req.Protocol = types.TCP
-		}
-
-		// contains unparsed remote field
-		remoteAddr := req.Remote
-
-		// TCP and UDP rely on remote() to preparse the remote field
-		if req.Protocol != types.UNIX && req.Protocol != types.NPIPE {
-			var err error
-			remoteAddr, err = remote(req, r.RemoteAddr)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-		}
-
-		apilog.AddField(r, "protocol", req.Protocol)
-		apilog.AddField(r, "local", req.Local)
-		apilog.AddField(r, "remote", remoteAddr)
-
-		if err := f.Expose(req.Protocol, req.Local, remoteAddr); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-	mux.HandleFunc("/unexpose", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "post only", http.StatusBadRequest)
-			return
-		}
-		var req types.UnexposeRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if req.Protocol == "" {
-			req.Protocol = types.TCP
-		}
-
-		apilog.AddField(r, "protocol", req.Protocol)
-		apilog.AddField(r, "local", req.Local)
-
-		if err := f.Unexpose(req.Protocol, req.Local); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-	return mux
+	return ret
 }
 
-// if the request doesn't have an IP in the remote field, use the IP from the incoming http request.
-func remote(req types.ExposeRequest, ip string) (string, error) {
+// Remote prepares the remote address for the expose request.
+// If the request doesn't have an IP in the remote field, use the IP from the incoming http request.
+func Remote(req types.ExposeRequest, ip string) (string, error) {
 	remoteIP, _, err := net.SplitHostPort(req.Remote)
 	if err != nil {
 		return "", err
