@@ -291,6 +291,13 @@ loop:
 }
 
 func (e *Switch) rxBuf(_ context.Context, id int, buf []byte) {
+	if len(buf) < header.EthernetMinimumSize {
+		// too short to hold an Ethernet header: parsing it would panic
+		// (with camLock held) or read stale bytes as its source address
+		log.Debugf("dropping %d bytes frame from connection %d: shorter than an Ethernet header", len(buf), id)
+		return
+	}
+
 	if e.debug {
 		packet := gopacket.NewPacket(buf, layers.LayerTypeEthernet, gopacket.Default)
 		log.Info(packet.String())
