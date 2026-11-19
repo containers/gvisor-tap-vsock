@@ -16,6 +16,7 @@ import (
 
 	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
 	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
+	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/inetaf/tcpproxy"
 	log "github.com/sirupsen/logrus"
@@ -210,7 +211,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		if err != nil {
 			return err
 		}
-		listener, err := net.ListenUDP("udp", addr)
+		listener, err := transport.ListenPacketAddr("udp", addr.String())
 		if err != nil {
 			return err
 		}
@@ -238,6 +239,7 @@ func (f *PortsForwarder) Expose(protocol types.TransportProtocol, local, remote 
 		}
 
 		var p tcpproxy.Proxy
+		p.ListenFunc = transport.ListenAddr
 		p.AddRoute(local, &tcpproxy.DialProxy{
 			Addr: remote,
 			DialContext: func(ctx context.Context, _, _ string) (conn net.Conn, e error) {
