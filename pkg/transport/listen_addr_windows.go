@@ -1,13 +1,41 @@
 package transport
 
-import "net"
+import (
+	"context"
+	"net"
+	"syscall"
 
-// ListenAddr opens a listener on address with net.Listen.
-func ListenAddr(network, address string) (net.Listener, error) {
-	return net.Listen(network, address)
+	"golang.org/x/sys/windows"
+)
+
+// SO_EXCLUSIVEADDRUSE is defined as ~SO_REUSEADDR in winsock2.h
+const soExclusiveAddrUse = ^windows.SO_REUSEADDR
+
+// exclusiveListenConfig sets SO_EXCLUSIVEADDRUSE on host-side listeners.
+// Without it, Windows lets another process bind the same port on a more
+// specific or different-family address (e.g. 0.0.0.0:443 next to our
+// [::]:443), and connections are silently routed to that process instead.
+// The option must be set between socket() and bind(), which is when Control runs.
+var exclusiveListenConfig = net.ListenConfig{
+	Control: func(_, _ string, c syscall.RawConn) error {
+		var sockErr error
+		if err := c.Control(func(fd uintptr) {
+			sockErr = windows.SetsockoptInt(windows.Handle(fd), windows.SOL_SOCKET, soExclusiveAddrUse, 1)
+		}); err != nil {
+			return err
+		}
+		return sockErr
+	},
 }
 
-// ListenPacketAddr opens a packet listener on address with net.ListenPacket.
+// ListenAddr opens a listener on address with SO_EXCLUSIVEADDRUSE set, so the
+// bind fails while another process uses the port.
+func ListenAddr(network, address string) (net.Listener, error) {
+	return exclusiveListenConfig.Listen(context.Background(), network, address)
+}
+
+// ListenPacketAddr opens a packet listener on address with SO_EXCLUSIVEADDRUSE
+// set, so the bind fails while another process uses the port.
 func ListenPacketAddr(network, address string) (net.PacketConn, error) {
-	return net.ListenPacket(network, address)
+	return exclusiveListenConfig.ListenPacket(context.Background(), network, address)
 }
