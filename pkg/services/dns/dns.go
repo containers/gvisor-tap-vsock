@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/apilog"
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -29,15 +30,18 @@ type upstreamResolver interface {
 var validDNSChars = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 type dnsHandler struct {
-	zones     []types.Zone
-	zonesLock sync.RWMutex
-	upstream  upstreamResolver
+	zones         []types.Zone
+	zonesLock     sync.RWMutex
+	upstream      upstreamResolver
+	outboundAllow []*regexp.Regexp
 	// nameservers returns the host's upstream DNS servers ("ip:port") used to
 	// forward raw queries for record types that Go's net.Resolver cannot
 	// look up directly (SOA, PTR, CAA, ...). It is called for each
 	// forwarded query so that changes to the host's DNS servers are followed.
-	nameservers func() []string
-	client      *dns.Client
+	nameservers    func() []string
+	client         *dns.Client
+	observer       *filter.FilterObserver
+	answerObserver func(name string, ips []net.IP)
 }
 
 func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSize int) {
@@ -152,6 +156,19 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 			return
 		}
 
+		// Check outbound allowlist before upstream resolution.
+		domain := strings.ToLower(strings.TrimSuffix(q.Name, "."))
+		if filter.AllowlistActive(h.outboundAllow, h.observer) {
+			if !filter.DomainAllowed(domain, h.outboundAllow, h.observer) {
+				log.Debugf("Blocking DNS query for %q (not in allowlist)", domain)
+				if h.observer != nil {
+					h.observer.RecordDNS(domain, false)
+				}
+				m.Rcode = dns.RcodeNameError
+				return
+			}
+		}
+
 		resolver := h.upstream
 		switch q.Qtype {
 		case dns.TypeA, dns.TypeAAAA:
@@ -160,11 +177,15 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 				m.Rcode = rcodeForLookupError(q, err)
 				return
 			}
+			var resolvedIPs []string
+			var answered []net.IP
 			for _, ip := range ips {
 				if q.Qtype == dns.TypeA {
 					if ip.IP.To4() == nil {
 						continue
 					}
+					resolvedIPs = append(resolvedIPs, ip.IP.To4().String())
+					answered = append(answered, ip.IP.To4())
 					m.Answer = append(m.Answer, &dns.A{
 						Hdr: dns.RR_Header{
 							Name:   q.Name,
@@ -181,6 +202,8 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 				if ip.IP.To4() != nil || ip.IP.To16() == nil {
 					continue
 				}
+				resolvedIPs = append(resolvedIPs, ip.IP.To16().String())
+				answered = append(answered, ip.IP.To16())
 				m.Answer = append(m.Answer, &dns.AAAA{
 					Hdr: dns.RR_Header{
 						Name:   q.Name,
@@ -190,6 +213,12 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 					},
 					AAAA: ip.IP.To16(),
 				})
+			}
+			if h.observer != nil && len(resolvedIPs) > 0 {
+				h.observer.RecordDNSResolution(domain, resolvedIPs)
+			}
+			if h.answerObserver != nil && len(answered) > 0 {
+				h.answerObserver(strings.TrimSuffix(q.Name, "."), answered)
 			}
 		case dns.TypeCNAME:
 			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
@@ -285,6 +314,10 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 			// Go's net.Resolver has no generic query for them.
 			h.addAnswersFromNameservers(m, q)
 		}
+
+		if h.observer != nil {
+			h.observer.RecordDNS(domain, true)
+		}
 	}
 }
 
@@ -328,21 +361,29 @@ type Server struct {
 	handler *dnsHandler
 }
 
-func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone) (*Server, error) {
+func New(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) (*Server, error) {
 	upstream := &net.Resolver{
 		PreferGo: false,
 	}
-	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream)
+	return NewWithUpstreamResolver(udpConn, tcpLn, zones, upstream, outboundAllow, observer)
 }
 
-func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver) (*Server, error) {
+func NewWithUpstreamResolver(udpConn net.PacketConn, tcpLn net.Listener, zones []types.Zone, upstream upstreamResolver, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) (*Server, error) {
 	handler := &dnsHandler{
-		zones:       zones,
-		upstream:    upstream,
-		nameservers: newResolvConf(hostResolvConf).nameservers,
-		client:      &dns.Client{},
+		zones:         zones,
+		upstream:      upstream,
+		outboundAllow: outboundAllow,
+		nameservers:   newResolvConf(hostResolvConf).nameservers,
+		client:        &dns.Client{},
+		observer:      observer,
 	}
 	return &Server{udpConn: udpConn, tcpLn: tcpLn, handler: handler}, nil
+}
+
+// SetAnswerObserver installs fn to be called with the addresses of every
+// upstream A or AAAA answer before it is sent. Call it before Serve.
+func (s *Server) SetAnswerObserver(fn func(name string, ips []net.IP)) {
+	s.handler.answerObserver = fn
 }
 
 func (s *Server) Serve() error {

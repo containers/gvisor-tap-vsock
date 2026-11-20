@@ -1,10 +1,14 @@
 package forwarder
 
 import (
+	"net/netip"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
@@ -45,6 +49,11 @@ func (e *captureEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.
 
 // echoRequest builds an IPv4 ICMP echo request from src to dst.
 func echoRequest(src, dst tcpip.Address, ident, seq uint16) *stack.PacketBuffer {
+	return icmpPacket(src, dst, header.ICMPv4Echo, ident, seq)
+}
+
+// icmpPacket returns an IPv4 ICMP packet of type typ from src to dst.
+func icmpPacket(src, dst tcpip.Address, typ header.ICMPv4Type, ident, seq uint16) *stack.PacketBuffer {
 	const payload = "ping"
 	const size = header.IPv4MinimumSize + header.ICMPv4MinimumSize + len(payload)
 	buf := make([]byte, size)
@@ -60,7 +69,7 @@ func echoRequest(src, dst tcpip.Address, ident, seq uint16) *stack.PacketBuffer 
 	ip.SetChecksum(^ip.CalculateChecksum())
 
 	icmpHdr := header.ICMPv4(ip.Payload())
-	icmpHdr.SetType(header.ICMPv4Echo)
+	icmpHdr.SetType(typ)
 	icmpHdr.SetIdent(ident)
 	icmpHdr.SetSequence(seq)
 	copy(icmpHdr.Payload(), payload)
@@ -69,10 +78,37 @@ func echoRequest(src, dst tcpip.Address, ident, seq uint16) *stack.PacketBuffer 
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(buf)})
 }
 
+var (
+	icmpTestVMIP      = tcpip.AddrFrom4([4]byte{192, 168, 127, 2})
+	icmpTestGatewayIP = tcpip.AddrFrom4([4]byte{192, 168, 127, 1})
+	icmpTestHostIP    = tcpip.AddrFrom4([4]byte{192, 168, 127, 254})
+)
+
+// newICMPForwardingStack returns the capture endpoint of a stack set up like
+// the virtual network's, with the ICMP forwarder that newForwarder returns.
+func newICMPForwardingStack(newForwarder func(s *stack.Stack) *Forwarder) *captureEndpoint {
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
+	})
+	ginkgo.DeferCleanup(s.Close)
+	ep := newCaptureEndpoint()
+	gomega.Expect(s.CreateNIC(1, ep)).To(gomega.BeNil())
+	gomega.Expect(s.AddProtocolAddress(1, tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: icmpTestGatewayIP.WithPrefix(),
+	}, stack.AddressProperties{})).To(gomega.BeNil())
+	s.SetSpoofing(1, true)
+	s.SetPromiscuousMode(1, true)
+	s.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: 1}})
+	s.SetTransportProtocolHandler(icmp.ProtocolNumber4, newForwarder(s).HandlePacket)
+	return ep
+}
+
 var _ = ginkgo.Describe("ICMP forwarding", func() {
-	vmIP := tcpip.AddrFrom4([4]byte{192, 168, 127, 2})
-	gatewayIP := tcpip.AddrFrom4([4]byte{192, 168, 127, 1})
-	hostIP := tcpip.AddrFrom4([4]byte{192, 168, 127, 254})
+	vmIP := icmpTestVMIP
+	gatewayIP := icmpTestGatewayIP
+	hostIP := icmpTestHostIP
 
 	ginkgo.BeforeEach(func() {
 		// The forwarder pings the host through an ICMP socket, which Linux allows
@@ -97,22 +133,9 @@ var _ = ginkgo.Describe("ICMP forwarding", func() {
 	// newForwardingStack returns the capture endpoint of a stack set up like the
 	// virtual network's, with the ICMP forwarder applying nat.
 	newForwardingStack := func(nat map[tcpip.Address]tcpip.Address) *captureEndpoint {
-		s := stack.New(stack.Options{
-			NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
-			TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
+		return newICMPForwardingStack(func(s *stack.Stack) *Forwarder {
+			return ICMP(s, nat, &sync.Mutex{}, false, nil, nil, nil)
 		})
-		ginkgo.DeferCleanup(s.Close)
-		ep := newCaptureEndpoint()
-		gomega.Expect(s.CreateNIC(1, ep)).To(gomega.BeNil())
-		gomega.Expect(s.AddProtocolAddress(1, tcpip.ProtocolAddress{
-			Protocol:          ipv4.ProtocolNumber,
-			AddressWithPrefix: gatewayIP.WithPrefix(),
-		}, stack.AddressProperties{})).To(gomega.BeNil())
-		s.SetSpoofing(1, true)
-		s.SetPromiscuousMode(1, true)
-		s.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: 1}})
-		s.SetTransportProtocolHandler(icmp.ProtocolNumber4, ICMP(s, nat, &sync.Mutex{}).HandlePacket)
-		return ep
 	}
 
 	// The VM pings an address that NAT maps to the host's loopback. The host
@@ -151,5 +174,115 @@ var _ = ginkgo.Describe("ICMP forwarding", func() {
 		gomega.Expect(header.IPv4(reply.ToView().AsSlice()).SourceAddress()).To(gomega.Equal(gatewayIP))
 
 		gomega.Consistently(ep.written, time.Second).ShouldNot(gomega.Receive(), "second echo reply written to the VM")
+	})
+
+	ginkgo.It("should forward pings and record them when no filtering is configured", func() {
+		observer := filter.NewFilterObserver(100)
+		ep := newICMPForwardingStack(func(s *stack.Stack) *Forwarder {
+			return ICMP(s, map[tcpip.Address]tcpip.Address{hostIP: header.IPv4Loopback}, &sync.Mutex{}, false, nil, observer, nil)
+		})
+
+		ep.DeliverNetworkPacket(ipv4.ProtocolNumber, echoRequest(vmIP, hostIP, 25943, 1))
+
+		var reply *stack.PacketBuffer
+		gomega.Eventually(ep.written, 5*time.Second).Should(gomega.Receive(&reply), "no echo reply written to the VM")
+		defer reply.DecRef()
+
+		allowed := observer.GetConnections("allowed")
+		gomega.Expect(allowed).To(gomega.HaveLen(1))
+		gomega.Expect(allowed[0].Key).To(gomega.Equal(filter.ConnectionKey{Protocol: "icmp", IP: hostIP.String(), Port: 0}))
+	})
+})
+
+// These pings are dropped before the forwarder opens an ICMP socket, so they
+// run wherever the host allows it or not.
+var _ = ginkgo.Describe("ICMP filtering", func() {
+	remoteIP := tcpip.AddrFrom4([4]byte{1, 1, 1, 1})
+
+	// expectBlocked pings remoteIP and checks that the VM gets no reply and
+	// that the observer records the ping as blocked.
+	expectBlocked := func(blockAllOutbound bool, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) {
+		ep := newICMPForwardingStack(func(s *stack.Stack) *Forwarder {
+			return ICMP(s, map[tcpip.Address]tcpip.Address{}, &sync.Mutex{}, blockAllOutbound, outboundAllow, observer, nil)
+		})
+
+		ep.DeliverNetworkPacket(ipv4.ProtocolNumber, echoRequest(icmpTestVMIP, remoteIP, 25943, 1))
+
+		gomega.Consistently(ep.written, time.Second).ShouldNot(gomega.Receive(), "echo reply written to the VM")
+		blocked := observer.GetConnections("blocked")
+		gomega.Expect(blocked).To(gomega.HaveLen(1))
+		gomega.Expect(blocked[0].Key).To(gomega.Equal(filter.ConnectionKey{Protocol: "icmp", IP: remoteIP.String(), Port: 0}))
+		gomega.Expect(observer.GetConnections("allowed")).To(gomega.BeEmpty())
+	}
+
+	ginkgo.It("should block pings when blockAllOutbound is set", func() {
+		expectBlocked(true, nil, filter.NewFilterObserver(100))
+	})
+
+	ginkgo.It("should block pings when an outbound allowlist is active", func() {
+		expectBlocked(false, []*regexp.Regexp{regexp.MustCompile(`^example\.com$`)}, filter.NewFilterObserver(100))
+	})
+
+	ginkgo.It("should block pings to an address on the dynamic blocklist", func() {
+		observer := filter.NewFilterObserver(100)
+		observer.AddBlocklistEntry("icmp", remoteIP.String(), 0, "test")
+		expectBlocked(false, nil, observer)
+	})
+
+	ginkgo.It("should block pings to an address of a blocked domain", func() {
+		observer := filter.NewFilterObserver(100)
+		observer.RecordDNSResolution("evil.example", []string{remoteIP.String()})
+		observer.AddDomainBlocklistEntry("evil.example", "test")
+		expectBlocked(false, nil, observer)
+	})
+
+	ginkgo.It("should drop pings the dial filter refuses and record them as blocked", func() {
+		observer := filter.NewFilterObserver(100)
+		f := &recordingFilter{refuse: true}
+		ep := newICMPForwardingStack(func(s *stack.Stack) *Forwarder {
+			return ICMP(s, map[tcpip.Address]tcpip.Address{remoteIP: header.IPv4Loopback}, &sync.Mutex{}, false, nil, observer, f.filter)
+		})
+
+		ep.DeliverNetworkPacket(ipv4.ProtocolNumber, echoRequest(icmpTestVMIP, remoteIP, 25943, 1))
+
+		gomega.Consistently(ep.written, time.Second).ShouldNot(gomega.Receive(), "echo reply written to the VM")
+		gomega.Expect(f.seen()).To(gomega.Equal([]types.DialRequest{{
+			Network:     "icmp",
+			Destination: netip.AddrPortFrom(netip.AddrFrom4(remoteIP.As4()), 0),
+			DialAddress: netip.AddrPortFrom(loopbackIP, 0),
+		}}))
+		blocked := observer.GetConnections("blocked")
+		gomega.Expect(blocked).To(gomega.HaveLen(1))
+		gomega.Expect(blocked[0].Key).To(gomega.Equal(filter.ConnectionKey{Protocol: "icmp", IP: remoteIP.String(), Port: 0}))
+		gomega.Expect(observer.GetConnections("allowed")).To(gomega.BeEmpty())
+	})
+
+	// Echo replies reach the forwarder too (gvisor hands them to the
+	// transport layer), but the forwarder only forwards echo requests, so the
+	// dial filter must not be asked about anything else.
+	ginkgo.It("should not ask the dial filter about ICMP other than echo requests", func() {
+		f := &recordingFilter{}
+		ep := newICMPForwardingStack(func(s *stack.Stack) *Forwarder {
+			return ICMP(s, map[tcpip.Address]tcpip.Address{}, &sync.Mutex{}, false, nil, nil, f.filter)
+		})
+
+		ep.DeliverNetworkPacket(ipv4.ProtocolNumber, icmpPacket(icmpTestVMIP, remoteIP, header.ICMPv4EchoReply, 25943, 1))
+
+		gomega.Consistently(f.seen, time.Second).Should(gomega.BeEmpty())
+	})
+
+	ginkgo.It("should leave pings to the gateway's own address to the stack even when filtering", func() {
+		observer := filter.NewFilterObserver(100)
+		ep := newICMPForwardingStack(func(s *stack.Stack) *Forwarder {
+			return ICMP(s, map[tcpip.Address]tcpip.Address{}, &sync.Mutex{}, true, nil, observer, nil)
+		})
+
+		ep.DeliverNetworkPacket(ipv4.ProtocolNumber, echoRequest(icmpTestVMIP, icmpTestGatewayIP, 25943, 1))
+
+		var reply *stack.PacketBuffer
+		gomega.Eventually(ep.written, 5*time.Second).Should(gomega.Receive(&reply), "no echo reply written to the VM")
+		defer reply.DecRef()
+		gomega.Expect(header.IPv4(reply.ToView().AsSlice()).SourceAddress()).To(gomega.Equal(icmpTestGatewayIP))
+		gomega.Expect(observer.GetConnections("")).To(gomega.BeEmpty())
 	})
 })
