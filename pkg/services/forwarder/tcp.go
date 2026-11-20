@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/inetaf/tcpproxy"
 	log "github.com/sirupsen/logrus"
@@ -20,8 +22,9 @@ import (
 )
 
 const (
-	linkLocalSubnet     = "169.254.0.0/16"
-	sniDNSLookupTimeout = 3 * time.Second
+	linkLocalSubnet                 = "169.254.0.0/16"
+	sniDNSLookupTimeout             = 3 * time.Second
+	outboundAllowlistTLSPort uint16 = 443
 
 	defaultTCPMaxInFlight    = 128
 	defaultTCPConnectTimeout = 30 * time.Second
@@ -51,7 +54,7 @@ func tcpRoutingAction(
 		if localAddress == gatewayAddr {
 			return tcpDirect
 		}
-		if localPort == 443 {
+		if localPort == outboundAllowlistTLSPort {
 			return tcpTLSAllowlist
 		}
 		return tcpBlock
@@ -59,7 +62,7 @@ func tcpRoutingAction(
 	return tcpDirect
 }
 
-func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, maxInFlight int, connectTimeout time.Duration, blockAllOutbound bool, outboundAllow []*regexp.Regexp, gatewayIP net.IP, filter func(types.DialRequest) error) *tcp.Forwarder {
+func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, maxInFlight int, connectTimeout time.Duration, blockAllOutbound bool, outboundAllow []*regexp.Regexp, gatewayIP net.IP, observer *filter.FilterObserver, dialFilter func(types.DialRequest) error) *tcp.Forwarder {
 	if maxInFlight <= 0 {
 		maxInFlight = defaultTCPMaxInFlight
 	}
@@ -78,13 +81,24 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 		// The embedder's dial filter sees every connection first, so a refusal
 		// resets the guest even where the allowlist would accept the
 		// connection to inspect its TLS ClientHello.
-		if filter != nil {
+		if dialFilter != nil {
 			dialAddress := translate(nat, natLock, localAddress)
-			if err := filter(dialRequest("tcp", localAddress, dialAddress, r.ID().LocalPort)); err != nil {
+			if err := dialFilter(dialRequest("tcp", localAddress, dialAddress, r.ID().LocalPort)); err != nil {
 				log.Debugf("dial filter refused tcp %s:%d: %v", dialAddress, r.ID().LocalPort, err)
+				if observer != nil {
+					observer.RecordConnection("tcp", localAddress.String(), r.ID().LocalPort, "", false)
+				}
 				r.Complete(true)
 				return
 			}
+		}
+
+		// Then the dynamic blocklist.
+		if observer != nil && observer.IsBlocked("tcp", localAddress.String(), r.ID().LocalPort) {
+			log.Debugf("Blocking TCP due to dynamic blocklist: %s:%d", localAddress.String(), r.ID().LocalPort)
+			observer.RecordConnection("tcp", localAddress.String(), r.ID().LocalPort, "", false)
+			r.Complete(true)
+			return
 		}
 
 		action := tcpRoutingAction(localAddress, r.ID().LocalPort,
@@ -98,28 +112,34 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 				log.Debugf("Blocking outbound TCP to %s:%d (outboundAllow active, non-443 port)",
 					localAddress.String(), r.ID().LocalPort)
 			}
+			if observer != nil {
+				observer.RecordConnection("tcp", localAddress.String(), r.ID().LocalPort, "", false)
+			}
 			r.Complete(true)
 		case tcpTLSAllowlist:
-			handleTLSWithAllowlist(r, nat, natLock, localAddress, outboundAllow, connectTimeout)
+			handleTLSWithAllowlist(r, nat, natLock, localAddress, outboundAllow, connectTimeout, observer)
 		case tcpDirect:
-			handleDirectTCP(r, nat, natLock, localAddress, ec2MetadataAccess, connectTimeout)
+			handleDirectTCP(r, nat, natLock, localAddress, ec2MetadataAccess, connectTimeout, observer)
 		}
 	})
 }
 
 // handleDirectTCP is the original forwarding path: dial outbound, then proxy.
-func handleDirectTCP(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, localAddress tcpip.Address, ec2MetadataAccess bool, connectTimeout time.Duration) {
+func handleDirectTCP(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, localAddress tcpip.Address, ec2MetadataAccess bool, connectTimeout time.Duration, observer *filter.FilterObserver) {
 	if (!ec2MetadataAccess) && linkLocal().Contains(localAddress) {
 		r.Complete(true)
 		return
 	}
+
+	// Snapshot port before r.Complete — ID() reads r.segment, which Complete nils.
+	localPort := r.ID().LocalPort
 
 	natLock.Lock()
 	if replaced, ok := nat[localAddress]; ok {
 		localAddress = replaced
 	}
 	natLock.Unlock()
-	outbound, err := net.DialTimeout("tcp", net.JoinHostPort(localAddress.String(), fmt.Sprint(r.ID().LocalPort)), connectTimeout)
+	outbound, err := net.DialTimeout("tcp", net.JoinHostPort(localAddress.String(), fmt.Sprint(localPort)), connectTimeout)
 	if err != nil {
 		log.Tracef("net.DialTimeout() = %v", err)
 		r.Complete(true)
@@ -139,6 +159,11 @@ func handleDirectTCP(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip.Addres
 		return
 	}
 
+	// Record successful connection
+	if observer != nil {
+		observer.RecordConnection("tcp", localAddress.String(), localPort, "", true)
+	}
+
 	remote := tcpproxy.DialProxy{
 		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 			return outbound, nil
@@ -151,7 +176,7 @@ func handleDirectTCP(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip.Addres
 // ClientHello to extract the SNI, checks it against the allowlist, and only
 // then dials the outbound connection. Peeked bytes are replayed via
 // tcpproxy.Conn so the remote server sees the full ClientHello.
-func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, localAddress tcpip.Address, outboundAllow []*regexp.Regexp, connectTimeout time.Duration) {
+func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, localAddress tcpip.Address, outboundAllow []*regexp.Regexp, connectTimeout time.Duration, observer *filter.FilterObserver) {
 	// Accept the guest TCP connection (complete the 3-way handshake).
 	var wq waiter.Queue
 	ep, tcpErr := r.CreateEndpoint(&wq)
@@ -186,17 +211,24 @@ func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip
 
 	if err != nil {
 		log.Debugf("Blocking TLS to %s: SNI parse error: %v", localAddress.String(), err)
+		if observer != nil {
+			observer.RecordConnection("tcp", localAddress.String(), outboundAllowlistTLSPort, "", false)
+		}
 		guestConn.Close()
 		return
 	}
 
-	if !MatchesAllowlist(sni, outboundAllow) {
+	if !filter.MatchesOutboundAllowlist(sni, outboundAllow) {
 		log.Debugf("Blocking TLS to %s: SNI %q not in allowlist", localAddress.String(), sni)
+		if observer != nil {
+			observer.RecordConnection("tcp", localAddress.String(), outboundAllowlistTLSPort, sni, false)
+		}
 		guestConn.Close()
 		return
 	}
 
-	// DNS cross-check: verify the SNI resolves to the destination IP.
+	// DNS cross-check: verify the SNI resolves to the destination IP (host default
+	// resolver; may differ from guest DNS). See types.Configuration.OutboundAllow.
 	// This detects SNI spoofing where a client sends an allowed domain but
 	// connects to an unrelated IP.
 	dnsCtx, dnsCancel := context.WithTimeout(context.Background(), sniDNSLookupTimeout)
@@ -204,17 +236,26 @@ func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip
 	resolvedIPs, dnsErr := net.DefaultResolver.LookupIPAddr(dnsCtx, sni)
 	if dnsErr != nil {
 		log.Debugf("Blocking TLS to %s: SNI %q DNS lookup failed: %v", localAddress.String(), sni, dnsErr)
+		if observer != nil {
+			observer.RecordConnection("tcp", localAddress.String(), outboundAllowlistTLSPort, sni, false)
+		}
 		guestConn.Close()
 		return
 	}
 	if !sniMatchesDestination(localAddress, resolvedIPs) {
 		log.Debugf("Blocking TLS to %s: SNI %q resolves to %v, not %s (possible SNI spoofing)",
 			localAddress.String(), sni, resolvedIPs, localAddress.String())
+		if observer != nil {
+			observer.RecordConnection("tcp", localAddress.String(), outboundAllowlistTLSPort, sni, false)
+		}
 		guestConn.Close()
 		return
 	}
 
 	log.Debugf("Allowing TLS to %s: SNI %q ALPN %v", localAddress.String(), sni, alpn)
+	if observer != nil {
+		observer.RecordConnection("tcp", localAddress.String(), outboundAllowlistTLSPort, sni, true)
+	}
 
 	// NAT translation.
 	natLock.Lock()
@@ -224,7 +265,7 @@ func handleTLSWithAllowlist(r *tcp.ForwarderRequest, nat map[tcpip.Address]tcpip
 	natLock.Unlock()
 
 	// Dial outbound only after allowlist passes.
-	outbound, err := net.DialTimeout("tcp", net.JoinHostPort(localAddress.String(), "443"), connectTimeout)
+	outbound, err := net.DialTimeout("tcp", net.JoinHostPort(localAddress.String(), strconv.Itoa(int(outboundAllowlistTLSPort))), connectTimeout)
 	if err != nil {
 		log.Tracef("net.DialTimeout() = %v", err)
 		guestConn.Close()

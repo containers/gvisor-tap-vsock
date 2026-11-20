@@ -3,6 +3,7 @@ package forwarder
 import (
 	"bufio"
 	"bytes"
+	crand "crypto/rand"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
@@ -57,9 +58,9 @@ func buildSNIExtension(hostname string) tlsExtension {
 	// Server Name List: 2-byte list length, then entries (1-byte type + 2-byte name length + name)
 	listLen := 1 + 2 + len(nameBytes)
 	var buf bytes.Buffer
-	binary.Write(&buf, binary.BigEndian, uint16(listLen))
-	buf.WriteByte(0x00) // host_name type
-	binary.Write(&buf, binary.BigEndian, uint16(len(nameBytes)))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(listLen))        // #nosec G115
+	buf.WriteByte(0x00)                                              // host_name type
+	_ = binary.Write(&buf, binary.BigEndian, uint16(len(nameBytes))) // #nosec G115
 	buf.Write(nameBytes)
 	return tlsExtension{typ: 0x0000, data: buf.Bytes()}
 }
@@ -68,9 +69,9 @@ func buildSNIExtensionWithNameType(nameType byte, hostname string) tlsExtension 
 	nameBytes := []byte(hostname)
 	entryLen := 1 + 2 + len(nameBytes)
 	var buf bytes.Buffer
-	binary.Write(&buf, binary.BigEndian, uint16(entryLen))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(entryLen)) // #nosec G115
 	buf.WriteByte(nameType)
-	binary.Write(&buf, binary.BigEndian, uint16(len(nameBytes)))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(len(nameBytes))) // #nosec G115
 	buf.Write(nameBytes)
 	return tlsExtension{typ: 0x0000, data: buf.Bytes()}
 }
@@ -83,11 +84,11 @@ func buildMultipleServerNames(names []struct {
 	for _, n := range names {
 		nameBytes := []byte(n.name)
 		entries.WriteByte(n.nameType)
-		binary.Write(&entries, binary.BigEndian, uint16(len(nameBytes)))
+		_ = binary.Write(&entries, binary.BigEndian, uint16(len(nameBytes))) // #nosec G115
 		entries.Write(nameBytes)
 	}
 	var buf bytes.Buffer
-	binary.Write(&buf, binary.BigEndian, uint16(entries.Len()))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(entries.Len())) // #nosec G115
 	buf.Write(entries.Bytes())
 	return tlsExtension{typ: 0x0000, data: buf.Bytes()}
 }
@@ -109,17 +110,17 @@ func buildALPNExtension() tlsExtension {
 		list.WriteByte(byte(len(p)))
 		list.WriteString(p)
 	}
-	binary.Write(&buf, binary.BigEndian, uint16(list.Len()))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(list.Len())) // #nosec G115
 	buf.Write(list.Bytes())
 	return tlsExtension{typ: 0x0010, data: buf.Bytes()}
 }
 
 func buildSupportedGroupsExtension() tlsExtension {
 	var buf bytes.Buffer
-	groups := []uint16{0x001d, 0x0017, 0x0018} // x25519, secp256r1, secp384r1
-	binary.Write(&buf, binary.BigEndian, uint16(len(groups)*2))
+	groups := []uint16{0x001d, 0x0017, 0x0018}                      // x25519, secp256r1, secp384r1
+	_ = binary.Write(&buf, binary.BigEndian, uint16(len(groups)*2)) // #nosec G115
 	for _, g := range groups {
-		binary.Write(&buf, binary.BigEndian, g)
+		_ = binary.Write(&buf, binary.BigEndian, g)
 	}
 	return tlsExtension{typ: 0x000a, data: buf.Bytes()}
 }
@@ -127,10 +128,10 @@ func buildSupportedGroupsExtension() tlsExtension {
 func buildKeyShareExtension() tlsExtension {
 	// Minimal key_share extension
 	var buf bytes.Buffer
-	keyData := make([]byte, 32)                                    // fake key
-	binary.Write(&buf, binary.BigEndian, uint16(2+2+len(keyData))) // list length
-	binary.Write(&buf, binary.BigEndian, uint16(0x001d))           // x25519
-	binary.Write(&buf, binary.BigEndian, uint16(len(keyData)))
+	keyData := make([]byte, 32)                                        // fake key
+	_ = binary.Write(&buf, binary.BigEndian, uint16(2+2+len(keyData))) // #nosec G115
+	_ = binary.Write(&buf, binary.BigEndian, uint16(0x001d))           // x25519
+	_ = binary.Write(&buf, binary.BigEndian, uint16(len(keyData)))     // #nosec G115
 	buf.Write(keyData)
 	return tlsExtension{typ: 0x0033, data: buf.Bytes()}
 }
@@ -139,7 +140,7 @@ func buildSupportedVersionsExtension(versions ...uint16) tlsExtension {
 	var buf bytes.Buffer
 	buf.WriteByte(byte(len(versions) * 2))
 	for _, v := range versions {
-		binary.Write(&buf, binary.BigEndian, v)
+		_ = binary.Write(&buf, binary.BigEndian, v)
 	}
 	return tlsExtension{typ: 0x002b, data: buf.Bytes()}
 }
@@ -163,12 +164,12 @@ func buildECHOuterExtension(configID uint8, encLen, payloadLen int) tlsExtension
 func buildECHOuterExtensionWithCipher(configID uint8, kdfID, aeadID uint16, encLen, payloadLen int) tlsExtension {
 	var buf bytes.Buffer
 	buf.WriteByte(0x00) // ECHClientHelloType: outer
-	binary.Write(&buf, binary.BigEndian, kdfID)
-	binary.Write(&buf, binary.BigEndian, aeadID)
+	_ = binary.Write(&buf, binary.BigEndian, kdfID)
+	_ = binary.Write(&buf, binary.BigEndian, aeadID)
 	buf.WriteByte(configID)
-	binary.Write(&buf, binary.BigEndian, uint16(encLen))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(encLen)) // #nosec G115
 	buf.Write(make([]byte, encLen))
-	binary.Write(&buf, binary.BigEndian, uint16(payloadLen))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(payloadLen)) // #nosec G115
 	buf.Write(make([]byte, payloadLen))
 	return tlsExtension{typ: 0xfe0d, data: buf.Bytes()}
 }
@@ -208,15 +209,15 @@ func buildClientHello(opts clientHelloOpts) []byte {
 
 	var extsBuf bytes.Buffer
 	for _, ext := range exts {
-		binary.Write(&extsBuf, binary.BigEndian, ext.typ)
-		binary.Write(&extsBuf, binary.BigEndian, uint16(len(ext.data)))
+		_ = binary.Write(&extsBuf, binary.BigEndian, ext.typ)
+		_ = binary.Write(&extsBuf, binary.BigEndian, uint16(len(ext.data))) // #nosec G115
 		extsBuf.Write(ext.data)
 	}
 
 	// Build ClientHello body (after handshake header).
 	var body bytes.Buffer
 	// Version
-	binary.Write(&body, binary.BigEndian, opts.handshakeVersion)
+	_ = binary.Write(&body, binary.BigEndian, opts.handshakeVersion)
 	// Random (32 bytes)
 	random := make([]byte, 32)
 	body.Write(random)
@@ -224,16 +225,16 @@ func buildClientHello(opts clientHelloOpts) []byte {
 	body.WriteByte(byte(len(opts.sessionID)))
 	body.Write(opts.sessionID)
 	// Cipher Suites
-	binary.Write(&body, binary.BigEndian, uint16(len(opts.cipherSuites)*2))
+	_ = binary.Write(&body, binary.BigEndian, uint16(len(opts.cipherSuites)*2)) // #nosec G115
 	for _, cs := range opts.cipherSuites {
-		binary.Write(&body, binary.BigEndian, cs)
+		_ = binary.Write(&body, binary.BigEndian, cs)
 	}
 	// Compression Methods
 	body.WriteByte(byte(len(opts.compressionMethods)))
 	body.Write(opts.compressionMethods)
 	// Extensions
 	if extsBuf.Len() > 0 || len(exts) > 0 {
-		binary.Write(&body, binary.BigEndian, uint16(extsBuf.Len()))
+		_ = binary.Write(&body, binary.BigEndian, uint16(extsBuf.Len())) // #nosec G115
 		body.Write(extsBuf.Bytes())
 	}
 
@@ -261,8 +262,8 @@ func buildClientHello(opts clientHelloOpts) []byte {
 func wrapTLSRecord(payload []byte, version uint16) []byte {
 	var rec bytes.Buffer
 	rec.WriteByte(0x16) // handshake
-	binary.Write(&rec, binary.BigEndian, version)
-	binary.Write(&rec, binary.BigEndian, uint16(len(payload)))
+	_ = binary.Write(&rec, binary.BigEndian, version)
+	_ = binary.Write(&rec, binary.BigEndian, uint16(len(payload))) // #nosec G115
 	rec.Write(payload)
 	return rec.Bytes()
 }
@@ -367,8 +368,8 @@ func TestPeekSNI_TLS13(t *testing.T) {
 func TestPeekSNI_TLS11(t *testing.T) {
 	opts := defaultOpts()
 	opts.serverName = "example.com"
-	opts.version = 0x0302           // TLS 1.1 in record header
-	opts.handshakeVersion = 0x0302  // TLS 1.1 in ClientHello body
+	opts.version = 0x0302                                // TLS 1.1 in record header
+	opts.handshakeVersion = 0x0302                       // TLS 1.1 in ClientHello body
 	opts.cipherSuites = []uint16{0x002f, 0x0035, 0x003c} // TLS 1.1 cipher suites
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
@@ -381,8 +382,8 @@ func TestPeekSNI_TLS11(t *testing.T) {
 func TestPeekSNI_TLS10(t *testing.T) {
 	opts := defaultOpts()
 	opts.serverName = "example.com"
-	opts.version = 0x0301           // TLS 1.0 in record header
-	opts.handshakeVersion = 0x0301  // TLS 1.0 in ClientHello body
+	opts.version = 0x0301          // TLS 1.0 in record header
+	opts.handshakeVersion = 0x0301 // TLS 1.0 in ClientHello body
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
 	sni, alpn, peeked, err := PeekSNI(br)
@@ -394,8 +395,8 @@ func TestPeekSNI_TLS10(t *testing.T) {
 func TestPeekSNI_SSLv3(t *testing.T) {
 	opts := defaultOpts()
 	opts.serverName = "example.com"
-	opts.version = 0x0300           // SSLv3 in record header
-	opts.handshakeVersion = 0x0300  // SSLv3 in ClientHello body
+	opts.version = 0x0300          // SSLv3 in record header
+	opts.handshakeVersion = 0x0300 // SSLv3 in ClientHello body
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
 	sni, alpn, peeked, err := PeekSNI(br)
@@ -413,8 +414,8 @@ func TestPeekSNI_SSLv3(t *testing.T) {
 func TestPeekSNI_FakeVersion_TLS14(t *testing.T) {
 	opts := defaultOpts()
 	opts.serverName = "example.com"
-	opts.version = 0x0305           // fake "TLS 1.4" in record header
-	opts.handshakeVersion = 0x0305  // fake "TLS 1.4" in ClientHello body
+	opts.version = 0x0305          // fake "TLS 1.4" in record header
+	opts.handshakeVersion = 0x0305 // fake "TLS 1.4" in ClientHello body
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
 	sni, alpn, peeked, err := PeekSNI(br)
@@ -430,9 +431,9 @@ func TestPeekSNI_FakeVersion_TLS14(t *testing.T) {
 // don't cause issues. The parser ignores version bytes entirely.
 func TestPeekSNI_BogusVersions(t *testing.T) {
 	versions := []struct {
-		name    string
-		recVer  uint16
-		hsVer   uint16
+		name   string
+		recVer uint16
+		hsVer  uint16
 	}{
 		{"ZeroZero", 0x0000, 0x0000},
 		{"MaxMax", 0xFFFF, 0xFFFF},
@@ -620,7 +621,7 @@ func TestPeekSNI_ManyCipherSuites(t *testing.T) {
 	opts := defaultOpts()
 	opts.cipherSuites = make([]uint16, 100)
 	for i := range opts.cipherSuites {
-		opts.cipherSuites[i] = uint16(0xc000 + i)
+		opts.cipherSuites[i] = uint16(0xc000 + i) // #nosec G115
 	}
 	data := buildClientHello(opts)
 	br := bufio.NewReader(bytes.NewReader(data))
@@ -895,9 +896,9 @@ func TestPeekSNI_SNIInternalLenMismatch(t *testing.T) {
 	// Build an SNI extension with wrong internal length.
 	nameBytes := []byte("example.com")
 	var buf bytes.Buffer
-	binary.Write(&buf, binary.BigEndian, uint16(0xFF)) // wrong list length
+	_ = binary.Write(&buf, binary.BigEndian, uint16(0xFF)) // wrong list length
 	buf.WriteByte(0x00)
-	binary.Write(&buf, binary.BigEndian, uint16(len(nameBytes)))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(len(nameBytes))) // #nosec G115
 	buf.Write(nameBytes)
 	opts.extensions = []tlsExtension{{typ: 0x0000, data: buf.Bytes()}}
 	data := buildClientHello(opts)
@@ -912,7 +913,7 @@ func TestPeekSNI_TruncatedMidExtension(t *testing.T) {
 	if len(data) > 10 {
 		data = data[:len(data)-5]
 		// Also fix the record length.
-		binary.BigEndian.PutUint16(data[3:5], uint16(len(data)-5))
+		binary.BigEndian.PutUint16(data[3:5], uint16(len(data)-5)) // #nosec G115
 	}
 	br := bufio.NewReader(bytes.NewReader(data))
 	_, _, _, err := PeekSNI(br)
@@ -958,7 +959,7 @@ func TestPeekSNI_OverMaxRecordLen(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPeekSNI_FuzzRandom(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
+	rng := rand.New(rand.NewSource(42)) // #nosec G404
 	for i := 0; i < 1000; i++ {
 		size := rng.Intn(2001)
 		data := make([]byte, size)
@@ -969,7 +970,7 @@ func TestPeekSNI_FuzzRandom(t *testing.T) {
 }
 
 func TestPeekSNI_FuzzMutated(t *testing.T) {
-	rng := rand.New(rand.NewSource(43))
+	rng := rand.New(rand.NewSource(43)) // #nosec G404
 	base := buildClientHelloBytes("fuzz.example.com")
 
 	for i := 0; i < 1000; i++ {
@@ -1144,7 +1145,7 @@ func TestPeekSNI_DifferentialVsCryptoTLS(t *testing.T) {
 
 			// crypto/tls parser via GetConfigForClient callback.
 			var tlsSNI string
-			tlsConfig := &tls.Config{
+			tlsConfig := &tls.Config{ // #nosec G402
 				GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 					tlsSNI = hello.ServerName
 					return nil, nil
@@ -1449,7 +1450,7 @@ func TestPeekSNI_IntermediateESNIDraftCodes(t *testing.T) {
 func TestPeekSNI_ECHGrease(t *testing.T) {
 	// Chrome sends GREASE ECH with random config_id and random payload
 	greaseECHData := make([]byte, 166)
-	rand.Read(greaseECHData)
+	_, _ = crand.Read(greaseECHData)
 	greaseECHData[0] = 0x00
 
 	opts := defaultOpts()
@@ -1652,7 +1653,7 @@ func TestParseALPNExtension(t *testing.T) {
 				var list bytes.Buffer
 				list.WriteByte(byte(len(proto)))
 				list.WriteString(proto)
-				binary.Write(&buf, binary.BigEndian, uint16(list.Len()))
+				_ = binary.Write(&buf, binary.BigEndian, uint16(list.Len())) // #nosec G115
 				buf.Write(list.Bytes())
 				return buf.Bytes()
 			}(),
@@ -2065,8 +2066,8 @@ func TestPeekSNI_ECHThreeFragments(t *testing.T) {
 	require.Equal(t, "example.com", sni)
 }
 
-// M20: Table-driven intermediate ECH draft codes 0xfe08-0xfe0c.
-// These should NOT trigger ErrECH — only 0xfe0d and 0xffce are detected.
+// M20: Table-driven intermediate ECH draft codes 0xfe08-0xfe0c (ignored like any
+// unknown extension; outer SNI is still parsed per RFC 9849).
 func TestPeekSNI_IntermediateECHDraftCodes_0xfe(t *testing.T) {
 	draftCodes := []struct {
 		name string
@@ -2088,7 +2089,7 @@ func TestPeekSNI_IntermediateECHDraftCodes_0xfe(t *testing.T) {
 			data := buildClientHello(opts)
 			br := bufio.NewReader(bytes.NewReader(data))
 			sni, _, _, err := PeekSNI(br)
-			require.NoError(t, err, "intermediate draft code 0x%04x should not trigger ErrECH", dc.code)
+			require.NoError(t, err, "intermediate draft code 0x%04x should not break SNI parse", dc.code)
 			require.Equal(t, "example.com", sni)
 		})
 	}

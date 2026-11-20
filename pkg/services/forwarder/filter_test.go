@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -86,11 +87,12 @@ var _ = ginkgo.Describe("dial filter", func() {
 		ginkgo.AfterEach(func() { ln.Close() })
 
 		// dialPort connects from the guest to guestAddr:dstPort through a TCP
-		// forwarder with the given dial filter and outbound allowlist.
-		dialPort := func(f *recordingFilter, dstPort uint16, outboundAllow []*regexp.Regexp) (net.Conn, error) {
+		// forwarder with the given dial filter, outbound allowlist and filter
+		// observer.
+		dialPort := func(f *recordingFilter, dstPort uint16, outboundAllow []*regexp.Regexp, observer *filter.FilterObserver) (net.Conn, error) {
 			s := newTestStack()
 			var natLock sync.Mutex
-			fwd := TCP(s, natToLoopback, &natLock, false, 0, 0, false, outboundAllow, nil, f.filter)
+			fwd := TCP(s, natToLoopback, &natLock, false, 0, 0, false, outboundAllow, nil, observer, f.filter)
 			s.SetTransportProtocolHandler(tcp.ProtocolNumber, fwd.HandlePacket)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -98,7 +100,7 @@ var _ = ginkgo.Describe("dial filter", func() {
 		}
 
 		dial := func(f *recordingFilter) (net.Conn, error) {
-			return dialPort(f, port, nil)
+			return dialPort(f, port, nil, nil)
 		}
 
 		ginkgo.It("sees the destination before and after NAT and lets an allowed connection through", func() {
@@ -119,6 +121,17 @@ var _ = ginkgo.Describe("dial filter", func() {
 			gomega.Expect(f.seen()).To(gomega.HaveLen(1))
 		})
 
+		ginkgo.It("records a refused connection as blocked in the filter observer", func() {
+			observer := filter.NewFilterObserver(100)
+			_, err := dialPort(&recordingFilter{refuse: true}, port, nil, observer)
+			gomega.Expect(err).Should(gomega.HaveOccurred())
+
+			blocked := observer.GetConnections("blocked")
+			gomega.Expect(blocked).To(gomega.HaveLen(1))
+			gomega.Expect(blocked[0].Key).To(gomega.Equal(filter.ConnectionKey{Protocol: "tcp", IP: guestIP.String(), Port: port}))
+			gomega.Expect(observer.GetConnections("allowed")).To(gomega.BeEmpty())
+		})
+
 		// With an allowlist active, port 443 is accepted so the forwarder can
 		// read the TLS ClientHello. A refusal by the dial filter must come
 		// before that, so the guest's connect fails instead of succeeding and
@@ -128,7 +141,7 @@ var _ = ginkgo.Describe("dial filter", func() {
 
 			ginkgo.It("resets a refused connection to port 443 before accepting it to read the ClientHello", func() {
 				f := &recordingFilter{refuse: true}
-				_, err := dialPort(f, 443, allowlist)
+				_, err := dialPort(f, 443, allowlist, nil)
 				gomega.Expect(err).Should(gomega.HaveOccurred())
 				// A retransmitted SYN, when the reset is slow to arrive, asks
 				// the filter again; every request must be for this connection.
@@ -138,7 +151,7 @@ var _ = ginkgo.Describe("dial filter", func() {
 
 			ginkgo.It("accepts a connection to port 443 that the dial filter allows, to read the ClientHello", func() {
 				f := &recordingFilter{}
-				c, err := dialPort(f, 443, allowlist)
+				c, err := dialPort(f, 443, allowlist, nil)
 				gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 				c.Close()
 				// A retransmitted SYN, when the reset is slow to arrive, asks
@@ -164,10 +177,10 @@ var _ = ginkgo.Describe("dial filter", func() {
 
 		ginkgo.AfterEach(func() { pc.Close() })
 
-		send := func(f *recordingFilter) bool {
+		sendObserved := func(f *recordingFilter, observer *filter.FilterObserver) bool {
 			s := newTestStack()
 			var natLock sync.Mutex
-			fwd := UDP(s, natToLoopback, &natLock, false, false, nil, nil, f.filter)
+			fwd := UDP(s, natToLoopback, &natLock, false, false, nil, nil, observer, f.filter)
 			s.SetTransportProtocolHandler(udp.ProtocolNumber, fwd.HandlePacket)
 			c, err := gonet.DialUDP(s, nil, &tcpip.FullAddress{NIC: 1, Addr: guestAddr, Port: port}, ipv4.ProtocolNumber)
 			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
@@ -180,6 +193,10 @@ var _ = ginkgo.Describe("dial filter", func() {
 			return err == nil
 		}
 
+		send := func(f *recordingFilter) bool {
+			return sendObserved(f, nil)
+		}
+
 		ginkgo.It("sees the destination before and after NAT and forwards an allowed datagram", func() {
 			f := &recordingFilter{}
 			gomega.Expect(send(f)).To(gomega.BeTrue())
@@ -190,6 +207,16 @@ var _ = ginkgo.Describe("dial filter", func() {
 			f := &recordingFilter{refuse: true}
 			gomega.Expect(send(f)).To(gomega.BeFalse())
 			gomega.Expect(f.seen()).NotTo(gomega.BeEmpty())
+		})
+
+		ginkgo.It("records a refused datagram as blocked in the filter observer", func() {
+			observer := filter.NewFilterObserver(100)
+			gomega.Expect(sendObserved(&recordingFilter{refuse: true}, observer)).To(gomega.BeFalse())
+
+			blocked := observer.GetConnections("blocked")
+			gomega.Expect(blocked).NotTo(gomega.BeEmpty())
+			gomega.Expect(blocked[0].Key).To(gomega.Equal(filter.ConnectionKey{Protocol: "udp", IP: guestIP.String(), Port: port}))
+			gomega.Expect(observer.GetConnections("allowed")).To(gomega.BeEmpty())
 		})
 	})
 })

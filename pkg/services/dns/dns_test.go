@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/foxcpp/go-mockdns"
 	"github.com/miekg/dns"
@@ -27,7 +28,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 	var server *Server
 
 	ginkgo.BeforeEach(func() {
-		server, _ = New(nil, nil, []types.Zone{}, nil)
+		server, _ = New(nil, nil, []types.Zone{}, nil, nil)
 	})
 
 	ginkgo.It("should add dns zone with ip", func() {
@@ -170,7 +171,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 					},
 				},
 			},
-		}, nil)
+		}, nil, nil)
 		gomega.Expect(server.addZone(types.Zone{
 			Name: "testing.",
 			Records: []types.Record{
@@ -244,7 +245,7 @@ var _ = ginkgo.Describe("dns add test", func() {
 	ginkgo.It("should preserve Protected flag when merging into existing zone", func() {
 		server, _ = New(nil, nil, []types.Zone{
 			{Name: "system.internal.", Protected: true, DefaultIP: net.ParseIP("10.0.0.1")},
-		}, nil)
+		}, nil, nil)
 		err := server.addZone(types.Zone{
 			Name:    "system.internal.",
 			Records: []types.Record{{Name: "api", IP: net.ParseIP("10.0.0.2")}},
@@ -279,7 +280,7 @@ var _ = ginkgo.Describe("dns zone validation", func() {
 				Protected: true,
 				DefaultIP: net.ParseIP("192.168.127.1"),
 			},
-		}, nil)
+		}, nil, nil)
 	})
 
 	ginkgo.It("should reject empty zone name", func() {
@@ -579,7 +580,7 @@ var _ = ginkgo.Describe("forwarding unhandled record types", func() {
 				},
 			},
 		}
-		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream, nil)
+		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream, nil, nil)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
 		// Point the raw forwarder at the mock upstream server. Its AAAA
 		// response intentionally differs from the typed resolver's response.
@@ -726,7 +727,7 @@ var _ = ginkgo.Describe("upstream lookup errors", func() {
 	qtypes := []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeCNAME, dns.TypeMX, dns.TypeNS, dns.TypeSRV, dns.TypeTXT}
 
 	query := func(err error, qtype uint16) *dns.Msg {
-		server, newErr := NewWithUpstreamResolver(nil, nil, []types.Zone{}, &failingResolver{err: err}, nil)
+		server, newErr := NewWithUpstreamResolver(nil, nil, []types.Zone{}, &failingResolver{err: err}, nil, nil)
 		gomega.Expect(newErr).ToNot(gomega.HaveOccurred())
 		m := new(dns.Msg)
 		m.SetQuestion("example.org.", qtype)
@@ -891,7 +892,7 @@ func TestDNSOutboundAllowLocalZoneNotAffected(t *testing.T) {
 			Name:      "internal.",
 			DefaultIP: net.ParseIP("192.168.1.1"),
 		},
-	}, upstream, allowlist)
+	}, upstream, allowlist, nil)
 	require.NoError(t, err)
 
 	// Query for a domain in the local zone.
@@ -924,7 +925,7 @@ func TestDNSOutboundAllowCaseNormalization(t *testing.T) {
 		regexp.MustCompile(`^allowed\.example\.com$`),
 	}
 
-	server, err := NewWithUpstreamResolver(nil, nil, nil, upstream, allowlist)
+	server, err := NewWithUpstreamResolver(nil, nil, nil, upstream, allowlist, nil)
 	require.NoError(t, err)
 
 	// Simulate a mixed-case DNS query — the handler should normalize to lowercase
@@ -954,7 +955,7 @@ func startDNSServer(upstream upstreamResolver, outboundAllow []*regexp.Regexp) (
 		return "", nil, err
 	}
 
-	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow)
+	server, err := NewWithUpstreamResolver(udpConn, tcpLn, nil, upstream, outboundAllow, nil)
 	if err != nil {
 		return "", nil, err
 	}
@@ -995,7 +996,7 @@ var _ = ginkgo.Describe("dns answer observer", func() {
 			},
 		}
 		var err error
-		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream, nil)
+		server, err = NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream, nil, nil)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
 		seen = nil
 		server.SetAnswerObserver(func(name string, ips []net.IP) {
@@ -1034,5 +1035,32 @@ var _ = ginkgo.Describe("dns answer observer", func() {
 		m := query("missing.example.", dns.TypeA)
 		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeNameError))
 		gomega.Expect(seen).To(gomega.BeEmpty())
+	})
+
+	// The filter observer keeps its own record of answers (for the domain
+	// blocklist and connection labels); installing an answer observer must
+	// not replace it. The filter observer stores the name lowercased, the
+	// answer observer gets it as the guest asked.
+	ginkgo.It("reports answers to both the filter observer and the answer observer", func() {
+		upstream := &mockdns.Resolver{
+			Zones: map[string]mockdns.Zone{
+				"mixed.example.": {A: []string{"192.0.2.20"}},
+			},
+		}
+		observer := filter.NewFilterObserver(100)
+		withObserver, err := NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream, nil, observer)
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+		var names []string
+		withObserver.SetAnswerObserver(func(name string, _ []net.IP) {
+			names = append(names, name)
+		})
+
+		m := new(dns.Msg)
+		m.SetQuestion("Mixed.Example.", dns.TypeA)
+		withObserver.handler.addAnswers(m)
+
+		gomega.Expect(m.Answer).To(gomega.HaveLen(1))
+		gomega.Expect(names).To(gomega.Equal([]string{"Mixed.Example"}))
+		gomega.Expect(observer.LookupDomain("192.0.2.20")).To(gomega.Equal("mixed.example"))
 	})
 })

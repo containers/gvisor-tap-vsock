@@ -7,6 +7,8 @@ import (
 	"net"
 	"regexp"
 	"strings"
+
+	"github.com/containers/gvisor-tap-vsock/pkg/services/filter"
 )
 
 var (
@@ -15,11 +17,6 @@ var (
 	// ErrNoSNI is returned when a valid TLS ClientHello contains no SNI extension
 	// or the SNI hostname is empty.
 	ErrNoSNI = errors.New("no SNI extension found")
-	// ErrECH is returned when the ClientHello contains an Encrypted Client Hello
-	// (or legacy ESNI) extension. Deprecated: the parser no longer returns this
-	// error — ECH extensions are ignored and the outer SNI is returned normally
-	// per RFC 9849 Section 8.1.2. Kept for backward compatibility.
-	ErrECH = errors.New("encrypted client hello detected")
 	// ErrShortRead is returned when the data is too short to parse.
 	ErrShortRead = errors.New("short read")
 )
@@ -36,10 +33,8 @@ const (
 	maxClientHelloLen = 65536
 
 	// TLS extension types
-	extServerName           = 0x0000
-	extALPN                 = 0x0010
-	extEncryptedClientHello = 0xfe0d
-	extLegacyESNI           = 0xffce
+	extServerName = 0x0000
+	extALPN       = 0x0010
 
 	// SNI name types
 	sniNameTypeHostName = 0x00
@@ -348,13 +343,13 @@ func parseALPNExtension(data []byte) []string {
 }
 
 // isValidSNIHostname checks that s contains only characters valid in a DNS
-// hostname: ASCII letters, digits, hyphens, dots, and underscores. This
-// rejects null bytes, control characters, non-ASCII bytes, and other special
-// characters that could be used in bypass attacks.
+// hostname (caller must pass lowercase ASCII per parseSNIExtension). Valid:
+// [a-z0-9._-]. Rejects null bytes, control characters, non-ASCII, and other
+// specials that could be used in bypass attacks.
 func isValidSNIHostname(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_') {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' && c != '.' && c != '_' {
 			return false
 		}
 	}
@@ -364,10 +359,5 @@ func isValidSNIHostname(s string) bool {
 // MatchesAllowlist checks whether the given domain matches at least one of
 // the compiled regex patterns. Returns false if the allowlist is empty.
 func MatchesAllowlist(domain string, allowlist []*regexp.Regexp) bool {
-	for _, re := range allowlist {
-		if re.MatchString(domain) {
-			return true
-		}
-	}
-	return false
+	return filter.MatchesOutboundAllowlist(domain, allowlist)
 }
