@@ -17,6 +17,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -63,10 +64,6 @@ func handler(configuration *types.Configuration, ipPool *tap.IPPool) server4.Han
 		} else {
 			reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionInterfaceMTU, Value: dhcpv4.Uint16(mtu)})
 		}
-		reply.UpdateOption(dhcpv4.Option{Code: dhcpv4.OptionDNSDomainSearchList, Value: &rfc1035label.Labels{
-			Labels: configuration.DNSSearchDomains,
-		}})
-
 		switch mt := m.MessageType(); mt {
 		case dhcpv4.MessageTypeDiscover:
 			reply.UpdateOption(dhcpv4.OptMessageType(dhcpv4.MessageTypeOffer))
@@ -80,10 +77,32 @@ func handler(configuration *types.Configuration, ipPool *tap.IPPool) server4.Han
 			return
 		}
 
+		maxPacketSize := header.IPv4MinimumProcessableDatagramSize
+		if size, err := m.MaxMessageSize(); err == nil && size >= header.IPv4MinimumProcessableDatagramSize {
+			maxPacketSize = int(size)
+		}
+		if mtu > 0 && mtu < maxPacketSize {
+			maxPacketSize = mtu
+		}
+		// RFC 2131's packet-size limit includes the IPv4 and UDP headers (20 and 8 bytes respectively).
+		addSearchDomains(reply, configuration.DNSSearchDomains, maxPacketSize-header.IPv4MinimumSize-header.UDPMinimumSize)
+
 		if _, err := conn.WriteTo(reply.ToBytes(), peer); err != nil {
 			log.Errorf("dhcp: cannot reply to client: %v", err)
 		}
 	}
+}
+
+func addSearchDomains(reply *dhcpv4.DHCPv4, domains []string, maxSize int) {
+	for count := len(domains); count > 0; count-- {
+		reply.UpdateOption(dhcpv4.OptDomainSearch(&rfc1035label.Labels{
+			Labels: domains[:count],
+		}))
+		if len(reply.ToBytes()) <= maxSize {
+			return
+		}
+	}
+	reply.Options.Del(dhcpv4.OptionDNSDomainSearchList)
 }
 
 func dial(s *stack.Stack, nic tcpip.NICID) (*gonet.UDPConn, error) {
