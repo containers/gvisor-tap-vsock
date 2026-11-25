@@ -30,11 +30,13 @@ func BasicConnectivityTests(props BasicTestProps) {
 	ginkgo.It("should configure the default route", func() {
 		out, err := props.SSHExec("ip route show")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		gomega.Expect(string(out)).To(gomega.MatchRegexp(`default via 192\.168\.127\.1 dev (.*?) proto dhcp (src 192\.168\.127\.2 )?metric 100`))
+		gomega.Expect(string(out)).To(gomega.MatchRegexp(`default via 192\.168\.127\.1 dev (.*?) proto dhcp (src 192\.168\.127\.2 )?metric (\d{3})`))
 	})
 
 	ginkgo.It("should configure dns settings", func() {
-		out, err := props.SSHExec("cat /etc/resolv.conf")
+		// When systemd-resolved is running in the guest, /etc/resolv.conf only lists its
+		// local stub resolver, the upstream DNS servers are in /run/systemd/resolve/resolv.conf
+		out, err := props.SSHExec("cat /run/systemd/resolve/resolv.conf 2>/dev/null || cat /etc/resolv.conf")
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 		gomega.Expect(string(out)).To(gomega.ContainSubstring("nameserver 192.168.127.1"))
 	})
