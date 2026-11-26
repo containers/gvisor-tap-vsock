@@ -1,0 +1,35 @@
+name: Build Windows e2e image
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Build e2e image
+        run: |
+          GIT_VERSION=${{ github.event.pull_request.head.sha || github.sha }} \
+            make containerized-windows-e2e
+
+      - name: Save e2e image
+        run: |
+          podman save -o gvisor-tap-vsock-e2e-windows-amd64.tar \
+            gvisor-tap-vsock-e2e:windows-amd64
+
+      - name: Upload e2e image
+        uses: actions/upload-artifact@v7
+        with:
+          name: gvisor-tap-vsock-e2e-windows-amd64
+          path: gvisor-tap-vsock-e2e-windows-amd64.tar
