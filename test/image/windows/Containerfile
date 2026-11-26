@@ -1,0 +1,23 @@
+FROM golang:1.26-bookworm AS builder
+
+ARG OS=windows
+ARG ARCH=amd64
+ARG GIT_VERSION
+
+ENV GIT_VERSION=${GIT_VERSION}
+
+WORKDIR /workspace
+COPY . .
+RUN make windows-e2e-binaries
+
+FROM quay.io/rhqp/deliverest:v0.0.7
+
+ARG OS=windows
+ARG ARCH=amd64
+
+ENV ASSETS_FOLDER=/opt/gvisor-e2e \
+    OS=${OS} \
+    ARCH=${ARCH}
+
+COPY --from=builder /workspace/bin/windows-amd64/ /opt/gvisor-e2e/bin/
+COPY test/image/windows/run.ps1 /opt/gvisor-e2e/run.ps1
