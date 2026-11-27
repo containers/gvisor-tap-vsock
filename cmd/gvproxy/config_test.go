@@ -724,6 +724,7 @@ interfaces:
 			InputConfig: `stack:
     tcpMaxInFlight: 500
     tcpConnectTimeout: 10
+    tcpTimeWaitTimeout: 1
 `,
 			ResultConfig: `log-level: info
 stack:
@@ -739,7 +740,37 @@ stack:
         - 192.168.127.254
     tcpMaxInFlight: 500
     tcpConnectTimeout: 10
+    tcpTimeWaitTimeout: 1
 `,
 		},
 	}
 }
+
+func TestTCPTimeWaitCLI(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		argv []string
+		yaml string
+		want *int
+	}{
+		{name: "omitted", want: nil},
+		{name: "yaml", yaml: "stack:\n  tcpTimeWaitTimeout: 5\n", want: ptrInt(5)},
+		{name: "yaml zero", yaml: "stack:\n  tcpTimeWaitTimeout: 0\n", want: ptrInt(0)},
+		{name: "explicit zero overrides yaml", argv: []string{"-tcp-time-wait-timeout=0"}, yaml: "stack:\n  tcpTimeWaitTimeout: 5\n", want: ptrInt(0)},
+		{name: "positive", argv: []string{"-tcp-time-wait-timeout=2"}, want: ptrInt(2)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var args GvproxyArgs
+			flags := flag.NewFlagSet("test", flag.ContinueOnError)
+			_, err := GvproxyArgParse(flags, &args, tc.argv)
+			require.NoError(t, err)
+			var config GvproxyConfig
+			require.NoError(t, yaml.Unmarshal([]byte(tc.yaml), &config))
+			_, err = GvproxyConfigure(&config, &args, "test")
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, config.Stack.TCPTimeWaitTimeout)
+		})
+	}
+}
+
+func ptrInt(n int) *int { return &n }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/notification"
 	"github.com/containers/gvisor-tap-vsock/pkg/services/forwarder"
@@ -33,6 +34,16 @@ type VirtualNetwork struct {
 	apiToken       string // Bearer token for API authentication
 }
 
+func parseTCPTimeWaitTimeout(timeoutSeconds int) (time.Duration, error) {
+	if timeoutSeconds < 0 {
+		return 0, errors.New("TCP time-wait timeout must not be negative")
+	}
+	if int64(timeoutSeconds) > math.MaxInt64/int64(time.Second) {
+		return 0, errors.New("TCP time-wait timeout is too large")
+	}
+	return time.Duration(timeoutSeconds) * time.Second, nil
+}
+
 func (n *VirtualNetwork) SetNotificationSender(notificationSender *notification.NotificationSender) {
 	n.networkSwitch.SetNotificationSender(notificationSender)
 }
@@ -42,6 +53,15 @@ func (n *VirtualNetwork) SetAPIToken(token string) {
 }
 
 func New(configuration *types.Configuration) (*VirtualNetwork, error) {
+	var timeWaitTimeout *time.Duration
+	if configuration.TCPTimeWaitTimeout != nil {
+		timeout, err := parseTCPTimeWaitTimeout(*configuration.TCPTimeWaitTimeout)
+		if err != nil {
+			return nil, err
+		}
+		timeWaitTimeout = &timeout
+	}
+
 	var endpoint stack.LinkEndpoint
 
 	ipPool, err := tap.NewIPPool(configuration.Subnet)
@@ -82,7 +102,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 	} else {
 		endpoint = tapEndpoint
 	}
-	stack, err := createStack(configuration, endpoint)
+	stack, err := createStack(configuration, endpoint, timeWaitTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create network stack: %w", err)
 	}
@@ -124,7 +144,7 @@ func (n *VirtualNetwork) BytesReceived() uint64 {
 	return n.networkSwitch.Received
 }
 
-func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint) (*stack.Stack, error) {
+func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint, timeWaitTimeout *time.Duration) (*stack.Stack, error) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
 			ipv4.NewProtocol,
@@ -137,6 +157,13 @@ func createStack(configuration *types.Configuration, endpoint stack.LinkEndpoint
 		},
 		Clock: newClock(),
 	})
+
+	if timeWaitTimeout != nil {
+		tcpTimeWaitTimeout := tcpip.TCPTimeWaitTimeoutOption(*timeWaitTimeout)
+		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &tcpTimeWaitTimeout); err != nil {
+			return nil, fmt.Errorf("cannot set TCP time-wait timeout: %s", err)
+		}
+	}
 
 	if err := s.CreateNIC(1, endpoint); err != nil {
 		return nil, errors.New(err.String())
