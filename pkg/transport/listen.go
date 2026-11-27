@@ -35,7 +35,7 @@ func defaultListenURL(url *url.URL) (net.Listener, error) {
 		}
 		return listener, nil
 	case "tcp":
-		return net.Listen("tcp", url.Host)
+		return ListenAddr("tcp", url.Host)
 	default:
 		return nil, errors.New("unexpected scheme")
 	}
