@@ -137,13 +137,30 @@ func splitTxt(s string) []string {
 // NXDOMAIN; anything else (timeouts, unreachable servers, malformed upstream
 // responses, ...) is reported as SERVFAIL so that clients may retry or try
 // another server instead of caching a negative answer for a name that exists.
-func rcodeForLookupError(q dns.Question, err error) int {
+//
+// Go's resolver reports "no such host" both for a name that does not exist and
+// for a name that exists but has no records of the requested type. For the
+// latter the answer must be NOERROR with an empty answer section (NODATA),
+// otherwise clients that ask for several types, like host(1), treat the whole
+// name as nonexistent. So for record types other than A and AAAA, a not found
+// answer is only turned into NXDOMAIN if the name has no addresses either.
+func (h *dnsHandler) rcodeForLookupError(q dns.Question, err error) int {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+		if q.Qtype != dns.TypeA && q.Qtype != dns.TypeAAAA && h.hasAddresses(q.Name) {
+			return dns.RcodeSuccess
+		}
 		return dns.RcodeNameError
 	}
 	log.Debugf("upstream lookup of %s %s failed: %v", q.Name, dns.TypeToString[q.Qtype], err)
 	return dns.RcodeServerFailure
+}
+
+// hasAddresses reports whether the upstream resolver knows an A or AAAA record
+// for name, which proves that the name exists.
+func (h *dnsHandler) hasAddresses(name string) bool {
+	ips, err := h.upstream.LookupIPAddr(context.TODO(), name)
+	return err == nil && len(ips) > 0
 }
 
 func (h *dnsHandler) addAnswers(m *dns.Msg) {
@@ -157,7 +174,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeA, dns.TypeAAAA:
 			ips, err := resolver.LookupIPAddr(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = rcodeForLookupError(q, err)
+				m.Rcode = h.rcodeForLookupError(q, err)
 				return
 			}
 			for _, ip := range ips {
@@ -194,7 +211,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeCNAME:
 			cname, err := resolver.LookupCNAME(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = rcodeForLookupError(q, err)
+				m.Rcode = h.rcodeForLookupError(q, err)
 				return
 			}
 			m.Answer = append(m.Answer, &dns.CNAME{
@@ -209,7 +226,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeMX:
 			records, err := resolver.LookupMX(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = rcodeForLookupError(q, err)
+				m.Rcode = h.rcodeForLookupError(q, err)
 				return
 			}
 			for _, mx := range records {
@@ -227,7 +244,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeNS:
 			records, err := resolver.LookupNS(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = rcodeForLookupError(q, err)
+				m.Rcode = h.rcodeForLookupError(q, err)
 				return
 			}
 			for _, ns := range records {
@@ -244,7 +261,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeSRV:
 			_, records, err := resolver.LookupSRV(context.TODO(), "", "", q.Name)
 			if err != nil {
-				m.Rcode = rcodeForLookupError(q, err)
+				m.Rcode = h.rcodeForLookupError(q, err)
 				return
 			}
 			for _, srv := range records {
@@ -264,7 +281,7 @@ func (h *dnsHandler) addAnswers(m *dns.Msg) {
 		case dns.TypeTXT:
 			txts, err := resolver.LookupTXT(context.TODO(), q.Name)
 			if err != nil {
-				m.Rcode = rcodeForLookupError(q, err)
+				m.Rcode = h.rcodeForLookupError(q, err)
 				return
 			}
 

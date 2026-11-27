@@ -758,6 +758,58 @@ var _ = ginkgo.Describe("upstream lookup errors", func() {
 	)
 })
 
+// addressOnlyResolver is an upstreamResolver for a name that has an A record
+// and nothing else. Like net.Resolver, it reports "no such host" for the
+// record types the name does not have.
+type addressOnlyResolver struct {
+	failingResolver
+	ips []net.IPAddr
+}
+
+func (r *addressOnlyResolver) LookupIPAddr(context.Context, string) ([]net.IPAddr, error) {
+	return r.ips, nil
+}
+
+var _ = ginkgo.Describe("name without records of the requested type", func() {
+	notFound := &net.DNSError{Err: "no such host", Name: "example.org.", IsNotFound: true}
+
+	query := func(upstream upstreamResolver, qtype uint16) *dns.Msg {
+		server, err := NewWithUpstreamResolver(nil, nil, []types.Zone{}, upstream)
+		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+		m := new(dns.Msg)
+		m.SetQuestion("example.org.", qtype)
+		server.handler.addAnswers(m)
+		return m
+	}
+
+	ginkgo.DescribeTable("should answer NOERROR with no records if the name has an address",
+		func(qtype uint16) {
+			upstream := &addressOnlyResolver{
+				failingResolver: failingResolver{err: notFound},
+				ips:             []net.IPAddr{{IP: net.ParseIP("192.0.2.1")}},
+			}
+			m := query(upstream, qtype)
+			gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeSuccess))
+			gomega.Expect(m.Answer).To(gomega.BeEmpty())
+		},
+		ginkgo.Entry("MX", dns.TypeMX),
+		ginkgo.Entry("NS", dns.TypeNS),
+		ginkgo.Entry("SRV", dns.TypeSRV),
+		ginkgo.Entry("TXT", dns.TypeTXT),
+	)
+
+	ginkgo.It("should answer NXDOMAIN if the name has no address either", func() {
+		m := query(&failingResolver{err: notFound}, dns.TypeMX)
+		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeNameError))
+	})
+
+	ginkgo.It("should answer NXDOMAIN if the existence check fails", func() {
+		upstream := &addressOnlyResolver{failingResolver: failingResolver{err: notFound}}
+		m := query(upstream, dns.TypeTXT)
+		gomega.Expect(m.Rcode).To(gomega.Equal(dns.RcodeNameError))
+	})
+})
+
 type ARecord struct {
 	name        string
 	expectedIPs []string
