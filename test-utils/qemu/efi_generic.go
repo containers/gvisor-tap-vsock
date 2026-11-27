@@ -1,6 +1,6 @@
 //go:build !(darwin && arm64)
 
-package e2eqemu
+package qemu
 
 func efiArgs() ([]string, error) {
 	return nil, nil
