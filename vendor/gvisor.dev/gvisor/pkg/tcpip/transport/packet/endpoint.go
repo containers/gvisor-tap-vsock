@@ -195,11 +195,13 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 	}
 
 	packet := ep.rcvList.Front()
-	if !opts.Peek {
+	if opts.Peek {
+		packet.data.IncRef()
+	} else {
 		ep.rcvList.Remove(packet)
-		defer packet.data.DecRef()
 		ep.rcvBufSize -= packet.data.Size()
 	}
+	defer packet.data.DecRef()
 
 	ep.rcvMu.Unlock()
 
@@ -267,11 +269,12 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 	}
 	payloadSz := payload.Size()
 
+	mark := ep.ops.GetMark()
 	if err := func() tcpip.Error {
 		if ep.cooked {
-			return ep.stack.WritePacketToRemote(nicID, remote, proto, payload)
+			return ep.stack.WritePacketToRemoteWithMark(nicID, remote, proto, payload, mark)
 		}
-		return ep.stack.WriteRawPacket(nicID, proto, payload)
+		return ep.stack.WriteRawPacketWithMark(nicID, proto, payload, mark)
 	}(); err != nil {
 		return 0, err
 	}

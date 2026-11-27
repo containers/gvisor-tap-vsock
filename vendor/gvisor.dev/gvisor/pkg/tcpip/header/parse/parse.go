@@ -77,6 +77,9 @@ func IPv6(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNumber, fragID 
 		return 0, 0, 0, false, false
 	}
 	ipHdr := header.IPv6(hdr)
+	// PayloadLength includes extension headers (RFC 8200 section 3). Discard
+	// link padding before traversing or coalescing those headers.
+	pkt.Data().CapLength(header.IPv6MinimumSize + int(ipHdr.PayloadLength()))
 
 	// Create a VV to parse the packet. We don't plan to modify anything here.
 	// dataVV consists of:
@@ -142,12 +145,9 @@ traverseExtensions:
 	}
 
 	// Put the IPv6 header with extensions in pkt.NetworkHeader().
-	hdr, ok = pkt.NetworkHeader().Consume(header.IPv6MinimumSize + int(extensionsSize))
-	if !ok {
+	if _, ok := pkt.NetworkHeader().Consume(header.IPv6MinimumSize + int(extensionsSize)); !ok {
 		panic(fmt.Sprintf("pkt.Data should have at least %d bytes, but only has %d.", header.IPv6MinimumSize+extensionsSize, pkt.Data().Size()))
 	}
-	ipHdr = header.IPv6(hdr)
-	pkt.Data().CapLength(int(ipHdr.PayloadLength()))
 	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
 
 	return nextHdr, fragID, fragOffset, fragMore, true
@@ -158,9 +158,19 @@ traverseExtensions:
 //
 // Returns true if the header was successfully parsed.
 func UDP(pkt *stack.PacketBuffer) bool {
-	_, ok := pkt.TransportHeader().Consume(header.UDPMinimumSize)
+	hdr, ok := pkt.TransportHeader().Consume(header.UDPMinimumSize)
+	if !ok {
+		return false
+	}
 	pkt.TransportProtocolNumber = header.UDPProtocolNumber
-	return ok
+	// Validate the UDP payload length.
+	length := int(header.UDP(hdr).Length()) - header.UDPMinimumSize
+	if length < 0 || length > pkt.Data().Size() {
+		return false
+	}
+	// Trim the payload to the length specified in the UDP header.
+	pkt.Data().CapLength(length)
+	return true
 }
 
 // TCP parses a TCP packet found in pkt.Data and populates pkt's transport
