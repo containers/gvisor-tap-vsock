@@ -3,6 +3,7 @@ package forwarder
 import (
 	"sync"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	log "github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -14,7 +15,7 @@ type Forwarder struct {
 	stack   *stack.Stack
 }
 
-func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex) *Forwarder {
+func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, filter func(types.DialRequest) error) *Forwarder {
 	return NewForwarder(s, func(r *ICMPForwarderRequest) {
 		localAddress := r.ID().LocalAddress
 
@@ -24,6 +25,13 @@ func ICMP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mut
 			localAddress = replaced
 		}
 		natLock.Unlock()
+
+		if filter != nil {
+			if err := filter(dialRequest("icmp", r.ID().LocalAddress, localAddress, 0)); err != nil {
+				log.Debugf("dial filter refused icmp %s: %v", localAddress, err)
+				return
+			}
+		}
 
 		pkt := r.Packet()
 		if pkt == nil {

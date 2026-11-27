@@ -2,6 +2,7 @@ package types
 
 import (
 	"net"
+	"net/netip"
 	"regexp"
 )
 
@@ -68,6 +69,27 @@ type Configuration struct {
 
 	// Timeout in seconds for outbound TCP connection attempts (default: 30)
 	TCPConnectTimeout int `yaml:"tcpConnectTimeout,omitempty"`
+
+	// DialFilter, when set, is consulted before every connection the
+	// forwarders open for the guest. A non-nil error refuses it: TCP answers
+	// the guest with a reset, UDP and ICMP are dropped.
+	DialFilter func(DialRequest) error `yaml:"-"`
+
+	// DNSObserver, when set, is called with the addresses of every A or AAAA
+	// answer the embedded DNS server returns from its upstream resolver,
+	// before the answer is sent. name has no trailing dot.
+	DNSObserver func(name string, ips []net.IP) `yaml:"-"`
+}
+
+// DialRequest describes a connection the forwarders are about to open for the
+// guest. For icmp, both ports are zero.
+type DialRequest struct {
+	// Network is "tcp", "udp" or "icmp".
+	Network string
+	// Destination is the address the guest sent to, before NAT translation.
+	Destination netip.AddrPort
+	// DialAddress is the address the forwarder dials, after NAT translation.
+	DialAddress netip.AddrPort
 }
 
 type Protocol string
