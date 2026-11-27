@@ -7,9 +7,7 @@ import (
 )
 
 func efiArgs() ([]string, error) {
-	// file may not exist, that's ok
-	_ = os.Remove("ovmf_vars.fd")
-	ovmfVars, err := os.Create("ovmf_vars.fd")
+	ovmfVars, err := os.Create(filepath.Join(runDir, "ovmf_vars.fd"))
 	if err != nil {
 		return nil, err
 	}

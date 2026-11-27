@@ -14,7 +14,9 @@ import (
 
 type BasicTestProps struct {
 	SSHExec func(cmd ...string) ([]byte, error)
-	Sock    string
+	// Sock returns the path of the gvproxy API socket. It is a function as
+	// the path is only known once BeforeSuite has run.
+	Sock func() string
 }
 
 func BasicConnectivityTests(props BasicTestProps) {
@@ -57,7 +59,7 @@ func BasicDHCPTests(props BasicTestProps) {
 		client := gvproxyclient.New(&http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", props.Sock)
+					return net.Dial("unix", props.Sock())
 				},
 			},
 		}, "http://base")
@@ -119,7 +121,7 @@ func BasicDNSTests(props BasicTestProps) {
 		client := gvproxyclient.New(&http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", props.Sock)
+					return net.Dial("unix", props.Sock())
 				},
 			},
 		}, "http://base")
@@ -144,7 +146,7 @@ func BasicDNSTests(props BasicTestProps) {
 		client := gvproxyclient.New(&http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", props.Sock)
+					return net.Dial("unix", props.Sock())
 				},
 			},
 		}, "http://base")
@@ -180,7 +182,7 @@ func BasicDNSTests(props BasicTestProps) {
 		client := gvproxyclient.New(&http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", props.Sock)
+					return net.Dial("unix", props.Sock())
 				},
 			},
 		}, "http://base")

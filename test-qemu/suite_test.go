@@ -26,7 +26,6 @@ func TestSuite(t *testing.T) {
 }
 
 const (
-	sock           = "/tmp/gvproxy-api.sock"
 	qemuPort       = 5555
 	sshPort        = 2222
 	ignitionUser   = "test"
@@ -40,6 +39,8 @@ const (
 
 var (
 	tmpDir          string
+	runDir          string
+	sock            string
 	binDir          string
 	host            *exec.Cmd
 	client          *exec.Cmd
@@ -56,9 +57,6 @@ func init() {
 	privateKeyFile = filepath.Join(tmpDir, "id_test_qemu")
 	publicKeyFile = privateKeyFile + ".pub"
 	ignFile = filepath.Join(tmpDir, "test.ign")
-	forwardSock = filepath.Join(tmpDir, "podman-remote.sock")
-	forwardRootSock = filepath.Join(tmpDir, "podman-root-remote.sock")
-
 }
 
 func gvproxyCmd() *exec.Cmd {
@@ -92,7 +90,13 @@ var _ = ginkgo.BeforeSuite(func() {
 	err = e2e_utils.CreateIgnition(ignFile, publicKey, ignitionUser, ignitionPasswordHash)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-	_ = os.Remove(sock)
+	// Unix sockets and the EFI variable store go to a temporary directory
+	// which is removed at the end of the suite, so that files left behind
+	// by an aborted run do not make the next test run fail.
+	runDir = ginkgo.GinkgoT().TempDir()
+	sock = filepath.Join(runDir, "gvproxy-api.sock")
+	forwardSock = filepath.Join(runDir, "podman-remote.sock")
+	forwardRootSock = filepath.Join(runDir, "podman-root-remote.sock")
 
 	host = gvproxyCmd()
 	host.Stderr = os.Stderr

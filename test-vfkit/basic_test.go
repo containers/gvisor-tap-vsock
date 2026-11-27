@@ -28,14 +28,14 @@ var _ = ginkgo.Describe("connectivity with vfkit", func() {
 var _ = ginkgo.Describe("dns with vfkit", func() {
 	e2e.BasicDNSTests(e2e.BasicTestProps{
 		SSHExec: sshExec,
-		Sock:    sock,
+		Sock:    func() string { return sock },
 	})
 })
 
 var _ = ginkgo.Describe("dhcp with vfkit", func() {
 	e2e.BasicDHCPTests(e2e.BasicTestProps{
 		SSHExec: sshExec,
-		Sock:    sock,
+		Sock:    func() string { return sock },
 	})
 })
 
