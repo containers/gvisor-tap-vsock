@@ -1,0 +1,41 @@
+name: gvprobe
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  GVPROBE_REF: main
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version: 'stable'
+
+    - name: Build gvproxy
+      run: |
+        mkdir -p "$HOME/.local/bin"
+        go build -o "$HOME/.local/bin/gvproxy" ./cmd/gvproxy
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Check out gvprobe
+      uses: actions/checkout@v7
+      with:
+        repository: vyasgun/gvprobe
+        ref: ${{ env.GVPROBE_REF }}
+        path: gvprobe
+
+    - name: Run gvprobe smoke test
+      run: |
+        cd gvprobe
+        make
+        BACKENDS=bess ./scripts/smoke.sh
