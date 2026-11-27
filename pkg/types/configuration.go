@@ -2,6 +2,7 @@ package types
 
 import (
 	"net"
+	"net/netip"
 	"regexp"
 )
 
@@ -68,6 +69,52 @@ type Configuration struct {
 
 	// Timeout in seconds for outbound TCP connection attempts (default: 30)
 	TCPConnectTimeout int `yaml:"tcpConnectTimeout,omitempty"`
+
+	// Block all guest-initiated outbound TCP/UDP connections and ICMP echo requests (host→guest forwarding still works)
+	BlockAllOutbound bool `yaml:"blockAllOutbound,omitempty"`
+
+	// OutboundAllow is a list of regex patterns for allowed outbound domains.
+	// When non-empty, all outbound is blocked, including ICMP echo requests, except
+	// DNS queries and TLS connections (port 443) whose SNI matches at least one
+	// pattern. Internal gateway traffic is always permitted. Each string is
+	// compiled as a regexp at startup.
+	// Domains added at runtime through the filter API's dynamic allowlist are
+	// allowed the same way. Enforcement is on when this list is non-empty or
+	// once a dynamic entry has been added, and stays on after the last dynamic
+	// entry is removed until it is turned off through the filter API.
+	// TLS connections are also checked that the SNI hostname resolves to the
+	// destination IP the guest connected to: an address the embedded DNS server
+	// returned to the guest for that name in the last 10 minutes is accepted;
+	// otherwise the name is resolved with the host's default DNS resolver,
+	// which may differ from DNS settings inside the guest.
+	OutboundAllow []string `yaml:"outboundAllow,omitempty"`
+
+	// MaxFilterHistory caps the number of connection and DNS records kept
+	// in the filter observer, and the size of each of its DNS caches (IP to
+	// domain, and DNS answers used for the SNI check). When the limit is
+	// reached the oldest entry is evicted. Defaults to 10000 when zero.
+	MaxFilterHistory int `yaml:"maxFilterHistory,omitempty"`
+
+	// DialFilter, when set, is consulted before every connection the
+	// forwarders open for the guest. A non-nil error refuses it: TCP answers
+	// the guest with a reset, UDP and ICMP are dropped.
+	DialFilter func(DialRequest) error `yaml:"-"`
+
+	// DNSObserver, when set, is called with the addresses of every A or AAAA
+	// answer the embedded DNS server returns from its upstream resolver,
+	// before the answer is sent. name has no trailing dot.
+	DNSObserver func(name string, ips []net.IP) `yaml:"-"`
+}
+
+// DialRequest describes a connection the forwarders are about to open for the
+// guest. For icmp, both ports are zero.
+type DialRequest struct {
+	// Network is "tcp", "udp" or "icmp".
+	Network string
+	// Destination is the address the guest sent to, before NAT translation.
+	Destination netip.AddrPort
+	// DialAddress is the address the forwarder dials, after NAT translation.
+	DialAddress netip.AddrPort
 }
 
 type Protocol string
