@@ -24,13 +24,15 @@ import (
 )
 
 type VirtualNetwork struct {
-	configuration  *types.Configuration
-	stack          *stack.Stack
-	networkSwitch  *tap.Switch
-	servicesMux    http.Handler
-	ipPool         *tap.IPPool
-	portsForwarder *forwarder.PortsForwarder
-	apiToken       string // Bearer token for API authentication
+	configuration      *types.Configuration
+	stack              *stack.Stack
+	networkSwitch      *tap.Switch
+	servicesMux        http.Handler
+	ipPool             *tap.IPPool
+	portsForwarder     *forwarder.PortsForwarder
+	egressPolicy       *types.EgressPolicyHolder
+	apiToken           string // Bearer token for API authentication
+	egressPolicyLoader func() (*types.EgressPolicy, error)
 }
 
 func (n *VirtualNetwork) SetNotificationSender(notificationSender *notification.NotificationSender) {
@@ -41,8 +43,23 @@ func (n *VirtualNetwork) SetAPIToken(token string) {
 	n.apiToken = token
 }
 
-func New(configuration *types.Configuration) (*VirtualNetwork, error) {
+// SetEgressPolicyLoader configures the trusted source used by the reload API.
+// The loader is called only after the request passes the services API auth.
+func (n *VirtualNetwork) SetEgressPolicyLoader(loader func() (*types.EgressPolicy, error)) {
+	n.egressPolicyLoader = loader
+}
+
+func New(configuration *types.Configuration, requireEgressPolicy ...bool) (*VirtualNetwork, error) {
 	var endpoint stack.LinkEndpoint
+
+	required := false
+	if len(requireEgressPolicy) > 0 {
+		required = requireEgressPolicy[0]
+	}
+	egressPolicy, err := types.NewEgressPolicyHolder(configuration.EgressPolicy, required)
+	if err != nil {
+		return nil, fmt.Errorf("invalid egress policy: %w", err)
+	}
 
 	ipPool, err := tap.NewIPPool(configuration.Subnet)
 	if err != nil {
@@ -91,7 +108,7 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot create ports forwarder: %w", err)
 	}
-	mux, err := addServices(configuration, stack, ipPool, portsForwarder)
+	mux, err := addServices(configuration, stack, ipPool, portsForwarder, egressPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("cannot add network services: %w", err)
 	}
@@ -103,11 +120,41 @@ func New(configuration *types.Configuration) (*VirtualNetwork, error) {
 		servicesMux:    mux,
 		ipPool:         ipPool,
 		portsForwarder: portsForwarder,
+		egressPolicy:   egressPolicy,
 	}, nil
 }
 
 func (n *VirtualNetwork) Close() error {
-	return n.portsForwarder.Close()
+	err := n.portsForwarder.Close()
+	if policyErr := n.egressPolicy.Close(); err == nil {
+		err = policyErr
+	}
+	return err
+}
+
+// UpdateEgressPolicy atomically replaces the active policy and closes tracked
+// outbound flows that the new policy denies.
+func (n *VirtualNetwork) UpdateEgressPolicy(policy *types.EgressPolicy) error {
+	return n.egressPolicy.Update(policy)
+}
+
+// ReloadEgressPolicy loads and atomically installs the policy from the
+// configured trusted source. A loader or validation failure keeps the current
+// policy active.
+func (n *VirtualNetwork) ReloadEgressPolicy() error {
+	if n.egressPolicyLoader == nil {
+		return errors.New("egress policy reload is unavailable")
+	}
+	policy, err := n.egressPolicyLoader()
+	if err != nil {
+		return err
+	}
+	return n.UpdateEgressPolicy(policy)
+}
+
+// EgressPolicyRevision returns the active policy revision.
+func (n *VirtualNetwork) EgressPolicyRevision() string {
+	return n.egressPolicy.Revision()
 }
 
 func (n *VirtualNetwork) BytesSent() uint64 {

@@ -197,6 +197,23 @@ curl -H "Authorization: Bearer $TOKEN" http://192.168.127.1/services/forwarder/a
 If neither `--api-token-file` nor `GV_API_TOKEN` is set, authentication is disabled and the API accepts all
 requests without tokens.
 
+Egress policy mode is stricter: when `--require-egress-policy`, a policy in the
+configuration, or the standalone `--services` endpoint is enabled, gvproxy
+requires an API token before starting. The host services API is protected with
+the same Bearer token when one is configured.
+
+To reload only the egress policy from the original `--config` file, send an
+authenticated POST request to `/egress-policy/reload` through the host services
+endpoint. The request has no body. A rejected or invalid policy leaves the
+previous policy active; a successful response contains the new revision. The
+same reload is available through SIGHUP.
+
+```bash
+curl --unix-socket /tmp/network.sock \
+  -H "Authorization: Bearer $GV_API_TOKEN" \
+  -X POST http:/unix/egress-policy/reload
+```
+
 ### Gateway
 
 The executable running on the host runs a virtual gateway that can be used by the VM.
@@ -217,7 +234,7 @@ Dynamic port forwarding is supported over the host HTTP API when `gvproxy` was
 started with `--listen` or `--services`, and also in the VM over http://192.168.127.1:80.
 
 **Authentication:** 
-- **Host-side** (`--listen` or `--services`): No authentication required (protected by unix socket permissions).
+- **Host-side** (`--services`): Bearer authentication is checked when configured, and this standalone services endpoint requires a token at startup. For `--listen`, transport permissions remain the boundary for the host API; `/egress-policy/reload` additionally requires Bearer authentication.
 - **Gateway** (http://192.168.127.1:80 from VM): Authentication required when enabled via `--api-token-file` or `GV_API_TOKEN`
 
 Expose a port:

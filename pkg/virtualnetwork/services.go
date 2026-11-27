@@ -1,6 +1,7 @@
 package virtualnetwork
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"sync"
@@ -21,19 +22,21 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool, portsForwarder *forwarder.PortsForwarder) (http.Handler, error) {
+func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap.IPPool, portsForwarder *forwarder.PortsForwarder, egressPolicy *types.EgressPolicyHolder) (http.Handler, error) {
 	var natLock sync.Mutex
 	translation := parseNATTable(configuration)
 
 	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess,
-		configuration.TCPMaxInFlight, time.Duration(configuration.TCPConnectTimeout)*time.Second)
+		configuration.TCPMaxInFlight, time.Duration(configuration.TCPConnectTimeout)*time.Second, egressPolicy)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.Ec2MetadataAccess)
+	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.Ec2MetadataAccess, egressPolicy)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
-	icmpForwarder := forwarder.ICMP(s, translation, &natLock)
-	s.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
+	if !egressPolicy.Enabled() {
+		icmpForwarder := forwarder.ICMP(s, translation, &natLock)
+		s.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
+	}
 
-	dnsMux, err := dnsServer(configuration, s)
+	dnsMux, err := dnsServer(configuration, s, !egressPolicy.Enabled(), egressPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +61,7 @@ func parseNATTable(configuration *types.Configuration) map[tcpip.Address]tcpip.A
 	return translation
 }
 
-func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler, error) {
+func dnsServer(configuration *types.Configuration, s *stack.Stack, allowUpstream bool, egressPolicy *types.EgressPolicyHolder) (http.Handler, error) {
 	udpConn, err := gonet.DialUDP(s, &tcpip.FullAddress{
 		NIC:  1,
 		Addr: tcpip.AddrFrom4Slice(net.ParseIP(configuration.GatewayIP).To4()),
@@ -77,10 +80,22 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler
 		return nil, err
 	}
 
-	server, err := dns.New(udpConn, tcpLn, configuration.DNS)
+	var server *dns.Server
+	if configuration.DNSUpstream != "" {
+		resolver := &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "udp", configuration.DNSUpstream)
+			},
+		}
+		server, err = dns.NewWithUpstreamResolver(udpConn, tcpLn, configuration.DNS, resolver, true)
+	} else {
+		server, err = dns.New(udpConn, tcpLn, configuration.DNS, allowUpstream)
+	}
 	if err != nil {
 		return nil, err
 	}
+	server.SetEgressPolicy(egressPolicy)
 
 	go func() {
 		if err := server.Serve(); err != nil {
