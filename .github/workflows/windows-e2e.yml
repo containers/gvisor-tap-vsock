@@ -1,0 +1,180 @@
+name: windows-e2e
+
+on:
+  workflow_run:
+    workflows: [Build Windows e2e image]
+    types:
+      - completed
+
+jobs:
+  windows-native:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.triggering_actor != 'dependabot[bot]'
+    env:
+      IMAGE_NAME_E2E: gvisor-tap-vsock-e2e
+      windows-version: '11'
+      windows-featurepack: '23h2-ent'
+    permissions:
+      statuses: write
+      checks: write
+
+    steps:
+      - name: Download e2e image
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.IMAGE_NAME_E2E }}-windows-amd64
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Correlate
+        run: |
+          commit_sha=${{ github.event.workflow_run.head_commit.id }}
+          if [[ -z "${commit_sha}" ]] || [[ "${commit_sha}" == null ]]; then
+            commit_sha=${{ github.event.workflow_run.head_sha }}
+          fi
+          echo "commit_sha=${commit_sha}" >> "$GITHUB_ENV"
+          echo "status_context=ci/gh/e2e/windows-native" >> "$GITHUB_ENV"
+
+      - name: Add status to the PR check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -xuo pipefail
+          data="{\"state\":\"pending\""
+          data="${data},\"description\":\"Running e2e on Windows\""
+          data="${data},\"context\":\"${{ env.status_context }}\""
+          data="${data},\"target_url\":\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
+          curl -L -v -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            https://api.github.com/repos/${{ github.repository }}/statuses/${{ env.commit_sha }} \
+            -d "${data}"
+
+      - name: Create Windows instance
+        env:
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          sudo chmod -R 777 $GITHUB_WORKSPACE
+          podman run -d --name windows-create --rm \
+            -v ${PWD}:/workspace:z \
+            -e ARM_TENANT_ID \
+            -e ARM_SUBSCRIPTION_ID \
+            -e ARM_CLIENT_ID \
+            -e ARM_CLIENT_SECRET \
+            -e AZURE_STORAGE_ACCOUNT \
+            -e AZURE_STORAGE_KEY \
+            quay.io/redhat-developer/mapt:v0.12.1 azure \
+              windows create \
+              --project-name 'windows-desktop-${{ env.windows-version }}-${{ env.windows-featurepack }}-gvisor-native' \
+              --backed-url azblob://crc-qenvs-state/${{ github.repository }}-${{ github.run_id }}-native \
+              --conn-details-output '/workspace' \
+              --nested-virt \
+              --cpus 8 \
+              --windows-version '${{ env.windows-version }}' \
+              --windows-featurepack '${{ env.windows-featurepack }}' \
+              --tags project=openshift-local,source=github,org=${{ github.repository_owner }},run=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} \
+              --spot \
+              --spot-excluded-regions southafricawest,australiacentral2,eastus2euap
+          podman logs -f windows-create
+          sudo chown runner:runner host username id_rsa
+
+      - name: Run Windows e2e
+        run: |
+          mkdir -p $PWD/test-output
+          podman load -i ${{ env.IMAGE_NAME_E2E }}-windows-amd64.tar
+          podman run --rm -d --name windows-e2e-test \
+            -e OS=windows \
+            -e TARGET_HOST=$(cat host) \
+            -e TARGET_HOST_USERNAME=$(cat username) \
+            -e TARGET_HOST_KEY_PATH=/data/id_rsa \
+            -e TARGET_FOLDER=gvisor-e2e \
+            -e TARGET_RESULTS=results \
+            -e OUTPUT_FOLDER=/data \
+            -e DEBUG=true \
+            -v $PWD/id_rsa:/data/id_rsa:ro,z \
+            -v $PWD/test-output:/data/results:z \
+            ${{ env.IMAGE_NAME_E2E }}:windows-amd64 \
+            gvisor-e2e/run.ps1
+          podman logs -f windows-e2e-test
+
+      - name: Check test results
+        id: check-tests
+        if: always()
+        run: |
+          exit_code=$(podman inspect -f '{{.State.ExitCode}}' windows-e2e-test)
+          test "${exit_code}" = "0"
+
+      - name: Test Report
+        id: test-report
+        uses: mikepenz/action-junit-report@v6
+        if: always()
+        with:
+          fail_on_failure: true
+          include_passed: true
+          detailed_summary: true
+          require_tests: true
+          report_paths: 'test-output/**/*.xml'
+
+      - name: Sanitize Symlinks
+        if: always()
+        run: |
+          find test-output -type l -delete || true
+
+      - name: Upload e2e results
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-native
+          path: test-output/
+
+      - name: Update status of the PR check
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -xuo
+          data="{\"state\":\"success\""
+          if [[ "${{ steps.test-report.outcome }}" != "success" ]] || [[ "${{ steps.check-tests.outcome }}" != "success" ]]; then
+            data="{\"state\":\"failure\""
+          fi
+          data="${data},\"description\":\"Finished e2e test on Windows\""
+          data="${data},\"context\":\"${{ env.status_context }}\""
+          data="${data},\"target_url\":\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
+          curl -L -v -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            https://api.github.com/repos/${{ github.repository }}/statuses/${{ env.commit_sha }} \
+            -d "${data}"
+
+      - name: Destroy instance
+        if: always()
+        env:
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          rm -rf .pulumi/locks/*
+          podman run -d --name windows-destroy --rm \
+            -v ${PWD}:/workspace:z \
+            -e ARM_TENANT_ID \
+            -e ARM_SUBSCRIPTION_ID \
+            -e ARM_CLIENT_ID \
+            -e ARM_CLIENT_SECRET \
+            -e AZURE_STORAGE_ACCOUNT \
+            -e AZURE_STORAGE_KEY \
+            quay.io/redhat-developer/mapt:v0.12.1 azure \
+              windows destroy \
+              --project-name 'windows-desktop-${{ env.windows-version }}-${{ env.windows-featurepack }}-gvisor-native' \
+              --backed-url azblob://crc-qenvs-state/${{ github.repository }}-${{ github.run_id }}-native
+          podman logs -f windows-destroy

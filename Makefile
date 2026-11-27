@@ -35,6 +35,22 @@ win-gvproxy:
 	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS) -H=windowsgui" -o bin/gvproxy.exe ./cmd/gvproxy
 	GOOS=windows GOARCH=arm64 go build -ldflags "$(LDFLAGS) -H=windowsgui" -o bin/gvproxy-arm64.exe ./cmd/gvproxy
 
+WINDOWS_E2E_BINDIR := bin/windows-amd64
+WINDOWS_E2E_IMAGE ?= gvisor-tap-vsock-e2e
+
+.PHONY: windows-e2e-binaries
+windows-e2e-binaries:
+	mkdir -p $(WINDOWS_E2E_BINDIR)
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(WINDOWS_E2E_BINDIR)/gvproxy.exe ./cmd/gvproxy
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS) -H=windowsgui" -o $(WINDOWS_E2E_BINDIR)/win-sshproxy.exe ./cmd/win-sshproxy
+	GOOS=windows GOARCH=amd64 go test -c -o $(WINDOWS_E2E_BINDIR)/gvproxy.test.exe ./test-win-gvproxy
+	GOOS=windows GOARCH=amd64 go test -c -o $(WINDOWS_E2E_BINDIR)/sshclient.test.exe ./pkg/sshclient
+	GOOS=windows GOARCH=amd64 go test -c -o $(WINDOWS_E2E_BINDIR)/win-sshproxy.test.exe ./test-win-sshproxy
+
+.PHONY: containerized-windows-e2e
+containerized-windows-e2e:
+	podman build -t $(WINDOWS_E2E_IMAGE):windows-amd64 -f test/image/windows/Containerfile --build-arg=OS=windows --build-arg=ARCH=amd64 --build-arg=GIT_VERSION=$(GIT_VERSION) .
+
 .PHONY: clean
 clean:
 	rm -rf ./bin
