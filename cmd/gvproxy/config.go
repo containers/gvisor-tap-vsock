@@ -67,7 +67,6 @@ type GvproxyConfig struct {
 	PIDFile            string                 `yaml:"pid-file,omitempty"`
 	LogFile            string                 `yaml:"log-file,omitempty"`
 	Services           string                 `yaml:"services,omitempty"`
-	Ec2MetadataAccess  bool                   `yaml:"ec2-metadata-access,omitempty"`
 	NotificationSocket string                 `yaml:"notification,omitempty"`
 	APITokenFile       string                 `yaml:"api-token-file,omitempty"`
 }
@@ -307,7 +306,7 @@ func GvproxyConfigure(config *GvproxyConfig, args *GvproxyArgs, version string) 
 		config.Services = args.servicesEndpoint
 	}
 	if args.ec2MetadataAccess {
-		config.Ec2MetadataAccess = true
+		config.Stack.Ec2MetadataAccess = true
 	}
 	if args.mtu != 0 {
 		config.Stack.MTU = args.mtu

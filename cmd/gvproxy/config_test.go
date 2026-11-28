@@ -743,3 +743,28 @@ stack:
 		},
 	}
 }
+
+// The virtual network reads Stack.Ec2MetadataAccess. The flag and the
+// configuration file must both reach it.
+func TestEc2MetadataAccessReachesTheStack(t *testing.T) {
+	t.Parallel()
+	for _, v := range []struct {
+		name   string
+		argv   []string
+		config string
+		want   bool
+	}{
+		{"default", nil, "", false},
+		{"flag", []string{"-ec2-metadata-access"}, "", true},
+		{"config file", nil, "stack:\n  ec2MetadataAccess: true\n", true},
+	} {
+		var cnf GvproxyConfig
+		var args GvproxyArgs
+		_, err := GvproxyArgParse(flag.NewFlagSet(os.Args[0], flag.ContinueOnError), &args, v.argv)
+		require.NoError(t, err, v.name)
+		require.NoError(t, yaml.Unmarshal([]byte(v.config), &cnf), v.name)
+		_, err = GvproxyConfigure(&cnf, &args, "testing")
+		require.NoError(t, err, v.name)
+		assert.Equal(t, v.want, cnf.Stack.Ec2MetadataAccess, v.name)
+	}
+}
